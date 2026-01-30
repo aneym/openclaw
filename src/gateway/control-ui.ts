@@ -20,6 +20,14 @@ export type ControlUiRequestOptions = {
 };
 
 function resolveControlUiRoot(): string | null {
+  return resolveUiRoot("control-ui");
+}
+
+function resolveWebUiRoot(): string | null {
+  return resolveUiRoot("web-ui");
+}
+
+function resolveUiRoot(name: string): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const execDir = (() => {
     try {
@@ -29,14 +37,14 @@ function resolveControlUiRoot(): string | null {
     }
   })();
   const candidates = [
-    // Packaged app: control-ui lives alongside the executable.
-    execDir ? path.resolve(execDir, "control-ui") : null,
-    // Running from dist: dist/gateway/control-ui.js -> dist/control-ui
-    path.resolve(here, "../control-ui"),
-    // Running from source: src/gateway/control-ui.ts -> dist/control-ui
-    path.resolve(here, "../../dist/control-ui"),
+    // Packaged app: ui lives alongside the executable.
+    execDir ? path.resolve(execDir, name) : null,
+    // Running from dist: dist/gateway/control-ui.js -> dist/<name>
+    path.resolve(here, `../${name}`),
+    // Running from source: src/gateway/control-ui.ts -> dist/<name>
+    path.resolve(here, `../../dist/${name}`),
     // Fallback to cwd (dev)
-    path.resolve(process.cwd(), "dist", "control-ui"),
+    path.resolve(process.cwd(), "dist", name),
   ].filter((dir): dir is string => Boolean(dir));
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, "index.html"))) {
@@ -344,6 +352,76 @@ export function handleControlUiHttpRequest(
       config: opts?.config,
       agentId: opts?.agentId,
     });
+    return true;
+  }
+
+  respondNotFound(res);
+  return true;
+}
+
+const WEB_UI_BASE = "/app";
+
+/**
+ * Serves the React-based chat UI from `dist/web-ui/` at the `/app/` base path.
+ * SPA fallback: any unknown sub-path returns index.html.
+ */
+export function handleWebUiHttpRequest(req: IncomingMessage, res: ServerResponse): boolean {
+  const urlRaw = req.url;
+  if (!urlRaw) return false;
+  if (req.method !== "GET" && req.method !== "HEAD") return false;
+
+  const url = new URL(urlRaw, "http://localhost");
+  const pathname = url.pathname;
+
+  // Redirect /app → /app/
+  if (pathname === WEB_UI_BASE) {
+    res.statusCode = 302;
+    res.setHeader("Location", `${WEB_UI_BASE}/${url.search}`);
+    res.end();
+    return true;
+  }
+
+  if (!pathname.startsWith(`${WEB_UI_BASE}/`)) return false;
+
+  const root = resolveWebUiRoot();
+  if (!root) {
+    res.statusCode = 503;
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.end(
+      "Web UI assets not found. Build them with `pnpm web-ui:build`, or run `cd packages/web-ui && pnpm dev` during development.",
+    );
+    return true;
+  }
+
+  const subPath = pathname.slice(WEB_UI_BASE.length);
+  const rel = (() => {
+    if (subPath === "/") return "";
+    const assetsIndex = subPath.indexOf("/assets/");
+    if (assetsIndex >= 0) return subPath.slice(assetsIndex + 1);
+    return subPath.slice(1);
+  })();
+  const requested = rel && !rel.endsWith("/") ? rel : `${rel}index.html`;
+  const fileRel = requested || "index.html";
+  if (!isSafeRelativePath(fileRel)) {
+    respondNotFound(res);
+    return true;
+  }
+
+  const filePath = path.join(root, fileRel);
+  if (!filePath.startsWith(root)) {
+    respondNotFound(res);
+    return true;
+  }
+
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    serveFile(res, filePath);
+    return true;
+  }
+
+  // SPA fallback: serve index.html for unknown paths.
+  const indexPath = path.join(root, "index.html");
+  if (fs.existsSync(indexPath)) {
+    serveFile(res, indexPath);
     return true;
   }
 

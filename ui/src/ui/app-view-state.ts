@@ -28,6 +28,9 @@ import type {
 } from "./types";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
+import type { ThreadDescriptor, ThreadState } from "./thread-state";
+import type { SplitPaneLayout } from "./split-tree";
+import type { PaneState } from "./pane-state";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -45,6 +48,14 @@ export type AppViewState = {
   assistantAvatar: string | null;
   assistantAgentId: string | null;
   sessionKey: string;
+  threads: Map<string, ThreadState>;
+  activeThreadId: string | null;
+  sessionKeyToThreadId: Map<string, string>;
+  switchThread: (id: string) => void;
+  createThread: (label?: string) => void;
+  deleteThread: (id: string) => void;
+  renameThread: (id: string, label: string) => void;
+  getThreadDescriptors: () => ThreadDescriptor[];
   chatLoading: boolean;
   chatSending: boolean;
   chatMessage: string;
@@ -52,10 +63,12 @@ export type AppViewState = {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string | null;
+  chatStreamStartedAt: number | null;
   chatRunId: string | null;
   chatAvatarUrl: string | null;
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
+  compactionStatus: import("./app-tool-stream").CompactionStatus | null;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -223,4 +236,33 @@ export type AppViewState = {
   handleLogsLevelFilterToggle: (level: LogLevel) => void;
   handleLogsAutoFollowToggle: (next: boolean) => void;
   handleCallDebugMethod: (method: string, params: string) => Promise<void>;
+  // Chat interaction methods
+  handleChatScroll: (event: Event) => void;
+  handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
+  handleAbortChat: () => Promise<void>;
+  removeQueuedMessage: (id: string) => void;
+  resetToolStream: () => void;
+  resetChatScroll: () => void;
+  exportLogs: (lines: string[], label: string) => void;
+  handleLogsScroll: (event: Event) => void;
+  handleOpenSidebar: (content: string) => void;
+  handleCloseSidebar: () => void;
+  handleSplitRatioChange: (ratio: number) => void;
+  // Sidebar state
+  sidebarOpen: boolean;
+  sidebarContent: string | null;
+  sidebarError: string | null;
+  splitRatio: number;
+  // Split pane layout
+  splitLayout: SplitPaneLayout | null;
+  focusedPaneId: string | null;
+  paneStates: Map<string, PaneState>;
+  splitPane: (direction: 'horizontal' | 'vertical') => void;
+  closePane: (paneId?: string) => void;
+  focusPane: (paneId: string) => void;
+  setThreadInPane: (paneId: string, threadId: string) => void;
+  handleSplitBranchResize: (branchId: string, ratio: number) => void;
+  focusNextPane: () => void;
+  exitSplitMode: () => void;
+  restoreSplitLayout: () => void;
 };

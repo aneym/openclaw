@@ -64,9 +64,13 @@ export type AgentConfig = {
   tools?: AgentToolsConfig;
 };
 
+export type AgentRuntime = "pi" | "claude-agent-sdk";
+
 export type AgentsConfig = {
   defaults?: AgentDefaultsConfig;
   list?: AgentConfig[];
+  /** Agent runtime engine. Defaults to 'pi'. */
+  runtime?: AgentRuntime;
 };
 
 export type AgentBinding = {

@@ -2,15 +2,20 @@ import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { SessionsListResult } from "../types";
-import type { ChatItem, MessageGroup } from "../types/chat-types";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types";
+import type { ChatItem, MessageGroup } from "../types/chat-types";
+import { icons } from "../icons";
+import {
+  isToolResultMessage,
+  normalizeMessage,
+  normalizeRoleForGrouping,
+} from "../chat/message-normalizer";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer";
-import { icons } from "../icons";
+import { extractToolCards } from "../chat/tool-cards";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
 import "../components/resizable-divider";
 
@@ -53,9 +58,6 @@ export type ChatProps = {
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
-  // Scroll control
-  showNewMessages?: boolean;
-  onScrollToBottom?: () => void;
   // Event handlers
   onRefresh: () => void;
   onToggleFocusMode: () => void;
@@ -78,9 +80,7 @@ function adjustTextareaHeight(el: HTMLTextAreaElement) {
 }
 
 function renderCompactionIndicator(status: CompactionIndicatorStatus | null | undefined) {
-  if (!status) {
-    return nothing;
-  }
+  if (!status) return nothing;
 
   // Show "compacting..." while active
   if (status.active) {
@@ -110,11 +110,84 @@ function generateAttachmentId(): string {
   return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function handlePaste(e: ClipboardEvent, props: ChatProps) {
-  const items = e.clipboardData?.items;
-  if (!items || !props.onAttachmentsChange) {
-    return;
+const MAX_IMAGE_DIMENSION = 1568;
+const JPEG_QUALITY = 0.8;
+const MAX_DATA_URL_BYTES = 4 * 1024 * 1024; // 4 MB target
+
+function canvasHasAlpha(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) return true;
   }
+  return false;
+}
+
+async function compressImage(
+  dataUrl: string,
+  mimeType: string,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve();
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+
+  const { width, height } = img;
+  const needsResize = width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION;
+  const needsCompress = dataUrl.length > MAX_DATA_URL_BYTES;
+
+  if (!needsResize && !needsCompress) {
+    return { dataUrl, mimeType };
+  }
+
+  let targetW = width;
+  let targetH = height;
+  if (needsResize) {
+    const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
+    targetW = Math.round(width * scale);
+    targetH = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+
+  // Only keep PNG if the image actually uses transparency; screenshots are
+  // PNG but fully opaque — JPEG compresses them far better.
+  const hasAlpha = mimeType === "image/png" && canvasHasAlpha(ctx, targetW, targetH);
+
+  if (hasAlpha) {
+    const result = canvas.toDataURL("image/png");
+    if (result.length <= MAX_DATA_URL_BYTES) {
+      return { dataUrl: result, mimeType: "image/png" };
+    }
+    // PNG still too large — fall through to JPEG (alpha will be flattened)
+  }
+
+  // JPEG with decreasing quality until under budget
+  let quality = JPEG_QUALITY;
+  while (quality >= 0.3) {
+    const result = canvas.toDataURL("image/jpeg", quality);
+    if (result.length <= MAX_DATA_URL_BYTES) {
+      return { dataUrl: result, mimeType: "image/jpeg" };
+    }
+    quality -= 0.1;
+  }
+
+  // Last resort: lowest quality JPEG
+  const fallback = canvas.toDataURL("image/jpeg", 0.2);
+  return { dataUrl: fallback, mimeType: "image/jpeg" };
+}
+
+function handlePaste(
+  e: ClipboardEvent,
+  props: ChatProps,
+) {
+  const items = e.clipboardData?.items;
+  if (!items || !props.onAttachmentsChange) return;
 
   const imageItems: DataTransferItem[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -124,38 +197,33 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
     }
   }
 
-  if (imageItems.length === 0) {
-    return;
-  }
+  if (imageItems.length === 0) return;
 
   e.preventDefault();
 
   for (const item of imageItems) {
     const file = item.getAsFile();
-    if (!file) {
-      continue;
-    }
+    if (!file) continue;
 
     const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const dataUrl = reader.result as string;
+    reader.onload = async () => {
+      const rawDataUrl = reader.result as string;
+      const { dataUrl, mimeType } = await compressImage(rawDataUrl, file.type);
       const newAttachment: ChatAttachment = {
         id: generateAttachmentId(),
         dataUrl,
-        mimeType: file.type,
+        mimeType,
       };
       const current = props.attachments ?? [];
       props.onAttachmentsChange?.([...current, newAttachment]);
-    });
+    };
     reader.readAsDataURL(file);
   }
 }
 
 function renderAttachmentPreview(props: ChatProps) {
   const attachments = props.attachments ?? [];
-  if (attachments.length === 0) {
-    return nothing;
-  }
+  if (attachments.length === 0) return nothing;
 
   return html`
     <div class="chat-attachments">
@@ -172,7 +240,9 @@ function renderAttachmentPreview(props: ChatProps) {
               type="button"
               aria-label="Remove attachment"
               @click=${() => {
-                const next = (props.attachments ?? []).filter((a) => a.id !== att.id);
+                const next = (props.attachments ?? []).filter(
+                  (a) => a.id !== att.id,
+                );
                 props.onAttachmentsChange?.(next);
               }}
             >
@@ -189,7 +259,9 @@ export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
   const canAbort = Boolean(props.canAbort && props.onAbort);
-  const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
+  const activeSession = props.sessions?.sessions?.find(
+    (row) => row.key === props.sessionKey,
+  );
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
   const showReasoning = props.showThinking && reasoningLevel !== "off";
   const assistantIdentity = {
@@ -206,63 +278,82 @@ export function renderChat(props: ChatProps) {
 
   const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const handleThreadScroll = (e: Event) => {
+    props.onChatScroll?.(e);
+    const container = e.currentTarget as HTMLElement;
+    const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const main = container.closest(".chat-main");
+    if (main) {
+      main.classList.toggle("chat-main--scrolled-up", dist >= 200);
+    }
+  };
+
+  const handleScrollToBottom = (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    const thread = btn.closest(".chat-main")?.querySelector(".chat-thread");
+    if (thread) {
+      thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
+    }
+  };
+
   const thread = html`
     <div
       class="chat-thread"
       role="log"
       aria-live="polite"
-      @scroll=${props.onChatScroll}
+      @scroll=${handleThreadScroll}
     >
-      ${
-        props.loading
-          ? html`
-              <div class="muted">Loading chat…</div>
-            `
-          : nothing
-      }
-      ${repeat(
-        buildChatItems(props),
-        (item) => item.key,
-        (item) => {
-          if (item.kind === "reading-indicator") {
-            return renderReadingIndicatorGroup(assistantIdentity);
-          }
+      ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
+      ${repeat(buildChatItems(props), (item) => item.key, (item) => {
+        if (item.kind === "reading-indicator") {
+          return renderReadingIndicatorGroup(assistantIdentity);
+        }
 
-          if (item.kind === "stream") {
-            return renderStreamingGroup(
-              item.text,
-              item.startedAt,
-              props.onOpenSidebar,
-              assistantIdentity,
-            );
-          }
+        if (item.kind === "stream") {
+          return renderStreamingGroup(
+            item.text,
+            item.startedAt,
+            props.onOpenSidebar,
+            assistantIdentity,
+          );
+        }
 
-          if (item.kind === "group") {
-            return renderMessageGroup(item, {
-              onOpenSidebar: props.onOpenSidebar,
-              showReasoning,
-              assistantName: props.assistantName,
-              assistantAvatar: assistantIdentity.avatar,
-            });
-          }
+        if (item.kind === "group") {
+          return renderMessageGroup(item, {
+            onOpenSidebar: props.onOpenSidebar,
+            showReasoning,
+            assistantName: props.assistantName,
+            assistantAvatar: assistantIdentity.avatar,
+          });
+        }
 
-          return nothing;
-        },
-      )}
+        return nothing;
+      })}
     </div>
+    <button
+      class="chat-scroll-bottom"
+      type="button"
+      aria-label="Scroll to bottom"
+      @click=${handleScrollToBottom}
+    >
+      ${icons.arrowDown}
+    </button>
   `;
 
   return html`
     <section class="card chat">
-      ${props.disabledReason ? html`<div class="callout">${props.disabledReason}</div>` : nothing}
+      ${props.disabledReason
+        ? html`<div class="callout">${props.disabledReason}</div>`
+        : nothing}
 
-      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
+      ${props.error
+        ? html`<div class="callout danger">${props.error}</div>`
+        : nothing}
 
       ${renderCompactionIndicator(props.compactionStatus)}
 
-      ${
-        props.focusMode
-          ? html`
+      ${props.focusMode
+        ? html`
             <button
               class="chat-focus-exit"
               type="button"
@@ -273,8 +364,7 @@ export function renderChat(props: ChatProps) {
               ${icons.x}
             </button>
           `
-          : nothing
-      }
+        : nothing}
 
       <div
         class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
@@ -286,12 +376,12 @@ export function renderChat(props: ChatProps) {
           ${thread}
         </div>
 
-        ${
-          sidebarOpen
-            ? html`
+        ${sidebarOpen
+          ? html`
               <resizable-divider
                 .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
+                @resize=${(e: CustomEvent) =>
+                  props.onSplitRatioChange?.(e.detail.splitRatio)}
               ></resizable-divider>
               <div class="chat-sidebar">
                 ${renderMarkdownSidebar({
@@ -299,21 +389,17 @@ export function renderChat(props: ChatProps) {
                   error: props.sidebarError ?? null,
                   onClose: props.onCloseSidebar!,
                   onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) {
-                      return;
-                    }
+                    if (!props.sidebarContent || !props.onOpenSidebar) return;
                     props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
                   },
                 })}
               </div>
             `
-            : nothing
-        }
+          : nothing}
       </div>
 
-      ${
-        props.queue.length
-          ? html`
+      ${props.queue.length
+        ? html`
             <div class="chat-queue" role="status" aria-live="polite">
               <div class="chat-queue__title">Queued (${props.queue.length})</div>
               <div class="chat-queue__list">
@@ -321,10 +407,10 @@ export function renderChat(props: ChatProps) {
                   (item) => html`
                     <div class="chat-queue__item">
                       <div class="chat-queue__text">
-                        ${
-                          item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                        }
+                        ${item.text ||
+                        (item.attachments?.length
+                          ? `Image (${item.attachments.length})`
+                          : "")}
                       </div>
                       <button
                         class="btn chat-queue__remove"
@@ -340,22 +426,7 @@ export function renderChat(props: ChatProps) {
               </div>
             </div>
           `
-          : nothing
-      }
-
-      ${
-        props.showNewMessages
-          ? html`
-            <button
-              class="chat-new-messages"
-              type="button"
-              @click=${props.onScrollToBottom}
-            >
-              New messages ${icons.arrowDown}
-            </button>
-          `
-          : nothing
-      }
+        : nothing}
 
       <div class="chat-compose">
         ${renderAttachmentPreview(props)}
@@ -367,22 +438,12 @@ export function renderChat(props: ChatProps) {
               .value=${props.draft}
               ?disabled=${!props.connected}
               @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") {
-                  return;
-                }
-                if (e.isComposing || e.keyCode === 229) {
-                  return;
-                }
-                if (e.shiftKey) {
-                  return;
-                } // Allow Shift+Enter for line breaks
-                if (!props.connected) {
-                  return;
-                }
+                if (e.key !== "Enter") return;
+                if (e.isComposing || e.keyCode === 229) return;
+                if (e.shiftKey) return; // Allow Shift+Enter for line breaks
+                if (!props.connected) return;
                 e.preventDefault();
-                if (canCompose) {
-                  props.onSend();
-                }
+                if (canCompose) props.onSend();
               }}
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
@@ -415,7 +476,7 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-const CHAT_HISTORY_RENDER_LIMIT = 200;
+const CHAT_HISTORY_RENDER_LIMIT = 20;
 
 function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   const result: Array<ChatItem | MessageGroup> = [];
@@ -435,10 +496,17 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     const role = normalizeRoleForGrouping(normalized.role);
     const timestamp = normalized.timestamp || Date.now();
 
-    if (!currentGroup || currentGroup.role !== role) {
-      if (currentGroup) {
-        result.push(currentGroup);
-      }
+    // Fold chip-only tool results into the preceding assistant group
+    // so consecutive tool calls render inline instead of as separate groups.
+    const isChipOnly =
+      role === "tool" &&
+      currentGroup?.role === "assistant" &&
+      isChipOnlyMessage(item.message);
+
+    if (isChipOnly) {
+      currentGroup!.messages.push({ message: item.message, key: item.key });
+    } else if (!currentGroup || currentGroup.role !== role) {
+      if (currentGroup) result.push(currentGroup);
       currentGroup = {
         kind: "group",
         key: `group:${role}:${item.key}`,
@@ -452,9 +520,7 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     }
   }
 
-  if (currentGroup) {
-    result.push(currentGroup);
-  }
+  if (currentGroup) result.push(currentGroup);
   return result;
 }
 
@@ -469,19 +535,13 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       key: "chat:history:notice",
       message: {
         role: "system",
-        content: `Showing last ${CHAT_HISTORY_RENDER_LIMIT} messages (${historyStart} hidden).`,
+        content: `Showing most recent ${CHAT_HISTORY_RENDER_LIMIT} messages (${historyStart} older messages — scroll up or refresh to load more).`,
         timestamp: Date.now(),
       },
     });
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
-    const normalized = normalizeMessage(msg);
-
-    if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
-      continue;
-    }
-
     items.push({
       kind: "message",
       key: messageKey(msg, i),
@@ -515,24 +575,27 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   return groupMessages(items);
 }
 
+/** A tool-result message that should render as compact chips. */
+function isChipOnlyMessage(message: unknown): boolean {
+  if (!isToolResultMessage(message)) {
+    const m = message as Record<string, unknown>;
+    const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+    if (role !== "toolresult" && role !== "tool_result") return false;
+  }
+  const cards = extractToolCards(message);
+  return cards.length > 0;
+}
+
 function messageKey(message: unknown, index: number): string {
   const m = message as Record<string, unknown>;
   const toolCallId = typeof m.toolCallId === "string" ? m.toolCallId : "";
-  if (toolCallId) {
-    return `tool:${toolCallId}`;
-  }
+  if (toolCallId) return `tool:${toolCallId}`;
   const id = typeof m.id === "string" ? m.id : "";
-  if (id) {
-    return `msg:${id}`;
-  }
+  if (id) return `msg:${id}`;
   const messageId = typeof m.messageId === "string" ? m.messageId : "";
-  if (messageId) {
-    return `msg:${messageId}`;
-  }
+  if (messageId) return `msg:${messageId}`;
   const timestamp = typeof m.timestamp === "number" ? m.timestamp : null;
   const role = typeof m.role === "string" ? m.role : "unknown";
-  if (timestamp != null) {
-    return `msg:${role}:${timestamp}:${index}`;
-  }
+  if (timestamp != null) return `msg:${role}:${timestamp}:${index}`;
   return `msg:${role}:${index}`;
 }

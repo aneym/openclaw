@@ -36,6 +36,7 @@ export default defineConfig(() => {
       host: true,
       port: 5173,
       strictPort: true,
+      hmr: false,
     },
   };
 });

@@ -1,37 +1,29 @@
-import type { OpenClawApp } from "./app";
-import { refreshChat } from "./app-chat";
-import {
-  startLogsPolling,
-  stopLogsPolling,
-  startDebugPolling,
-  stopDebugPolling,
-} from "./app-polling";
-import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll";
-import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity";
-import { loadAgentSkills } from "./controllers/agent-skills";
-import { loadAgents } from "./controllers/agents";
-import { loadChannels } from "./controllers/channels";
 import { loadConfig, loadConfigSchema } from "./controllers/config";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron";
+import { loadChannels } from "./controllers/channels";
 import { loadDebug } from "./controllers/debug";
-import { loadDevices } from "./controllers/devices";
-import { loadExecApprovals } from "./controllers/exec-approvals";
 import { loadLogs } from "./controllers/logs";
+import { loadDevices } from "./controllers/devices";
 import { loadNodes } from "./controllers/nodes";
+import { loadExecApprovals } from "./controllers/exec-approvals";
 import { loadPresence } from "./controllers/presence";
 import { loadSessions } from "./controllers/sessions";
 import { loadSkills } from "./controllers/skills";
-import {
-  inferBasePathFromPathname,
-  normalizeBasePath,
-  normalizePath,
-  pathForTab,
-  tabFromPath,
-  type Tab,
-} from "./navigation";
+import { inferBasePathFromPathname, normalizeBasePath, normalizePath, pathForTab, tabFromPath, type Tab } from "./navigation";
 import { saveSettings, type UiSettings } from "./storage";
 import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
+import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll";
+import { startLogsPolling, stopLogsPolling, startDebugPolling, stopDebugPolling } from "./app-polling";
+import { refreshChat } from "./app-chat";
+import type { OpenClawApp } from "./app";
+import type { SplitPaneLayout } from "./split-tree";
+import {
+  allLeaves,
+  allLeafIds,
+  reconcileTreeWithPanes,
+  deserializeLayout,
+} from "./split-tree";
 
 type SettingsHost = {
   settings: UiSettings;
@@ -67,19 +59,15 @@ export function applySettings(host: SettingsHost, next: UiSettings) {
 
 export function setLastActiveSessionKey(host: SettingsHost, next: string) {
   const trimmed = next.trim();
-  if (!trimmed) {
-    return;
-  }
-  if (host.settings.lastActiveSessionKey === trimmed) {
-    return;
-  }
+  if (!trimmed) return;
+  if (host.settings.lastActiveSessionKey === trimmed) return;
   applySettings(host, { ...host.settings, lastActiveSessionKey: trimmed });
 }
 
-export function applySettingsFromUrl(host: SettingsHost) {
-  if (!window.location.search) {
-    return;
-  }
+export function applySettingsFromUrl(host: SettingsHost & {
+  urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
+}) {
+  if (!window.location.search) return;
   const params = new URLSearchParams(window.location.search);
   const tokenRaw = params.get("token");
   const passwordRaw = params.get("password");
@@ -99,7 +87,7 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (passwordRaw != null) {
     const password = passwordRaw.trim();
     if (password) {
-      (host as unknown as { password: string }).password = password;
+      (host as { password: string }).password = password;
     }
     params.delete("password");
     shouldCleanUrl = true;
@@ -126,36 +114,33 @@ export function applySettingsFromUrl(host: SettingsHost) {
     shouldCleanUrl = true;
   }
 
-  if (!shouldCleanUrl) {
-    return;
-  }
+  // Read pane keys from URL for later restoration in handleConnected
+  host.urlPanes = readPanesFromUrl();
+
+  if (!shouldCleanUrl) return;
   const url = new URL(window.location.href);
   url.search = params.toString();
   window.history.replaceState({}, "", url.toString());
 }
 
 export function setTab(host: SettingsHost, next: Tab) {
-  if (host.tab !== next) {
-    host.tab = next;
-  }
-  if (next === "chat") {
-    host.chatHasAutoScrolled = false;
-  }
-  if (next === "logs") {
+  if (host.tab !== next) host.tab = next;
+  if (next === "chat") host.chatHasAutoScrolled = false;
+  if (next === "logs")
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
-  } else {
-    stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
-  }
-  if (next === "debug") {
+  else stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  if (next === "debug")
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
-  } else {
-    stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
-  }
+  else stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
   void refreshActiveTab(host);
   syncUrlWithTab(host, next, false);
 }
 
-export function setTheme(host: SettingsHost, next: ThemeMode, context?: ThemeTransitionContext) {
+export function setTheme(
+  host: SettingsHost,
+  next: ThemeMode,
+  context?: ThemeTransitionContext,
+) {
   const applyTheme = () => {
     host.theme = next;
     applySettings(host, { ...host.settings, theme: next });
@@ -170,47 +155,12 @@ export function setTheme(host: SettingsHost, next: ThemeMode, context?: ThemeTra
 }
 
 export async function refreshActiveTab(host: SettingsHost) {
-  if (host.tab === "overview") {
-    await loadOverview(host);
-  }
-  if (host.tab === "channels") {
-    await loadChannelsTab(host);
-  }
-  if (host.tab === "instances") {
-    await loadPresence(host as unknown as OpenClawApp);
-  }
-  if (host.tab === "sessions") {
-    await loadSessions(host as unknown as OpenClawApp);
-  }
-  if (host.tab === "cron") {
-    await loadCron(host);
-  }
-  if (host.tab === "skills") {
-    await loadSkills(host as unknown as OpenClawApp);
-  }
-  if (host.tab === "agents") {
-    const app = host as unknown as OpenClawApp;
-    await loadAgents(app);
-    await loadConfig(app);
-    const agentIds = app.agentsList?.agents?.map((entry) => entry.id) ?? [];
-    if (agentIds.length > 0) {
-      void loadAgentIdentities(app, agentIds);
-    }
-    const agentId =
-      app.agentsSelectedId ?? app.agentsList?.defaultId ?? app.agentsList?.agents?.[0]?.id;
-    if (agentId) {
-      void loadAgentIdentity(app, agentId);
-      if (app.agentsPanel === "skills") {
-        void loadAgentSkills(app, agentId);
-      }
-      if (app.agentsPanel === "channels") {
-        void loadChannels(app, false);
-      }
-      if (app.agentsPanel === "cron") {
-        void loadCron(host);
-      }
-    }
-  }
+  if (host.tab === "overview") await loadOverview(host);
+  if (host.tab === "channels") await loadChannelsTab(host);
+  if (host.tab === "instances") await loadPresence(host as unknown as OpenClawApp);
+  if (host.tab === "sessions") await loadSessions(host as unknown as OpenClawApp);
+  if (host.tab === "cron") await loadCron(host);
+  if (host.tab === "skills") await loadSkills(host as unknown as OpenClawApp);
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as OpenClawApp);
     await loadDevices(host as unknown as OpenClawApp);
@@ -235,14 +185,15 @@ export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "logs") {
     host.logsAtBottom = true;
     await loadLogs(host as unknown as OpenClawApp, { reset: true });
-    scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
+    scheduleLogsScroll(
+      host as unknown as Parameters<typeof scheduleLogsScroll>[0],
+      true,
+    );
   }
 }
 
 export function inferBasePath() {
-  if (typeof window === "undefined") {
-    return "";
-  }
+  if (typeof window === "undefined") return "";
   const configured = window.__OPENCLAW_CONTROL_UI_BASE_PATH__;
   if (typeof configured === "string" && configured.trim()) {
     return normalizeBasePath(configured);
@@ -257,23 +208,17 @@ export function syncThemeWithSettings(host: SettingsHost) {
 
 export function applyResolvedTheme(host: SettingsHost, resolved: ResolvedTheme) {
   host.themeResolved = resolved;
-  if (typeof document === "undefined") {
-    return;
-  }
+  if (typeof document === "undefined") return;
   const root = document.documentElement;
   root.dataset.theme = resolved;
   root.style.colorScheme = resolved;
 }
 
 export function attachThemeListener(host: SettingsHost) {
-  if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return;
-  }
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
   host.themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
   host.themeMediaHandler = (event) => {
-    if (host.theme !== "system") {
-      return;
-    }
+    if (host.theme !== "system") return;
     applyResolvedTheme(host, event.matches ? "dark" : "light");
   };
   if (typeof host.themeMedia.addEventListener === "function") {
@@ -287,9 +232,7 @@ export function attachThemeListener(host: SettingsHost) {
 }
 
 export function detachThemeListener(host: SettingsHost) {
-  if (!host.themeMedia || !host.themeMediaHandler) {
-    return;
-  }
+  if (!host.themeMedia || !host.themeMediaHandler) return;
   if (typeof host.themeMedia.removeEventListener === "function") {
     host.themeMedia.removeEventListener("change", host.themeMediaHandler);
     return;
@@ -303,22 +246,21 @@ export function detachThemeListener(host: SettingsHost) {
 }
 
 export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
+  if (typeof window === "undefined") return;
   const resolved = tabFromPath(window.location.pathname, host.basePath) ?? "chat";
   setTabFromRoute(host, resolved);
   syncUrlWithTab(host, resolved, replace);
 }
 
-export function onPopState(host: SettingsHost) {
-  if (typeof window === "undefined") {
-    return;
-  }
+export function onPopState(host: SettingsHost & {
+  splitLayout: SplitPaneLayout | null;
+  focusedPaneId: string | null;
+  syncPaneStatesFromLayout?: () => void;
+  restoreSplitLayout?: () => void;
+}) {
+  if (typeof window === "undefined") return;
   const resolved = tabFromPath(window.location.pathname, host.basePath);
-  if (!resolved) {
-    return;
-  }
+  if (!resolved) return;
 
   const url = new URL(window.location.href);
   const session = url.searchParams.get("session")?.trim();
@@ -331,35 +273,43 @@ export function onPopState(host: SettingsHost) {
     });
   }
 
+  // Restore split pane state from URL
+  const urlPanes = readPanesFromUrl();
+  if (urlPanes && urlPanes.paneKeys.length > 1) {
+    const layout = restoreSplitLayoutFromUrl(
+      urlPanes.paneKeys,
+      urlPanes.focusIndex,
+      host.settings.splitLayout,
+    );
+    if (layout) {
+      host.splitLayout = layout;
+      host.focusedPaneId = layout.focusedPaneId;
+      host.syncPaneStatesFromLayout?.();
+    }
+  } else if (!urlPanes && host.splitLayout) {
+    // No panes in URL → exit split mode
+    host.splitLayout = null;
+    host.focusedPaneId = null;
+    host.syncPaneStatesFromLayout?.();
+  }
+
   setTabFromRoute(host, resolved);
 }
 
 export function setTabFromRoute(host: SettingsHost, next: Tab) {
-  if (host.tab !== next) {
-    host.tab = next;
-  }
-  if (next === "chat") {
-    host.chatHasAutoScrolled = false;
-  }
-  if (next === "logs") {
+  if (host.tab !== next) host.tab = next;
+  if (next === "chat") host.chatHasAutoScrolled = false;
+  if (next === "logs")
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
-  } else {
-    stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
-  }
-  if (next === "debug") {
+  else stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  if (next === "debug")
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
-  } else {
-    stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
-  }
-  if (host.connected) {
-    void refreshActiveTab(host);
-  }
+  else stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
+  if (host.connected) void refreshActiveTab(host);
 }
 
 export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
+  if (typeof window === "undefined") return;
   const targetPath = normalizePath(pathForTab(tab, host.basePath));
   const currentPath = normalizePath(window.location.pathname);
   const url = new URL(window.location.href);
@@ -381,17 +331,76 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
   }
 }
 
-export function syncUrlWithSessionKey(sessionKey: string, replace: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
+export function syncUrlWithSessionKey(
+  host: SettingsHost,
+  sessionKey: string,
+  replace: boolean,
+) {
+  if (typeof window === "undefined") return;
   const url = new URL(window.location.href);
   url.searchParams.set("session", sessionKey);
-  if (replace) {
-    window.history.replaceState({}, "", url.toString());
+  if (replace) window.history.replaceState({}, "", url.toString());
+  else window.history.pushState({}, "", url.toString());
+}
+
+type PanesSyncHost = SettingsHost & {
+  splitLayout: SplitPaneLayout | null;
+  focusedPaneId: string | null;
+};
+
+export function syncUrlWithPanes(host: PanesSyncHost, replace: boolean) {
+  if (typeof window === 'undefined') return
+  const url = new URL(window.location.href)
+
+  if (host.splitLayout) {
+    const leaves = allLeaves(host.splitLayout.root)
+    const paneKeys = leaves.map((l) => l.threadId)
+    url.searchParams.set('panes', paneKeys.join(','))
+
+    const focusIdx = host.focusedPaneId
+      ? leaves.findIndex((l) => l.id === host.focusedPaneId)
+      : 0
+    if (focusIdx > 0) url.searchParams.set('focus', String(focusIdx))
+    else url.searchParams.delete('focus')
+
+    // Keep session= in sync with focused pane
+    const focusedKey = paneKeys[Math.max(0, focusIdx)]
+    if (focusedKey) url.searchParams.set('session', focusedKey)
   } else {
-    window.history.pushState({}, "", url.toString());
+    url.searchParams.delete('panes')
+    url.searchParams.delete('focus')
   }
+
+  if (replace) window.history.replaceState({}, '', url.toString())
+  else window.history.pushState({}, '', url.toString())
+}
+
+/** Read panes from the current URL. Returns null if no panes param present. */
+export function readPanesFromUrl(): { paneKeys: string[]; focusIndex: number } | null {
+  if (typeof window === 'undefined') return null
+  const params = new URLSearchParams(window.location.search)
+  const panesRaw = params.get('panes')
+  if (!panesRaw) return null
+  const paneKeys = panesRaw.split(',').map((k) => k.trim()).filter(Boolean)
+  if (paneKeys.length === 0) return null
+  const focusRaw = params.get('focus')
+  const focusIndex = focusRaw ? Math.max(0, parseInt(focusRaw, 10) || 0) : 0
+  return { paneKeys, focusIndex }
+}
+
+/** Restore a split layout from URL pane keys, reconciling with localStorage tree structure. */
+export function restoreSplitLayoutFromUrl(
+  paneKeys: string[],
+  focusIndex: number,
+  existingLayoutJson: string | null,
+): SplitPaneLayout | null {
+  if (paneKeys.length <= 1) return null
+  const existingLayout = existingLayoutJson ? deserializeLayout(existingLayoutJson) : null
+  const root = reconcileTreeWithPanes(existingLayout?.root ?? null, paneKeys)
+  const leaves = allLeaves(root)
+  const clampedFocus = Math.min(focusIndex, leaves.length - 1)
+  const focusedPaneId = leaves[clampedFocus]?.id ?? allLeafIds(root)[0]
+  return { root, focusedPaneId }
 }
 
 export async function loadOverview(host: SettingsHost) {

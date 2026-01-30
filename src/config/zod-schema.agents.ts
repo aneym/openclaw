@@ -3,10 +3,13 @@ import { AgentDefaultsSchema } from "./zod-schema.agent-defaults.js";
 import { AgentEntrySchema } from "./zod-schema.agent-runtime.js";
 import { TranscribeAudioSchema } from "./zod-schema.core.js";
 
+export const AgentRuntimeSchema = z.enum(["pi", "claude-agent-sdk"]);
+
 export const AgentsSchema = z
   .object({
     defaults: z.lazy(() => AgentDefaultsSchema).optional(),
     list: z.array(AgentEntrySchema).optional(),
+    runtime: AgentRuntimeSchema.optional(),
   })
   .strict()
   .optional();

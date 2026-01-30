@@ -9,6 +9,7 @@ export {
 } from "./pi-embedded-runner/history.js";
 export { resolveEmbeddedSessionLane } from "./pi-embedded-runner/lanes.js";
 export { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
+export { runAgent } from "./runtime-dispatcher.js";
 export {
   abortEmbeddedPiRun,
   isEmbeddedPiRunActive,

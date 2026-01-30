@@ -381,6 +381,7 @@ export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
+  icon?: string;
   displayName?: string;
   surface?: string;
   subject?: string;
@@ -400,6 +401,7 @@ export type GatewaySessionRow = {
   model?: string;
   modelProvider?: string;
   contextTokens?: number;
+  derivedTitle?: string;
 };
 
 export type SessionsListResult = {
