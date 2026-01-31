@@ -32,6 +32,7 @@ import {
   validateChatHistoryParams,
   validateChatInjectParams,
   validateChatSendParams,
+  validateChatStatusParams,
 } from "../protocol/index.js";
 import { getMaxChatHistoryMessagesBytes } from "../server-constants.js";
 import {
@@ -692,5 +693,27 @@ export const chatHandlers: GatewayRequestHandlers = {
     context.nodeSendToSession(p.sessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId });
+  },
+  "chat.status": ({ params, respond, context }) => {
+    if (!validateChatStatusParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid chat.status params: ${formatValidationErrors(validateChatStatusParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const { sessionKey } = params as { sessionKey: string };
+    // Find an active run for this session key
+    for (const [runId, entry] of context.chatAbortControllers) {
+      if (entry.sessionKey === sessionKey) {
+        respond(true, { activeRun: { runId } });
+        return;
+      }
+    }
+    respond(true, { activeRun: null });
   },
 };

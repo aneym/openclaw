@@ -1358,8 +1358,9 @@
 }
 
 .chat-compose__field textarea:focus {
-  border-color: var(--ring);
-  box-shadow: var(--focus-ring);
+  border-color: var(--border);
+  box-shadow: none;
+  outline: none;
 }
 
 .chat-compose__field textarea:disabled {

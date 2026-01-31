@@ -7,13 +7,14 @@ import { renderChat, type ChatProps } from './chat'
 import type { AppViewState } from '../app-view-state'
 import type { PaneState } from '../pane-state'
 import type { SplitLeaf } from '../split-tree'
-import { allLeafIds } from '../split-tree'
-import { getDragData, hasDragData, resolveDropZone, dropZoneToDirection } from '../split-dnd'
+import { allLeafIds, allLeaves } from '../split-tree'
+import { getDragData, getDragPaneData, hasDragData, hasDragPaneData, hasAnyDragData, setDragPaneData, resolveDropZone, dropZoneToDirection } from '../split-dnd'
 import { createThreadDescriptor, createThreadState } from '../thread-state'
 import { saveThreadDescriptors } from '../thread-storage'
 import type { PaneContextMenuCallbacks } from '../components/pane-context-menu'
 import '../components/pane-context-menu'
 import { humanizeSessionKey } from './thread-list'
+import { patchSession } from '../controllers/sessions'
 
 export interface ChatPaneProps {
   leaf: SplitLeaf
@@ -34,6 +35,13 @@ export function renderChatPane(props: ChatPaneProps) {
   const isActiveSession = sessionKey === state.sessionKey
   const threadMapId = state.sessionKeyToThreadId.get(sessionKey)
   const thread = threadMapId ? state.threads.get(threadMapId) : null
+
+  // Collect session keys visible in all panes (for the session picker)
+  const openSessionKeys = new Set(
+    state.splitLayout
+      ? allLeaves(state.splitLayout.root).map((l) => l.threadId)
+      : [sessionKey],
+  )
 
   const chatProps: ChatProps = {
     sessionKey,
@@ -132,32 +140,81 @@ export function renderChatPane(props: ChatPaneProps) {
     },
     assistantName: state.assistantName,
     assistantAvatar: state.assistantAvatar,
+    openSessionKeys,
   }
 
   const handleDragOver = (e: DragEvent) => {
-    if (!hasDragData(e)) return
+    if (!hasAnyDragData(e)) return
     e.preventDefault()
     if (e.dataTransfer) e.dataTransfer.dropEffect = 'move'
+
+    // Visual drop indicator for pane drags
+    if (hasDragPaneData(e)) {
+      const paneEl = e.currentTarget as HTMLElement
+      const titlebar = paneEl.querySelector('.split-pane__titlebar')
+      const onTitlebar = titlebar && (e.target === titlebar || titlebar.contains(e.target as Node))
+      if (onTitlebar) {
+        paneEl.setAttribute('data-drop-zone', 'swap')
+      } else {
+        const zone = resolveDropZone(e, paneEl)
+        paneEl.setAttribute('data-drop-zone', zone)
+      }
+    }
+  }
+
+  const handleDragLeave = (e: DragEvent) => {
+    const paneEl = e.currentTarget as HTMLElement
+    // Only remove if we actually left the pane (not entering a child)
+    if (!paneEl.contains(e.relatedTarget as Node)) {
+      paneEl.removeAttribute('data-drop-zone')
+    }
   }
 
   const handleDrop = (e: DragEvent) => {
     e.preventDefault()
+    const paneEl = e.currentTarget as HTMLElement
+    paneEl.removeAttribute('data-drop-zone')
+
+    // Pane-to-pane rearrange
+    const sourcePaneId = getDragPaneData(e)
+    if (sourcePaneId && sourcePaneId !== leaf.id) {
+      // Drop on titlebar = swap contents
+      const titlebar = paneEl.querySelector('.split-pane__titlebar')
+      const onTitlebar = titlebar && (e.target === titlebar || titlebar.contains(e.target as Node))
+      if (onTitlebar) {
+        state.swapPanes(sourcePaneId, leaf.id)
+      } else {
+        // Body edge drop = move source beside target
+        const zone = resolveDropZone(e, paneEl)
+        const direction = zone === 'left' || zone === 'right' ? 'horizontal' : 'vertical'
+        const position = zone === 'left' || zone === 'top' ? 'before' : 'after'
+        state.movePaneBeside(sourcePaneId, leaf.id, direction, position)
+      }
+      return
+    }
+
+    // Session drag from sidebar
     const sessionKey = getDragData(e)
     if (!sessionKey) return
-    const zone = resolveDropZone(e, e.currentTarget as HTMLElement)
+    const zone = resolveDropZone(e, paneEl)
     const direction = dropZoneToDirection(zone)
     if (direction) {
-      // Edge drop: split this pane
       state.focusPane(leaf.id)
       state.splitPane(direction)
-      // Set the new pane's thread to the dragged session
-      // The newly created pane is now focused
       if (state.focusedPaneId) {
         state.setThreadInPane(state.focusedPaneId, sessionKey)
       }
     } else {
-      // Center drop: replace this pane's thread
       state.setThreadInPane(leaf.id, sessionKey)
+    }
+  }
+
+  const handleTitlebarDragStart = (e: DragEvent) => {
+    setDragPaneData(e, leaf.id)
+    // Subtle ghost effect
+    if (e.dataTransfer) {
+      const titlebar = e.currentTarget as HTMLElement
+      e.dataTransfer.setDragImage(titlebar, titlebar.offsetWidth / 2, titlebar.offsetHeight / 2)
     }
   }
 
@@ -232,10 +289,15 @@ export function renderChatPane(props: ChatPaneProps) {
       @click=${() => state.focusPane(leaf.id)}
       @focusin=${() => state.focusPane(leaf.id)}
       @dragover=${handleDragOver}
+      @dragleave=${handleDragLeave}
       @drop=${handleDrop}
       @contextmenu=${handleContextMenu}
     >
-      <div class="split-pane__titlebar ${isFocused ? 'split-pane__titlebar--focused' : ''}">
+      <div
+        class="split-pane__titlebar ${isFocused ? 'split-pane__titlebar--focused' : ''}"
+        draggable="true"
+        @dragstart=${handleTitlebarDragStart}
+      >
         <span class="split-pane__titlebar-label" title=${sessionKey}>
           ${paneTitle}
         </span>
@@ -246,6 +308,30 @@ export function renderChatPane(props: ChatPaneProps) {
               ? html`<span class="split-pane__titlebar-status">${msgCount} msgs</span>`
               : html`<span class="split-pane__titlebar-status split-pane__titlebar-status--empty">empty</span>`}
         </span>
+        <button
+          class="split-pane__titlebar-reset"
+          title="Reset session"
+          @click=${(e: Event) => {
+            e.stopPropagation()
+            state.chatMessage = ''
+            state.chatMessages = []
+            state.chatToolMessages = []
+            state.chatStream = null
+            state.chatStreamStartedAt = null
+            state.chatRunId = null
+            state.resetToolStream()
+            state.resetChatScroll()
+          }}
+        ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8a6 6 0 0110.472-4"/><path d="M14 8a6 6 0 01-10.472 4"/><path d="M12.5 1v3.5H9"/><path d="M3.5 15v-3.5H7"/></svg></button>
+        <button
+          class="split-pane__titlebar-archive"
+          title="Archive session"
+          @click=${(e: Event) => {
+            e.stopPropagation()
+            void patchSession(state, sessionKey, { archived: true })
+            state.closePane(leaf.id)
+          }}
+        ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>
         <button
           class="split-pane__titlebar-close"
           title="Close pane"

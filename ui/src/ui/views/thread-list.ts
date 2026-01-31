@@ -28,21 +28,46 @@ export interface NavSessionEntry {
   kind?: string
   updatedAt?: number | null
   derivedTitle?: string
+  archivedAt?: number
 }
 
 export interface NavThreadListProps {
   sessions: NavSessionEntry[]
   activeSessionKey: string
   unreadCounts: Map<string, number>
+  runningSessions: Set<string>
+  openPaneKeys: Set<string>
   onSelect: (sessionKey: string) => void
   onRename: (sessionKey: string, label: string) => void
   onDelete: (sessionKey: string) => void
+  onArchive: (sessionKey: string) => void
+  onUnarchive: (sessionKey: string) => void
   onNewSession: () => void
   onRequestUpdate: () => void
 }
 
-// Module-level UI state for group collapse/expand (persists across re-renders)
-const collapsedGroups = new Set<string>(['Automated'])
+// Persist thread-group collapse state in localStorage
+const THREAD_GROUPS_KEY = 'openclaw.threadGroupsCollapsed'
+const DEFAULT_COLLAPSED = ['Older', 'Automated', 'Archived']
+
+function loadCollapsedGroups(): Set<string> {
+  try {
+    const raw = localStorage.getItem(THREAD_GROUPS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr)) return new Set(arr)
+    }
+  } catch { /* ignore */ }
+  return new Set(DEFAULT_COLLAPSED)
+}
+
+function saveCollapsedGroups(groups: Set<string>) {
+  try {
+    localStorage.setItem(THREAD_GROUPS_KEY, JSON.stringify([...groups]))
+  } catch { /* ignore */ }
+}
+
+const collapsedGroups = loadCollapsedGroups()
 const expandedGroups = new Set<string>()
 
 // Module-level search state (persists across re-renders)
@@ -92,37 +117,6 @@ function handleInlineRename(
   }
 }
 
-/** Extract the channel name from a session key like "agent:main:telegram:dm:123" */
-function parseChannel(key: string): string {
-  const parts = key.split(':')
-  // Patterns: "agent:<id>:<channel>:..." or "<channel>:..." or just "main"
-  if (parts.length >= 3 && parts[0] === 'agent') return parts[2]
-  if (parts.length >= 2) return parts[0]
-  return 'web'
-}
-
-const CHANNEL_ICONS: Record<string, string> = {
-  telegram: '✈️',
-  discord: '🎮',
-  whatsapp: '💬',
-  slack: '💼',
-  signal: '🔒',
-  imessage: '🍎',
-  web: '🌐',
-  matrix: '🔷',
-  msteams: '🟣',
-  line: '🟢',
-  nostr: '🟡',
-  voice: '🎙️',
-  cron: '⏰',
-  main: '💻',
-}
-
-function channelIcon(key: string): string {
-  const ch = parseChannel(key)
-  return CHANNEL_ICONS[ch] ?? '💻'
-}
-
 /** Check if a session is a cron/automated session */
 function isCronSession(entry: NavSessionEntry): boolean {
   const key = entry.key.toLowerCase()
@@ -130,7 +124,7 @@ function isCronSession(entry: NavSessionEntry): boolean {
 }
 
 function sessionDisplayLabel(entry: NavSessionEntry): string {
-  return entry.displayName || entry.label || humanizeSessionKey(entry.key)
+  return entry.label || entry.displayName || humanizeSessionKey(entry.key)
 }
 
 /** Turn a raw session key into a human-readable short label. */
@@ -178,40 +172,57 @@ function matchesThreadSearch(entry: NavSessionEntry, needle: string): boolean {
 
 interface SessionGroup {
   label: string
-  icon: string
   sessions: NavSessionEntry[]
 }
 
-function groupSessions(sessions: NavSessionEntry[]): SessionGroup[] {
-  const direct: NavSessionEntry[] = []
+const ACTIVE_THRESHOLD_MS = 1_200_000 // 20 minutes
+
+function groupSessions(sessions: NavSessionEntry[], openPaneKeys?: Set<string>): SessionGroup[] {
+  const now = Date.now()
+  const active: NavSessionEntry[] = []
+  const older: NavSessionEntry[] = []
+  const archived: NavSessionEntry[] = []
   const automated: NavSessionEntry[] = []
 
   for (const s of sessions) {
-    if (isCronSession(s)) {
+    if (s.archivedAt) {
+      archived.push(s)
+    } else if (isCronSession(s)) {
       automated.push(s)
+    } else if (
+      (s.updatedAt && now - s.updatedAt < ACTIVE_THRESHOLD_MS) ||
+      openPaneKeys?.has(s.key)
+    ) {
+      active.push(s)
     } else {
-      direct.push(s)
+      older.push(s)
     }
   }
 
   const groups: SessionGroup[] = []
 
-  if (direct.length > 0) {
-    groups.push({ label: 'Conversations', icon: '💬', sessions: direct })
+  if (active.length > 0) {
+    groups.push({ label: 'Active', sessions: active })
+  }
+  if (older.length > 0) {
+    groups.push({ label: 'Older', sessions: older })
   }
   if (automated.length > 0) {
-    groups.push({ label: 'Automated', icon: '⏰', sessions: automated })
+    groups.push({ label: 'Automated', sessions: automated })
+  }
+  if (archived.length > 0) {
+    groups.push({ label: 'Archived', sessions: archived })
   }
 
   return groups
 }
 
 export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
-  const { sessions, activeSessionKey, unreadCounts, onSelect, onRename, onDelete, onNewSession, onRequestUpdate } = props
+  const { sessions, activeSessionKey, unreadCounts, runningSessions, openPaneKeys, onSelect, onRename, onDelete, onArchive, onUnarchive, onNewSession, onRequestUpdate } = props
   const filtered = threadSearchQuery
     ? sessions.filter((s) => matchesThreadSearch(s, threadSearchQuery))
     : sessions
-  const groups = groupSessions(filtered)
+  const groups = groupSessions(filtered, openPaneKeys)
 
   return html`
     <div class="nav-threads">
@@ -259,6 +270,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
           ? allSessions
           : allSessions.slice(0, MAX_VISIBLE)
         const hiddenCount = allSessions.length - visibleSessions.length
+        const isArchivedGroup = group.label === 'Archived'
 
         return html`
           <div class="nav-threads__group">
@@ -270,14 +282,14 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                 } else {
                   collapsedGroups.add(group.label)
                 }
+                saveCollapsedGroups(collapsedGroups)
                 onRequestUpdate()
               }}
               title="${isCollapsed ? 'Expand' : 'Collapse'} ${group.label}"
             >
               <span class="nav-threads__group-chevron">${isCollapsed ? '▸' : '▾'}</span>
-              <span>${group.icon}</span>
               <span class="nav-threads__group-text">${group.label}</span>
-              <span class="nav-threads__group-count">${allSessions.length}</span>
+              ${group.label !== 'Archived' ? html`<span class="nav-threads__group-count">${allSessions.length}</span>` : nothing}
             </button>
             ${!isCollapsed ? html`
               <div class="nav-threads__group-items">
@@ -286,18 +298,18 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                   (s) => s.key,
                   (s) => {
                     const isActive = s.key === activeSessionKey
+                    const isOpenInPane = openPaneKeys.has(s.key)
+                    const isRunning = runningSessions.has(s.key)
                     const unread = unreadCounts.get(s.key) ?? 0
                     const label = sessionDisplayLabel(s)
-                    const icon = s.icon || channelIcon(s.key)
                     return html`
                       <button
-                        class="nav-thread-item ${isActive ? 'nav-thread-item--active' : ''}"
+                        class="nav-thread-item ${isActive ? 'nav-thread-item--active' : ''} ${isOpenInPane && !isActive ? 'nav-thread-item--open' : ''} ${isRunning && !isActive ? 'nav-thread-item--running' : ''}"
                         draggable="true"
                         @dragstart=${(e: DragEvent) => setDragData(e, s.key)}
                         @click=${() => onSelect(s.key)}
                         title="${label}\n${s.key}"
                       >
-                        <span class="nav-thread-item__icon">${icon}</span>
                         <span
                           class="nav-thread-item__label"
                           @dblclick=${(e: Event) => handleInlineRename(e, s.key, label, onRename)}
@@ -306,6 +318,25 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                           ? html`<span class="nav-thread-item__unread" aria-label="${unread} unread">${unread}</span>`
                           : nothing}
                         ${s.updatedAt ? html`<span class="nav-thread-item__time">${compactAgo(s.updatedAt)}</span>` : nothing}
+                        ${isArchivedGroup
+                          ? html`<button
+                              class="nav-thread-item__archive"
+                              @click=${(e: Event) => {
+                                e.stopPropagation()
+                                onUnarchive(s.key)
+                              }}
+                              title="Unarchive session"
+                              aria-label="Unarchive session"
+                            ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 12V8m0 0l2 2m-2-2l-2 2"/></svg></button>`
+                          : html`<button
+                              class="nav-thread-item__archive"
+                              @click=${(e: Event) => {
+                                e.stopPropagation()
+                                onArchive(s.key)
+                              }}
+                              title="Archive session"
+                              aria-label="Archive session"
+                            ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>`}
                         <button
                           class="nav-thread-item__delete"
                           @click=${(e: Event) => {

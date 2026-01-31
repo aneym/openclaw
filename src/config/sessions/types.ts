@@ -94,6 +94,8 @@ export type SessionEntry = {
   lastThreadId?: string | number;
   skillsSnapshot?: SessionSkillSnapshot;
   systemPromptReport?: SessionSystemPromptReport;
+  /** Timestamp (ms) when this session was archived by the user, or undefined if not archived. */
+  archivedAt?: number;
 };
 
 export function mergeSessionEntry(

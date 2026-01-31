@@ -129,14 +129,38 @@
   color: var(--text);
 }
 
+/* Focused pane */
 .nav-thread-item--active {
   background: var(--panel-strong);
   color: var(--text);
   font-weight: 500;
+  border-left: 2px solid var(--accent);
+  padding-left: 26px;
 }
 
 .nav-thread-item--active:hover {
   background: var(--panel-strong);
+}
+
+/* Open in a pane (not focused) */
+.nav-thread-item--open {
+  color: var(--text);
+  border-left: 2px solid var(--border);
+  padding-left: 26px;
+}
+
+/* Active agent run — upgrade border color */
+.nav-thread-item--running {
+  border-left-color: var(--accent);
+}
+
+.nav-thread-item--running .nav-thread-item__label {
+  animation: thread-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes thread-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .nav-thread-item__icon {
@@ -180,6 +204,30 @@
 
 .nav-thread-item:hover .nav-thread-item__time {
   display: none;
+}
+
+.nav-thread-item__archive {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 1px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  opacity: 0.5;
+  transition: opacity 0.1s ease;
+}
+
+.nav-thread-item:hover .nav-thread-item__archive {
+  display: inline-flex;
+}
+
+.nav-thread-item__archive:hover {
+  opacity: 1;
+  color: var(--text);
 }
 
 .nav-thread-item__delete {

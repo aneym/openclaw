@@ -60,6 +60,7 @@ export async function patchSession(
     thinkingLevel?: string | null;
     verboseLevel?: string | null;
     reasoningLevel?: string | null;
+    archived?: boolean | null;
   },
 ) {
   if (!state.client || !state.connected) return;
@@ -69,6 +70,7 @@ export async function patchSession(
   if ("thinkingLevel" in patch) params.thinkingLevel = patch.thinkingLevel;
   if ("verboseLevel" in patch) params.verboseLevel = patch.verboseLevel;
   if ("reasoningLevel" in patch) params.reasoningLevel = patch.reasoningLevel;
+  if ("archived" in patch) params.archived = patch.archived;
   try {
     await state.client.request("sessions.patch", params);
     await loadSessions(state);

@@ -14,11 +14,18 @@ export type UiSettings = {
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   splitLayout: string | null; // Serialized SplitPaneLayout (null = single pane mode)
   navCollapsed: boolean; // Collapsible sidebar state
+  navWidth: number; // Sidebar width in px (0 = use CSS default)
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
 };
 
 export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
+    if (import.meta.env.DEV) {
+      const port = typeof __OPENCLAW_DEV_GATEWAY_PORT__ === 'string'
+        ? __OPENCLAW_DEV_GATEWAY_PORT__
+        : '18789';
+      return `ws://localhost:${port}`;
+    }
     const proto = location.protocol === "https:" ? "wss" : "ws";
     return `${proto}://${location.host}`;
   })();
@@ -35,14 +42,13 @@ export function loadSettings(): UiSettings {
     splitRatio: 0.6,
     splitLayout: null,
     navCollapsed: false,
+    navWidth: 0,
     navGroupsCollapsed: {},
   };
 
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) {
-      return defaults;
-    }
+    if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<UiSettings>;
     return {
       gatewayUrl:
@@ -55,9 +61,11 @@ export function loadSettings(): UiSettings {
           ? parsed.sessionKey.trim()
           : defaults.sessionKey,
       lastActiveSessionKey:
-        typeof parsed.lastActiveSessionKey === "string" && parsed.lastActiveSessionKey.trim()
+        typeof parsed.lastActiveSessionKey === "string" &&
+        parsed.lastActiveSessionKey.trim()
           ? parsed.lastActiveSessionKey.trim()
-          : (typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()) ||
+          : (typeof parsed.sessionKey === "string" &&
+              parsed.sessionKey.trim()) ||
             defaults.lastActiveSessionKey,
       lastActiveThreadId:
         typeof parsed.lastActiveThreadId === "string" &&
@@ -65,11 +73,15 @@ export function loadSettings(): UiSettings {
           ? parsed.lastActiveThreadId.trim()
           : defaults.lastActiveThreadId,
       theme:
-        parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
+        parsed.theme === "light" ||
+        parsed.theme === "dark" ||
+        parsed.theme === "system"
           ? parsed.theme
           : defaults.theme,
       chatFocusMode:
-        typeof parsed.chatFocusMode === "boolean" ? parsed.chatFocusMode : defaults.chatFocusMode,
+        typeof parsed.chatFocusMode === "boolean"
+          ? parsed.chatFocusMode
+          : defaults.chatFocusMode,
       chatShowThinking:
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
@@ -85,9 +97,18 @@ export function loadSettings(): UiSettings {
           ? parsed.splitLayout
           : defaults.splitLayout,
       navCollapsed:
-        typeof parsed.navCollapsed === "boolean" ? parsed.navCollapsed : defaults.navCollapsed,
+        typeof parsed.navCollapsed === "boolean"
+          ? parsed.navCollapsed
+          : defaults.navCollapsed,
+      navWidth:
+        typeof parsed.navWidth === "number" &&
+        parsed.navWidth >= 140 &&
+        parsed.navWidth <= 500
+          ? parsed.navWidth
+          : defaults.navWidth,
       navGroupsCollapsed:
-        typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
+        typeof parsed.navGroupsCollapsed === "object" &&
+        parsed.navGroupsCollapsed !== null
           ? parsed.navGroupsCollapsed
           : defaults.navGroupsCollapsed,
     };

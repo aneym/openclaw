@@ -16,6 +16,7 @@ type ShortcutHost = {
   splitPane: (direction: 'horizontal' | 'vertical') => void
   closePane: (paneId?: string) => void
   focusNextPane: () => void
+  toggleNav: () => void
 }
 
 let handler: ((e: KeyboardEvent) => void) | null = null
@@ -24,10 +25,18 @@ export function installKeyboardShortcuts(host: ShortcutHost) {
   removeKeyboardShortcuts()
 
   handler = (e: KeyboardEvent) => {
+    const isMeta = e.metaKey || e.ctrlKey
+
+    // Cmd+\ -> toggle sidebar (global, works on all tabs)
+    if (isMeta && e.key === '\\') {
+      e.preventDefault()
+      e.stopPropagation()
+      host.toggleNav()
+      return
+    }
+
     // Only active on the chat tab
     if (host.tab !== 'chat') return
-
-    const isMeta = e.metaKey || e.ctrlKey
 
     // Cmd+D -> split horizontal
     if (isMeta && !e.shiftKey && e.key === 'd') {

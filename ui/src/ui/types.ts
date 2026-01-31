@@ -402,6 +402,7 @@ export type GatewaySessionRow = {
   modelProvider?: string;
   contextTokens?: number;
   derivedTitle?: string;
+  archivedAt?: number;
 };
 
 export type SessionsListResult = {

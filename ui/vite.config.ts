@@ -21,6 +21,8 @@ function normalizeBase(input: string): string {
 export default defineConfig(() => {
   const envBase = process.env.OPENCLAW_CONTROL_UI_BASE_PATH?.trim();
   const base = envBase ? normalizeBase(envBase) : "./";
+  const gatewayPort = process.env.OPENCLAW_GATEWAY_PORT || "18789";
+  const gatewayOrigin = `http://localhost:${gatewayPort}`;
   return {
     base,
     publicDir: path.resolve(here, "public"),
@@ -32,11 +34,17 @@ export default defineConfig(() => {
       emptyOutDir: true,
       sourcemap: true,
     },
+    define: {
+      __OPENCLAW_DEV_GATEWAY_PORT__: JSON.stringify(gatewayPort),
+    },
     server: {
       host: true,
       port: 5173,
       strictPort: true,
-      hmr: false,
+      proxy: {
+        "/api": { target: gatewayOrigin, changeOrigin: true },
+        "/avatar": { target: gatewayOrigin, changeOrigin: true },
+      },
     },
   };
 });

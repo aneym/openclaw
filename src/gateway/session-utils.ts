@@ -157,6 +157,11 @@ export function deriveSessionTitle(
     return undefined;
   }
 
+  // User-set label always takes priority over auto-derived displayName.
+  if (entry.label?.trim()) {
+    return entry.label.trim();
+  }
+
   if (entry.displayName?.trim()) {
     return entry.displayName.trim();
   }
@@ -609,6 +614,7 @@ export function listSessionsFromStore(params: {
       const origin = entry?.origin;
       const originLabel = origin?.label;
       const displayName =
+        entry?.label ??
         entry?.displayName ??
         (channel
           ? buildGroupDisplayName({
@@ -620,7 +626,6 @@ export function listSessionsFromStore(params: {
               key,
             })
           : undefined) ??
-        entry?.label ??
         originLabel;
       const deliveryFields = normalizeSessionDeliveryFields(entry);
       return {
@@ -656,6 +661,7 @@ export function listSessionsFromStore(params: {
         lastChannel: deliveryFields.lastChannel ?? entry?.lastChannel,
         lastTo: deliveryFields.lastTo ?? entry?.lastTo,
         lastAccountId: deliveryFields.lastAccountId ?? entry?.lastAccountId,
+        archivedAt: entry?.archivedAt,
       };
     })
     .toSorted((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));

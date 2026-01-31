@@ -99,7 +99,18 @@ describe("deriveSessionTitle", () => {
     expect(deriveSessionTitle(undefined)).toBeUndefined();
   });
 
-  test("prefers displayName when set", () => {
+  test("prefers label over displayName when both set", () => {
+    const entry = {
+      sessionId: "abc123",
+      updatedAt: Date.now(),
+      label: "User Renamed Session",
+      displayName: "Auto Derived Name",
+      subject: "Group Chat",
+    } as SessionEntry;
+    expect(deriveSessionTitle(entry)).toBe("User Renamed Session");
+  });
+
+  test("falls back to displayName when label is missing", () => {
     const entry = {
       sessionId: "abc123",
       updatedAt: Date.now(),
@@ -107,6 +118,16 @@ describe("deriveSessionTitle", () => {
       subject: "Group Chat",
     } as SessionEntry;
     expect(deriveSessionTitle(entry)).toBe("My Custom Session");
+  });
+
+  test("ignores empty label and falls to displayName", () => {
+    const entry = {
+      sessionId: "abc123",
+      updatedAt: Date.now(),
+      label: "   ",
+      displayName: "Auto Derived",
+    } as SessionEntry;
+    expect(deriveSessionTitle(entry)).toBe("Auto Derived");
   });
 
   test("falls back to subject when displayName is missing", () => {
@@ -200,7 +221,6 @@ describe("listSessionsFromStore search", () => {
       sessionId: "sess-work-1",
       updatedAt: Date.now(),
       displayName: "Work Project Alpha",
-      label: "work",
     } as SessionEntry,
     "agent:main:personal-chat": {
       sessionId: "sess-personal-1",
@@ -330,5 +350,66 @@ describe("listSessionsFromStore search", () => {
       opts: { search: "  personal  " },
     });
     expect(result.sessions.length).toBe(1);
+  });
+});
+
+describe("listSessionsFromStore label priority", () => {
+  const baseCfg = {
+    session: { mainKey: "main" },
+    agents: { list: [{ id: "main", default: true }] },
+  } as OpenClawConfig;
+
+  test("label takes precedence over displayName in output", () => {
+    const store: Record<string, SessionEntry> = {
+      "agent:main:some-session": {
+        sessionId: "sess-1",
+        updatedAt: Date.now(),
+        displayName: "webchat:g-some-ugly-auto-derived-name",
+        label: "My Custom Name",
+      } as SessionEntry,
+    };
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+    expect(result.sessions[0].displayName).toBe("My Custom Name");
+    expect(result.sessions[0].label).toBe("My Custom Name");
+  });
+
+  test("displayName used when label is not set", () => {
+    const store: Record<string, SessionEntry> = {
+      "agent:main:some-session": {
+        sessionId: "sess-1",
+        updatedAt: Date.now(),
+        displayName: "Auto Derived Group Name",
+      } as SessionEntry,
+    };
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+    expect(result.sessions[0].displayName).toBe("Auto Derived Group Name");
+  });
+
+  test("rename via label overwrites ugly auto-derived displayName", () => {
+    const store: Record<string, SessionEntry> = {
+      "agent:main:main:thread:abc123": {
+        sessionId: "sess-thread",
+        updatedAt: Date.now(),
+        displayName: "webchat:g-agent-main-main-thread-abc123",
+        label: "Thread Audit Project",
+      } as SessionEntry,
+    };
+    const result = listSessionsFromStore({
+      cfg: baseCfg,
+      storePath: "/tmp/sessions.json",
+      store,
+      opts: {},
+    });
+    expect(result.sessions[0].displayName).toBe("Thread Audit Project");
   });
 });

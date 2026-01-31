@@ -1,8 +1,9 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { SessionsListResult } from "../types";
+import type { GatewaySessionRow, SessionsListResult } from "../types";
 import type { ChatAttachment, ChatQueueItem } from "../ui-types";
+import { humanizeSessionKey } from "./thread-list";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
 import { icons } from "../icons";
 import {
@@ -58,6 +59,8 @@ export type ChatProps = {
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
+  /** Session keys currently visible in other panes (split mode only). */
+  openSessionKeys?: Set<string>;
   // Event handlers
   onRefresh: () => void;
   onToggleFocusMode: () => void;
@@ -255,6 +258,88 @@ function renderAttachmentPreview(props: ChatProps) {
   `;
 }
 
+/** Compact relative time (e.g. "3m", "2h", "5d") */
+function compactAgo(ms?: number | null): string {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  if (diff < 0) return "now";
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) return `${sec}s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min}m`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h`;
+  const day = Math.round(hr / 24);
+  if (day < 30) return `${day}d`;
+  const mo = Math.round(day / 30);
+  return `${mo}mo`;
+}
+
+/**
+ * Session picker shown inside an empty split pane.
+ * Lists recent sessions not already open in another pane.
+ */
+function renderSessionPicker(
+  sessions: GatewaySessionRow[],
+  openKeys: Set<string>,
+  currentKey: string,
+  onSelect: (key: string) => void,
+) {
+  // Filter: exclude sessions already visible in a pane, archived, and cron/global
+  const candidates = sessions.filter((s) => {
+    if (s.key === currentKey) return false;
+    if (openKeys.has(s.key)) return false;
+    if (s.archivedAt) return false;
+    if (s.kind === "global") return false;
+    const k = s.key.toLowerCase();
+    if (k.includes(":cron:") || k.includes(":cron-")) return false;
+    return true;
+  });
+
+  // Sort by most recently updated
+  candidates.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+  // Cap at a reasonable number
+  const visible = candidates.slice(0, 12);
+
+  if (visible.length === 0) {
+    return html`
+      <div class="session-picker">
+        <div class="session-picker__header">No other sessions available</div>
+        <div class="session-picker__hint">Start a new conversation below</div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div class="session-picker">
+      <div class="session-picker__header">Open a recent session</div>
+      <div class="session-picker__list">
+        ${visible.map(
+          (s) => html`
+            <button
+              class="session-picker__item"
+              @click=${() => onSelect(s.key)}
+              title=${s.key}
+            >
+              <span class="session-picker__item-label">
+                ${s.displayName || s.label || humanizeSessionKey(s.key)}
+              </span>
+              ${s.derivedTitle
+                ? html`<span class="session-picker__item-title">${s.derivedTitle}</span>`
+                : nothing}
+              ${s.updatedAt
+                ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
+                : nothing}
+            </button>
+          `,
+        )}
+      </div>
+      <div class="session-picker__hint">Or start a new conversation below</div>
+    </div>
+  `;
+}
+
 export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
@@ -296,6 +381,10 @@ export function renderChat(props: ChatProps) {
     }
   };
 
+  // Show session picker when pane is empty and in split mode
+  const isEmpty = !props.loading && props.messages.length === 0 && props.stream === null;
+  const showPicker = isEmpty && props.openSessionKeys && props.sessions?.sessions;
+
   const thread = html`
     <div
       class="chat-thread"
@@ -303,6 +392,14 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${handleThreadScroll}
     >
+      ${showPicker
+        ? renderSessionPicker(
+            props.sessions!.sessions,
+            props.openSessionKeys!,
+            props.sessionKey,
+            props.onSessionKeyChange,
+          )
+        : nothing}
       ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
       ${repeat(buildChatItems(props), (item) => item.key, (item) => {
         if (item.kind === "load-more") {
@@ -460,11 +557,12 @@ export function renderChat(props: ChatProps) {
             <textarea
               ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
               .value=${props.draft}
+              rows="1"
               ?disabled=${!props.connected}
               @keydown=${(e: KeyboardEvent) => {
                 if (e.key !== "Enter") return;
                 if (e.isComposing || e.keyCode === 229) return;
-                if (e.shiftKey) return; // Allow Shift+Enter for line breaks
+                if (e.shiftKey) return;
                 if (!props.connected) return;
                 e.preventDefault();
                 if (canCompose) props.onSend();
@@ -479,20 +577,19 @@ export function renderChat(props: ChatProps) {
             ></textarea>
           </label>
           <div class="chat-compose__actions">
+            ${canAbort
+              ? html`<button
+                  class="btn chat-compose__icon-btn chat-compose__icon-btn--stop"
+                  title="Stop"
+                  @click=${props.onAbort}
+                >${icons.square}</button>`
+              : nothing}
             <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? "Stop" : "New session"}
-            </button>
-            <button
-              class="btn primary"
+              class="btn primary chat-compose__icon-btn"
               ?disabled=${!props.connected}
+              title="${isBusy ? "Queue" : "Send"}"
               @click=${props.onSend}
-            >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
-            </button>
+            >${icons.arrowUp}</button>
           </div>
         </div>
       </div>

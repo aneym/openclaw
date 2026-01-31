@@ -69,6 +69,7 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
   compactionStatus: import("./app-tool-stream").CompactionStatus | null;
+  runningSessions: Set<string>;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -261,6 +262,8 @@ export type AppViewState = {
   closePane: (paneId?: string) => void;
   focusPane: (paneId: string) => void;
   setThreadInPane: (paneId: string, threadId: string) => void;
+  swapPanes: (paneIdA: string, paneIdB: string) => void;
+  movePaneBeside: (sourcePaneId: string, targetPaneId: string, direction: 'horizontal' | 'vertical', position: 'before' | 'after') => void;
   handleSplitBranchResize: (branchId: string, ratio: number) => void;
   focusNextPane: () => void;
   exitSplitMode: () => void;

@@ -10,7 +10,7 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings";
-import { observeTopbar, scheduleChatScroll, scheduleLogsScroll } from "./app-scroll";
+import { observeTopbar, scheduleChatScroll, schedulePaneChatScroll, scheduleLogsScroll } from "./app-scroll";
 import {
   startLogsPolling,
   startNodesPolling,
@@ -21,6 +21,7 @@ import {
 } from "./app-polling";
 import { installKeyboardShortcuts, removeKeyboardShortcuts } from "./keyboard-shortcuts";
 import type { SplitPaneLayout } from "./split-tree";
+import { refreshChat } from "./app-chat";
 
 type LifecycleHost = {
   basePath: string;
@@ -44,9 +45,13 @@ type LifecycleHost = {
   splitPane: (direction: 'horizontal' | 'vertical') => void;
   closePane: (paneId?: string) => void;
   focusNextPane: () => void;
+  toggleNav: () => void;
   syncPaneStatesFromLayout: () => void;
   // URL pane restoration (set by applySettingsFromUrl)
   urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
+  // Visibility change handler for staleness detection
+  connected: boolean;
+  visibilityHandler: (() => void) | null;
 };
 
 export function handleConnected(host: LifecycleHost) {
@@ -94,14 +99,26 @@ export function handleConnected(host: LifecycleHost) {
   if (host.tab === "debug") {
     startDebugPolling(host as unknown as Parameters<typeof startDebugPolling>[0]);
   }
+  // Refresh chat when user returns to the tab (catches agent finishing while away)
+  host.visibilityHandler = () => {
+    if (document.visibilityState === 'visible' && host.connected) {
+      void refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
+    }
+  };
+  document.addEventListener('visibilitychange', host.visibilityHandler);
 }
 
 export function handleFirstUpdated(host: LifecycleHost) {
   observeTopbar(host as unknown as Parameters<typeof observeTopbar>[0]);
+  // Auto-focus handled in handleUpdated when connected transitions to true
 }
 
 export function handleDisconnected(host: LifecycleHost) {
   window.removeEventListener("popstate", host.popStateHandler);
+  if (host.visibilityHandler) {
+    document.removeEventListener('visibilitychange', host.visibilityHandler);
+    host.visibilityHandler = null;
+  }
   removeKeyboardShortcuts();
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
@@ -117,6 +134,18 @@ export function handleUpdated(
   host: LifecycleHost,
   changed: Map<PropertyKey, unknown>,
 ) {
+  // Auto-focus the chat composer when the gateway first connects
+  if (
+    host.tab === "chat" &&
+    changed.has("connected") &&
+    host.connected &&
+    !changed.get("connected")
+  ) {
+    setTimeout(() => {
+      const el = document.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+      if (el && !el.disabled) el.focus();
+    }, 50);
+  }
   if (
     host.tab === "chat" &&
     (changed.has("chatMessages") ||
@@ -130,10 +159,20 @@ export function handleUpdated(
       changed.has("chatLoading") &&
       changed.get("chatLoading") === true &&
       host.chatLoading === false;
-    scheduleChatScroll(
-      host as unknown as Parameters<typeof scheduleChatScroll>[0],
-      forcedByTab || forcedByLoad || !host.chatHasAutoScrolled,
-    );
+    const force = forcedByTab || forcedByLoad || !host.chatHasAutoScrolled;
+    // In split-pane mode, scope scroll to the focused pane
+    if (host.splitLayout && host.focusedPaneId) {
+      schedulePaneChatScroll(
+        host as unknown as Parameters<typeof schedulePaneChatScroll>[0],
+        host.focusedPaneId,
+        force,
+      );
+    } else {
+      scheduleChatScroll(
+        host as unknown as Parameters<typeof scheduleChatScroll>[0],
+        force,
+      );
+    }
   }
   if (
     host.tab === "logs" &&

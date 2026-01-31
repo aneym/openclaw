@@ -94,6 +94,17 @@ const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
 
 /**
+ * Focus the chat composer textarea.
+ * Uses a short setTimeout to ensure Lit's async render cycle has flushed.
+ */
+function focusComposer() {
+  setTimeout(() => {
+    const el = document.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+    if (el && !el.disabled) el.focus();
+  }, 50);
+}
+
+/**
  * Create a fresh thread/session and navigate to it.
  * Used by the sidebar "New session" button and the chat compose "New session" button.
  */
@@ -130,15 +141,30 @@ function startNewSession(state: AppViewState) {
     desc.sessionKey,
     true,
   );
+  focusComposer();
 }
 
 /** Ensure the current session key is always present in the sessions list */
-function ensureCurrentSession(
+/**
+ * Ensure that the active session key and all open pane keys
+ * are present in the sessions list (new threads may not have
+ * server-side entries yet).
+ */
+function ensureOpenSessions(
   sessions: NavSessionEntry[],
   currentKey: string,
+  openPaneKeys: Set<string>,
 ): NavSessionEntry[] {
-  if (sessions.some((s) => s.key === currentKey)) return sessions;
-  return [{ key: currentKey }, ...sessions];
+  const existing = new Set(sessions.map((s) => s.key));
+  const missing: NavSessionEntry[] = [];
+  const allKeys = new Set([currentKey, ...openPaneKeys]);
+  for (const key of allKeys) {
+    if (!existing.has(key)) {
+      missing.push({ key, updatedAt: Date.now() });
+    }
+  }
+  if (missing.length === 0) return sessions;
+  return [...missing, ...sessions];
 }
 
 function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
@@ -156,6 +182,17 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
   return identity?.avatarUrl;
 }
 
+/** Return the set of session keys that currently have an active agent run. */
+function computeRunningSessions(state: AppViewState): Set<string> {
+  return state.runningSessions;
+}
+
+/** Return session keys currently visible in any split pane. */
+function computeOpenPaneKeys(state: AppViewState): Set<string> {
+  if (!state.splitLayout) return new Set();
+  return new Set(allLeaves(state.splitLayout.root).map((l) => l.threadId));
+}
+
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
@@ -168,7 +205,7 @@ export function renderApp(state: AppViewState) {
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -227,12 +264,15 @@ export function renderApp(state: AppViewState) {
                 ${group.tabs.map((tab) => renderTab(state, tab))}
                 ${group.label === "Chat" && state.tab === "chat"
                   ? renderNavThreadList({
-                      sessions: ensureCurrentSession(
+                      sessions: ensureOpenSessions(
                         state.sessionsResult?.sessions ?? [],
                         state.sessionKey,
+                        computeOpenPaneKeys(state),
                       ),
                       activeSessionKey: state.sessionKey,
                       unreadCounts: new Map(),
+                      runningSessions: computeRunningSessions(state),
+                      openPaneKeys: computeOpenPaneKeys(state),
                       onSelect: (sessionKey) => {
                         // In split mode, also update the focused pane's leaf
                         if (state.splitLayout && state.focusedPaneId) {
@@ -260,6 +300,7 @@ export function renderApp(state: AppViewState) {
                           true,
                         );
                         void loadChatHistory(state);
+                        focusComposer();
                       },
                       onRename: (sessionKey, label) => {
                         void patchSession(state, sessionKey, { label });
@@ -311,6 +352,33 @@ export function renderApp(state: AppViewState) {
           </div>
         </div>
       </aside>
+      <div
+        class="nav-resize-handle ${state.settings.navCollapsed ? 'nav-resize-handle--hidden' : ''}"
+        @mousedown=${(e: MouseEvent) => {
+          e.preventDefault();
+          const shell = (e.target as HTMLElement).closest('.shell') as HTMLElement;
+          if (!shell) return;
+          const startX = e.clientX;
+          const startWidth = parseInt(getComputedStyle(shell).getPropertyValue('--shell-nav-width')) || 220;
+          const onMove = (me: MouseEvent) => {
+            const newWidth = Math.max(140, Math.min(500, startWidth + me.clientX - startX));
+            shell.style.setProperty('--shell-nav-width', newWidth + 'px');
+          };
+          const onUp = () => {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            // Persist the width
+            const finalWidth = parseInt(getComputedStyle(shell).getPropertyValue('--shell-nav-width')) || 220;
+            state.applySettings({ ...state.settings, navWidth: finalWidth });
+          };
+          document.body.style.cursor = 'col-resize';
+          document.body.style.userSelect = 'none';
+          document.addEventListener('mousemove', onMove);
+          document.addEventListener('mouseup', onUp);
+        }}
+      ></div>
       <main class="content ${isChat ? "content--chat" : ""}">
         <section class="content-header">
           <div>

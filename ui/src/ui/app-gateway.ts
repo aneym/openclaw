@@ -63,6 +63,7 @@ type GatewayHost = {
   activeThreadId: string | null;
   sessionKeyToThreadId: Map<string, string>;
   chatMessages: unknown[];
+  runningSessions: Set<string>;
   initDefaultThread: () => void;
   renameThread: (threadId: string, label: string) => void;
   // Split pane state
@@ -166,6 +167,8 @@ export function connectGateway(host: GatewayHost) {
         void batchRenameUnnamedSessions(host);
         // Load history for all visible split panes (non-focused panes need data)
         void host.loadAllPaneHistories();
+        // Restore active run state (stop button) after reconnect
+        void queryChatStatus(host);
       });
     },
     onClose: ({ code, reason }) => {
@@ -232,6 +235,21 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const payload = evt.payload as ChatEventPayload | undefined;
     const eventSessionKey = payload?.sessionKey;
 
+    // Track global running-sessions state (before any early returns)
+    if (eventSessionKey && payload) {
+      if (payload.state === "delta") {
+        if (!host.runningSessions.has(eventSessionKey)) {
+          host.runningSessions = new Set([...host.runningSessions, eventSessionKey]);
+        }
+      } else if (payload.state === "final" || payload.state === "error" || payload.state === "aborted") {
+        if (host.runningSessions.has(eventSessionKey)) {
+          const next = new Set(host.runningSessions);
+          next.delete(eventSessionKey);
+          host.runningSessions = next;
+        }
+      }
+    }
+
     // In split-pane mode, visible pane sessions should not be treated as background
     const visibleSessionKeys = host.splitLayout
       ? new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId))
@@ -272,9 +290,6 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
     if (state === "final" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-      void flushChatQueueForEvent(
-        host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
-      );
       const runId = payload?.runId;
       if (runId && host.refreshSessionsAfterChat.has(runId)) {
         host.refreshSessionsAfterChat.delete(runId);
@@ -284,11 +299,21 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           });
         }
       }
-    }
-    if (state === "final") {
-      void loadChatHistory(host as unknown as OpenClawApp).then(() => {
-        void maybeAutoRenameSession(host);
-      });
+      if (state === "final") {
+        // Load history before flushing the queue so the optimistic user
+        // message appended by sendChatMessage isn't overwritten by the
+        // history reload.
+        void loadChatHistory(host as unknown as OpenClawApp).then(() => {
+          void maybeAutoRenameSession(host);
+          void flushChatQueueForEvent(
+            host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+          );
+        });
+      } else {
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      }
     }
     return;
   }
@@ -583,6 +608,46 @@ function deriveClientSideTitle(text: string): string {
   const truncated = sentence.slice(0, 40);
   const lastSpace = truncated.lastIndexOf(" ");
   return lastSpace > 20 ? truncated.slice(0, lastSpace) + "…" : truncated + "…";
+}
+
+/**
+ * Query chat.status for the current session (and visible split panes)
+ * to restore the stop button after reconnect.
+ */
+async function queryChatStatus(host: GatewayHost) {
+  if (!host.connected || !host.client) return;
+  try {
+    const res = (await host.client.request("chat.status", {
+      sessionKey: host.sessionKey,
+    })) as { activeRun?: { runId: string } | null } | undefined;
+    if (res?.activeRun?.runId) {
+      host.chatRunId = res.activeRun.runId;
+    }
+  } catch {
+    // Graceful degradation: older gateways may not support chat.status
+  }
+  // Also check visible split panes
+  if (host.splitLayout) {
+    const leaves = allLeaves(host.splitLayout.root);
+    for (const leaf of leaves) {
+      if (leaf.threadId === host.sessionKey) continue;
+      try {
+        const res = (await host.client!.request("chat.status", {
+          sessionKey: leaf.threadId,
+        })) as { activeRun?: { runId: string } | null } | undefined;
+        if (res?.activeRun?.runId) {
+          const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
+          const thread = threadMapId ? host.threads.get(threadMapId) : null;
+          if (thread) {
+            thread.chatRunId = res.activeRun.runId;
+            host.threads = new Map(host.threads);
+          }
+        }
+      } catch {
+        // Ignore per-pane failures
+      }
+    }
+  }
 }
 
 export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {

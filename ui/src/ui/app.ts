@@ -49,9 +49,12 @@ import {
   serializeLayout,
   deserializeLayout,
   setLeafThread,
+  swapLeafThreads,
+  moveLeafBeside,
   updateBranchRatio,
   nextLeafId,
 } from "./split-tree";
+import type { SplitDirection } from "./split-tree";
 import { type PaneState, syncPaneStates } from "./pane-state";
 import type {
   ExecApprovalsFile,
@@ -160,6 +163,8 @@ export class OpenClawApp extends LitElement {
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
+  /** Session keys that currently have an active agent run (global, across all sessions). */
+  @state() runningSessions: Set<string> = new Set();
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -297,6 +302,7 @@ export class OpenClawApp extends LitElement {
   private toolStreamOrder: string[] = [];
   refreshSessionsAfterChat = new Set<string>();
   basePath = "";
+  visibilityHandler: (() => void) | null = null;
   private popStateHandler = () =>
     onPopStateInternal(
       this as unknown as Parameters<typeof onPopStateInternal>[0],
@@ -925,6 +931,25 @@ export class OpenClawApp extends LitElement {
     this.syncUrlWithPanes(false);
   }
 
+  swapPanes(paneIdA: string, paneIdB: string) {
+    if (!this.splitLayout || paneIdA === paneIdB) return;
+    const newRoot = swapLeafThreads(this.splitLayout.root, paneIdA, paneIdB);
+    this.splitLayout = { ...this.splitLayout, root: newRoot };
+    this.syncPaneStatesFromLayout();
+    this.persistSplitLayout();
+    this.syncUrlWithPanes(false);
+  }
+
+  movePaneBeside(sourcePaneId: string, targetPaneId: string, direction: SplitDirection, position: 'before' | 'after') {
+    if (!this.splitLayout || sourcePaneId === targetPaneId) return;
+    const newRoot = moveLeafBeside(this.splitLayout.root, sourcePaneId, targetPaneId, direction, position);
+    if (!newRoot) return;
+    this.splitLayout = { ...this.splitLayout, root: newRoot };
+    this.syncPaneStatesFromLayout();
+    this.persistSplitLayout();
+    this.syncUrlWithPanes(false);
+  }
+
   handleSplitBranchResize(branchId: string, ratio: number) {
     if (!this.splitLayout) return;
     const newRoot = updateBranchRatio(this.splitLayout.root, branchId, ratio);
@@ -936,6 +961,13 @@ export class OpenClawApp extends LitElement {
     if (!this.splitLayout || !this.focusedPaneId) return;
     const next = nextLeafId(this.splitLayout.root, this.focusedPaneId);
     if (next) this.focusPane(next);
+  }
+
+  toggleNav() {
+    this.applySettings({
+      ...this.settings,
+      navCollapsed: !this.settings.navCollapsed,
+    });
   }
 
   syncPaneStatesFromLayout() {

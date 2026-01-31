@@ -9,6 +9,7 @@
   --shell-topbar-height: 56px;
   --shell-focus-duration: 200ms;
   --shell-focus-ease: var(--ease-out);
+  position: relative;
   height: 100vh;
   display: grid;
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
@@ -42,6 +43,22 @@
 
 .shell--nav-collapsed {
   grid-template-columns: 0px minmax(0, 1fr);
+}
+
+.shell--nav-collapsed.shell--chat {
+  grid-template-rows: 0 1fr;
+}
+
+.shell--nav-collapsed .topbar {
+  display: none;
+}
+
+.shell--chat .content-header {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0px;
+  padding: 0;
+  pointer-events: none;
 }
 
 .shell--chat-focus {
@@ -219,6 +236,38 @@
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
+}
+
+/* Nav resize handle — overlays right edge of nav */
+.nav-resize-handle {
+  position: absolute;
+  top: var(--shell-topbar-height);
+  left: var(--shell-nav-width);
+  bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 150ms ease;
+  z-index: 20;
+}
+
+.nav-resize-handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+
+.nav-resize-handle:hover,
+.nav-resize-handle:active {
+  background: var(--accent);
+}
+
+.nav-resize-handle--hidden {
+  display: none;
 }
 
 .nav--collapsed {

@@ -160,6 +160,61 @@ export function nextLeafId(root: SplitNode, currentId: string): string | null {
   return ids[(idx + 1) % ids.length]
 }
 
+/**
+ * Move a leaf pane beside another leaf.
+ * Removes source from its current position, then splits the target
+ * to place the source adjacent in the given direction / position.
+ * Returns null if the operation is invalid (e.g. same pane, or tree collapses).
+ */
+export function moveLeafBeside(
+  root: SplitNode,
+  sourcePaneId: string,
+  targetPaneId: string,
+  direction: SplitDirection,
+  position: 'before' | 'after',
+): SplitNode | null {
+  if (sourcePaneId === targetPaneId) return null
+  const sourceLeaf = findLeaf(root, sourcePaneId)
+  if (!sourceLeaf) return null
+
+  // Remove source from tree
+  const pruned = removeLeaf(root, sourcePaneId)
+  if (!pruned) return null
+
+  // Verify target still exists in pruned tree
+  if (!findLeaf(pruned, targetPaneId)) return null
+
+  // Insert a new leaf with the source's threadId beside the target
+  const newLeaf = createLeaf(sourceLeaf.threadId)
+  return mapNode(pruned, (node) => {
+    if (node.kind !== 'leaf' || node.id !== targetPaneId) return node
+    return {
+      kind: 'branch',
+      id: generatePaneId(),
+      direction,
+      ratio: 0.5,
+      first: position === 'before' ? newLeaf : node,
+      second: position === 'before' ? node : newLeaf,
+    } as SplitBranch
+  })
+}
+
+/** Swap the threadIds of two leaf panes. */
+export function swapLeafThreads(
+  root: SplitNode,
+  paneIdA: string,
+  paneIdB: string,
+): SplitNode {
+  const leafA = findLeaf(root, paneIdA)
+  const leafB = findLeaf(root, paneIdB)
+  if (!leafA || !leafB || paneIdA === paneIdB) return root
+  const threadA = leafA.threadId
+  const threadB = leafB.threadId
+  let result = setLeafThread(root, paneIdA, threadB)
+  result = setLeafThread(result, paneIdB, threadA)
+  return result
+}
+
 /** Get the previous leaf ID before the given one (wraps around). */
 export function prevLeafId(root: SplitNode, currentId: string): string | null {
   const ids = allLeafIds(root)

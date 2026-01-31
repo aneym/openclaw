@@ -6,9 +6,17 @@
  */
 
 export const DRAG_DATA_TYPE = 'application/x-openclaw-session'
+export const DRAG_PANE_TYPE = 'application/x-openclaw-pane'
 
 export function setDragData(event: DragEvent, sessionKey: string) {
   event.dataTransfer?.setData(DRAG_DATA_TYPE, sessionKey)
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+export function setDragPaneData(event: DragEvent, paneId: string) {
+  event.dataTransfer?.setData(DRAG_PANE_TYPE, paneId)
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
   }
@@ -18,8 +26,20 @@ export function getDragData(event: DragEvent): string | null {
   return event.dataTransfer?.getData(DRAG_DATA_TYPE) || null
 }
 
+export function getDragPaneData(event: DragEvent): string | null {
+  return event.dataTransfer?.getData(DRAG_PANE_TYPE) || null
+}
+
 export function hasDragData(event: DragEvent): boolean {
   return event.dataTransfer?.types.includes(DRAG_DATA_TYPE) ?? false
+}
+
+export function hasDragPaneData(event: DragEvent): boolean {
+  return event.dataTransfer?.types.includes(DRAG_PANE_TYPE) ?? false
+}
+
+export function hasAnyDragData(event: DragEvent): boolean {
+  return hasDragData(event) || hasDragPaneData(event)
 }
 
 export type DropZone = 'center' | 'top' | 'bottom' | 'left' | 'right'
