@@ -61,6 +61,40 @@ curl -s -X POST "http://localhost:18790/v1/chat/completions" \
   }' | cat
 ```
 
+#### Gateway RPC Methods (dev mode only — recommended for session/config operations)
+
+The `/api/rpc` endpoint lets you call any gateway WebSocket RPC method via plain HTTP. Only available on dev gateways (started with `--dev`, which `agent:start` uses).
+
+```bash
+# List sessions
+curl -s -X POST "http://localhost:18790/api/rpc" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"sessions.list","params":{"limit":3}}' | cat
+
+# Rename a session (thread rename)
+curl -s -X POST "http://localhost:18790/api/rpc" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"sessions.patch","params":{"key":"SESSION_KEY","label":"new-name"}}' | cat
+
+# Get health status
+curl -s -X POST "http://localhost:18790/api/rpc" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"health","params":{}}' | cat
+
+# List agents
+curl -s -X POST "http://localhost:18790/api/rpc" \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"method":"agents.list","params":{}}' | cat
+```
+
+Response format: `{ "ok": true, "result": ... }` or `{ "ok": false, "error": ... }`
+
+This bypasses the WebSocket challenge-response auth — Bearer token + dev mode is sufficient. All core gateway methods are available (sessions, config, channels, cron, health, models, etc.).
+
 #### Direct Tool Invocation (limited by tool policy)
 
 Note: Only tools exposed via the HTTP tools policy are available here. Agent-internal tools like `read`, `write`, `edit` may not be accessible via this endpoint.

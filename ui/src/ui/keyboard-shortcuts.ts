@@ -1,13 +1,12 @@
 /**
  * Keyboard shortcuts for split-pane management.
  *
+ * Cmd+\       -> Toggle sidebar
+ * Cmd+E       -> Archive current session
  * Cmd+D       -> Split horizontal (side-by-side)
  * Shift+Cmd+D -> Split vertical (top/bottom)
  * Cmd+]       -> Focus next pane
- *
- * Note: Cmd+W is not interceptable in Chrome (browser closes the tab at
- * the process level before JS can preventDefault). Close pane is available
- * via the right-click context menu instead.
+ * Ctrl+W      -> Close focused pane (Ctrl, not Cmd — Cmd+W closes the browser tab)
  */
 
 type ShortcutHost = {
@@ -17,6 +16,7 @@ type ShortcutHost = {
   closePane: (paneId?: string) => void
   focusNextPane: () => void
   toggleNav: () => void
+  archiveCurrentSession: () => void
 }
 
 let handler: ((e: KeyboardEvent) => void) | null = null
@@ -32,6 +32,14 @@ export function installKeyboardShortcuts(host: ShortcutHost) {
       e.preventDefault()
       e.stopPropagation()
       host.toggleNav()
+      return
+    }
+
+    // Cmd+E -> archive current session (global, works on all tabs)
+    if (isMeta && !e.shiftKey && e.key === 'e') {
+      e.preventDefault()
+      e.stopPropagation()
+      host.archiveCurrentSession()
       return
     }
 
@@ -61,6 +69,17 @@ export function installKeyboardShortcuts(host: ShortcutHost) {
         e.stopPropagation()
         host.focusNextPane()
       }
+      return
+    }
+
+    // Ctrl+W -> close focused pane (only Ctrl, not Cmd which closes browser tab)
+    if (e.ctrlKey && !e.metaKey && e.key === 'w') {
+      if (host.splitLayout) {
+        e.preventDefault()
+        e.stopPropagation()
+        host.closePane()
+      }
+      return
     }
   }
 

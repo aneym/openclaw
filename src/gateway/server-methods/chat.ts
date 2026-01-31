@@ -710,7 +710,8 @@ export const chatHandlers: GatewayRequestHandlers = {
     // Find an active run for this session key
     for (const [runId, entry] of context.chatAbortControllers) {
       if (entry.sessionKey === sessionKey) {
-        respond(true, { activeRun: { runId } });
+        const streamText = context.chatRunBuffers.get(runId) ?? null;
+        respond(true, { activeRun: { runId, streamText } });
         return;
       }
     }

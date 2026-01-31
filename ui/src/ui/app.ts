@@ -17,6 +17,7 @@ import {
 } from "./thread-state";
 import { loadThreadDescriptors, saveThreadDescriptors } from "./thread-storage";
 import { loadChatHistory } from "./controllers/chat";
+import { patchSession } from "./controllers/sessions";
 import { resetToolStream as resetToolStreamFn } from "./app-tool-stream";
 import type {
   AgentsListResult,
@@ -175,6 +176,8 @@ export class OpenClawApp extends LitElement {
   @state() splitLayout: SplitPaneLayout | null = null;
   @state() focusedPaneId: string | null = null;
   @state() paneStates: Map<string, PaneState> = new Map();
+  /** Timer handle for the pending focusPane textarea.focus() call. */
+  private _focusPaneTimer: ReturnType<typeof setTimeout> | null = null;
   // URL pane restoration (set by applySettingsFromUrl, consumed by handleConnected)
   urlPanes: { paneKeys: string[]; focusIndex: number } | null = null;
 
@@ -412,6 +415,17 @@ export class OpenClawApp extends LitElement {
     await handleAbortChatInternal(
       this as unknown as Parameters<typeof handleAbortChatInternal>[0],
     );
+  }
+
+  async abortThreadRun(sessionKey: string, runId: string): Promise<boolean> {
+    if (!this.client || !this.connected) return false;
+    try {
+      await this.client.request("chat.abort", { sessionKey, runId });
+      return true;
+    } catch (err) {
+      this.lastError = String(err);
+      return false;
+    }
   }
 
   removeQueuedMessage(id: string) {
@@ -745,7 +759,9 @@ export class OpenClawApp extends LitElement {
     this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
-    // Focus the new pane — this snapshots current thread & restores the new one
+    // Focus the new pane — this snapshots current thread & restores the new one.
+    // focusPane already schedules a managed textarea.focus() timer, so no
+    // duplicate setTimeout here (that was the second source of stale timers).
     this.focusPane(newPaneId);
     this.resetChatScroll();
   }
@@ -839,7 +855,12 @@ export class OpenClawApp extends LitElement {
   }
 
   focusPane(paneId: string) {
-    const switching = this.focusedPaneId !== null && paneId !== this.focusedPaneId;
+    // Guard: no-op if this pane is already focused — avoids redundant
+    // re-renders and the uncancelled-setTimeout cascade that causes
+    // infinite focus ping-pong between panes.
+    if (paneId === this.focusedPaneId) return;
+
+    const switching = this.focusedPaneId !== null;
 
     this.focusedPaneId = paneId;
     if (this.splitLayout) {
@@ -889,10 +910,37 @@ export class OpenClawApp extends LitElement {
 
     // replaceState — focus change is minor, not a meaningful navigation
     this.syncUrlWithPanes(true);
+
+    // Cancel any pending focus timer from a previous focusPane call —
+    // without this, stale timers fire and force focus to the wrong pane,
+    // which triggers @focusin → focusPane → new timer → infinite loop.
+    if (this._focusPaneTimer != null) {
+      clearTimeout(this._focusPaneTimer);
+      this._focusPaneTimer = null;
+    }
+
+    // Auto-focus the composer textarea in the newly focused pane
+    this._focusPaneTimer = setTimeout(() => {
+      this._focusPaneTimer = null;
+      // Stale-check: if focus moved elsewhere before this timer fired, bail.
+      if (this.focusedPaneId !== paneId) return;
+      const paneEl = document.querySelector(`.split-pane[data-pane-id="${paneId}"]`);
+      const textarea = paneEl?.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+      if (textarea && !textarea.disabled) textarea.focus();
+    }, 50);
   }
 
   setThreadInPane(paneId: string, threadId: string) {
     if (!this.splitLayout) return;
+
+    // Prevent duplicate: if thread is already in another pane, focus it instead
+    const existingLeaf = allLeaves(this.splitLayout.root).find(
+      (l) => l.threadId === threadId && l.id !== paneId
+    );
+    if (existingLeaf) {
+      this.focusPane(existingLeaf.id);
+      return;
+    }
 
     // Clean up the old thread if it was an empty auto-created one
     const oldLeaf = findLeaf(this.splitLayout.root, paneId);
@@ -929,6 +977,23 @@ export class OpenClawApp extends LitElement {
     this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
+
+    // Load history for the newly assigned session so the pane isn't left empty
+    const mapId = this.sessionKeyToThreadId.get(threadId);
+    const thread = mapId ? this.threads.get(mapId) : null;
+    if (thread && thread.chatMessages.length === 0 && this.client && this.connected) {
+      void (async () => {
+        try {
+          const res = (await this.client!.request('chat.history', {
+            sessionKey: threadId,
+            limit: 200,
+          })) as { messages?: unknown[]; thinkingLevel?: string | null };
+          thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+          thread.chatThinkingLevel = res.thinkingLevel ?? null;
+          this.threads = new Map(this.threads);
+        } catch { /* non-critical */ }
+      })();
+    }
   }
 
   swapPanes(paneIdA: string, paneIdB: string) {
@@ -968,6 +1033,21 @@ export class OpenClawApp extends LitElement {
       ...this.settings,
       navCollapsed: !this.settings.navCollapsed,
     });
+  }
+
+  archiveCurrentSession() {
+    const key = this.sessionKey;
+    if (!key) return;
+    void patchSession(this as any, key, { archived: true });
+    // Close the pane in split mode
+    if (this.splitLayout) {
+      const leaf = allLeaves(this.splitLayout.root).find(
+        (l) => l.threadId === key,
+      );
+      if (leaf) this.closePane(leaf.id);
+    }
+    // Start a fresh session
+    this.createThread();
   }
 
   syncPaneStatesFromLayout() {
@@ -1058,6 +1138,36 @@ export class OpenClawApp extends LitElement {
     }
     // Trigger re-render for all panes
     this.threads = new Map(this.threads)
+
+    // Scroll all panes to bottom after loading history
+    await this.updateComplete
+    this.scrollAllPanesToBottom()
+  }
+
+  /** Force-scroll every split pane's .chat-thread to the bottom. */
+  scrollAllPanesToBottom() {
+    const scrollAll = () => {
+      if (!this.splitLayout) {
+        // Single-pane mode: scroll the main chat thread
+        const thread = this.querySelector('.chat-thread') as HTMLElement | null
+        if (thread) {
+          thread.scrollTop = thread.scrollHeight
+        }
+        return
+      }
+      const leaves = allLeaves(this.splitLayout.root)
+      for (const leaf of leaves) {
+        const paneEl = this.querySelector(`[data-pane-id="${leaf.id}"] .chat-thread`) as HTMLElement | null
+        if (paneEl) {
+          paneEl.scrollTop = paneEl.scrollHeight
+        }
+      }
+    }
+    // Immediate scroll + retry after render settles (images, lazy content)
+    requestAnimationFrame(() => {
+      scrollAll()
+      setTimeout(scrollAll, 150)
+    })
   }
 
   render() {

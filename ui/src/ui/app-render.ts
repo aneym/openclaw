@@ -193,6 +193,21 @@ function computeOpenPaneKeys(state: AppViewState): Set<string> {
   return new Set(allLeaves(state.splitLayout.root).map((l) => l.threadId));
 }
 
+type DevFlag = 'ui' | 'gw';
+
+/** Detect active dev environments. Vite dev always implies a local dev gateway. */
+function getDevFlags(): DevFlag[] {
+  const flags: DevFlag[] = [];
+  if (import.meta.env.DEV) {
+    // Vite dev server — always talking to a local dev gateway
+    flags.push('ui', 'gw');
+  } else if ((window as unknown as Record<string, unknown>).__OPENCLAW_DEV__) {
+    // Gateway-served build in dev mode (NODE_ENV !== 'production')
+    flags.push('gw');
+  }
+  return flags;
+}
+
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
@@ -203,9 +218,11 @@ export function renderApp(state: AppViewState) {
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
+  const devFlags = getDevFlags();
+  const isDev = devFlags.length > 0;
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" data-dev="${isDev ? 'true' : nothing}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -229,6 +246,8 @@ export function renderApp(state: AppViewState) {
               <div class="brand-sub">Gateway Dashboard</div>
             </div>
           </div>
+          ${devFlags.includes('ui') ? html`<span class="dev-badge ui-dev">UI DEV</span>` : nothing}
+          ${devFlags.includes('gw') ? html`<span class="dev-badge gw-dev">GW DEV</span>` : nothing}
         </div>
         <div class="topbar-status">
           <div class="pill">

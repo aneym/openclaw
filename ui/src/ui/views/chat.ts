@@ -527,14 +527,14 @@ export function renderChat(props: ChatProps) {
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
-                      <div class="chat-queue__text">
+                      <span class="chat-queue__text">
                         ${item.text ||
                         (item.attachments?.length
-                          ? `Image (${item.attachments.length})`
+                          ? `📎 ${item.attachments.length}`
                           : "")}
-                      </div>
+                      </span>
                       <button
-                        class="btn chat-queue__remove"
+                        class="chat-queue__remove"
                         type="button"
                         aria-label="Remove queued message"
                         @click=${() => props.onQueueRemove(item.id)}
@@ -658,6 +658,26 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   return result;
 }
 
+/** Hide internal system plumbing (e.g. GatewayRestart) from chat UI. */
+function isInternalSystemMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  const content = m.content;
+  let text: string | null = null;
+  if (typeof content === "string") text = content;
+  else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (typeof block === "object" && block !== null && (block as Record<string, unknown>).type === "text") {
+        text = (block as Record<string, unknown>).text as string;
+        break;
+      }
+    }
+  } else if (typeof m.text === "string") {
+    text = m.text;
+  }
+  if (!text) return false;
+  return /^(System:\s*\[.*?\]\s*)?GatewayRestart[\s:]/.test(text.trimStart());
+}
+
 function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
@@ -676,6 +696,7 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
+    if (isInternalSystemMessage(msg)) continue;
     items.push({
       kind: "message",
       key: messageKey(msg, i),

@@ -11,17 +11,16 @@ type ScrollHost = {
   topbarObserver: ResizeObserver | null;
 };
 
-export function scheduleChatScroll(host: ScrollHost, force = false) {
+export function scheduleChatScroll(host: ScrollHost, force = false, paneId?: string) {
   if (host.chatScrollFrame) cancelAnimationFrame(host.chatScrollFrame);
   if (host.chatScrollTimeout != null) {
     clearTimeout(host.chatScrollTimeout);
     host.chatScrollTimeout = null;
   }
+  // Capture paneId in closure so it survives async gaps
   const pickScrollTarget = () => {
-    // If a pane selector is provided (split pane mode), scope to that pane
-    const paneSelector = (host as ScrollHost & { _scrollPaneId?: string })._scrollPaneId;
-    const scope = paneSelector
-      ? host.querySelector(`[data-pane-id="${paneSelector}"] .chat-thread`) as HTMLElement | null
+    const scope = paneId
+      ? host.querySelector(`[data-pane-id="${paneId}"] .chat-thread`) as HTMLElement | null
       : host.querySelector(".chat-thread") as HTMLElement | null;
     if (scope) {
       const overflowY = getComputedStyle(scope).overflowY;
@@ -44,7 +43,9 @@ export function scheduleChatScroll(host: ScrollHost, force = false) {
       const shouldStick = force || host.chatUserNearBottom || distanceFromBottom < 200;
       if (!shouldStick) return;
       if (force) host.chatHasAutoScrolled = true;
-      target.scrollTop = target.scrollHeight;
+      // Smooth for small jumps, instant for large ones (initial load, history swap)
+      const behavior = distanceFromBottom > 800 ? 'instant' as const : 'smooth' as const;
+      target.scrollTo({ top: target.scrollHeight, behavior });
       host.chatUserNearBottom = true;
       const retryDelay = force ? 150 : 120;
       host.chatScrollTimeout = window.setTimeout(() => {
@@ -56,6 +57,7 @@ export function scheduleChatScroll(host: ScrollHost, force = false) {
         const shouldStickRetry =
           force || host.chatUserNearBottom || latestDistanceFromBottom < 200;
         if (!shouldStickRetry) return;
+        // Retry is always instant (just a small correction)
         latest.scrollTop = latest.scrollHeight;
         host.chatUserNearBottom = true;
       }, retryDelay);
@@ -109,13 +111,7 @@ export function schedulePaneChatScroll(
   paneId: string,
   force = false,
 ) {
-  const hostWithPane = host as ScrollHost & { _scrollPaneId?: string };
-  hostWithPane._scrollPaneId = paneId;
-  scheduleChatScroll(host, force);
-  // Clear the pane scope after scheduling
-  requestAnimationFrame(() => {
-    hostWithPane._scrollPaneId = undefined;
-  });
+  scheduleChatScroll(host, force, paneId);
 }
 
 export function exportLogs(lines: string[], label: string) {

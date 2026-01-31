@@ -37,10 +37,11 @@ export function renderChatPane(props: ChatPaneProps) {
   const thread = threadMapId ? state.threads.get(threadMapId) : null
 
   // Collect session keys visible in all panes (for the session picker)
+  // Include state.sessionKey as a safety net in case it doesn't match any leaf
   const openSessionKeys = new Set(
     state.splitLayout
-      ? allLeaves(state.splitLayout.root).map((l) => l.threadId)
-      : [sessionKey],
+      ? [...allLeaves(state.splitLayout.root).map((l) => l.threadId), state.sessionKey]
+      : [sessionKey, state.sessionKey],
   )
 
   const chatProps: ChatProps = {
@@ -94,7 +95,19 @@ export function renderChatPane(props: ChatPaneProps) {
     },
     onSend: () => void state.handleSendChat(),
     canAbort: isActiveSession ? Boolean(state.chatRunId) : Boolean(thread?.chatRunId),
-    onAbort: () => void state.handleAbortChat(),
+    onAbort: () => {
+      if (isActiveSession) {
+        void state.handleAbortChat()
+      } else if (thread?.chatRunId) {
+        // Abort a run in a visible-but-not-focused pane
+        void state.abortThreadRun(sessionKey, thread.chatRunId).then(() => {
+          thread.chatRunId = null
+          thread.chatStream = null
+          thread.chatStreamStartedAt = null
+          state.threads = new Map(state.threads)
+        })
+      }
+    },
     onQueueRemove: (id) => state.removeQueuedMessage(id),
     onNewSession: () => {
       // Create a fresh thread and assign it to this pane
@@ -286,8 +299,8 @@ export function renderChatPane(props: ChatPaneProps) {
     <div
       class="split-pane ${isFocused ? 'split-pane--focused' : ''}"
       data-pane-id=${leaf.id}
-      @click=${() => state.focusPane(leaf.id)}
-      @focusin=${() => state.focusPane(leaf.id)}
+      @click=${() => { if (leaf.id !== state.focusedPaneId) state.focusPane(leaf.id) }}
+      @focusin=${() => { if (leaf.id !== state.focusedPaneId) state.focusPane(leaf.id) }}
       @dragover=${handleDragOver}
       @dragleave=${handleDragLeave}
       @drop=${handleDrop}

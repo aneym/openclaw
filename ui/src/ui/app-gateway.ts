@@ -17,6 +17,7 @@ import {
   setLastActiveSessionKey,
 } from "./app-settings";
 import { handleChatEvent, type ChatEventPayload } from "./controllers/chat";
+import { extractText } from "./chat/message-extract";
 import {
   addExecApproval,
   parseExecApprovalRequested,
@@ -70,6 +71,7 @@ type GatewayHost = {
   splitLayout: SplitPaneLayout | null;
   paneStates: Map<string, PaneState>;
   loadAllPaneHistories: () => Promise<void>;
+  scrollAllPanesToBottom: () => void;
 };
 
 type SessionDefaultsSnapshot = {
@@ -145,11 +147,8 @@ export function connectGateway(host: GatewayHost) {
       host.lastError = null;
       host.hello = hello;
       applySnapshot(host, hello);
-      // Reset orphaned chat run state from before disconnect.
-      // Any in-flight run's final event was lost during the disconnect window.
-      host.chatRunId = null;
-      (host as unknown as { chatStream: string | null }).chatStream = null;
-      (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+      // Don't null out stream state yet — queryChatStatus will reconcile.
+      // This prevents the flash of empty state when a stream is still active.
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
@@ -157,18 +156,30 @@ export function connectGateway(host: GatewayHost) {
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       // Initialize default thread if none exist yet
       host.initDefaultThread();
-      // Reset transient state on all threads (connection was lost)
-      for (const thread of host.threads.values()) {
-        thread.chatRunId = null;
-        thread.chatStream = null;
-        thread.chatStreamStartedAt = null;
-      }
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]).then(() => {
         void batchRenameUnnamedSessions(host);
         // Load history for all visible split panes (non-focused panes need data)
-        void host.loadAllPaneHistories();
-        // Restore active run state (stop button) after reconnect
-        void queryChatStatus(host);
+        void host.loadAllPaneHistories().then(() => {
+          // Force all panes to bottom after history loads
+          host.scrollAllPanesToBottom();
+        });
+        // Query chat.status FIRST, then reconcile stream state.
+        // If an active run exists with streamText, the stream stays alive.
+        // Otherwise, clear orphaned state.
+        void queryChatStatus(host).then(() => {
+          // Clear main session stream state only if no active run was restored
+          if (!host.chatRunId) {
+            (host as unknown as { chatStream: string | null }).chatStream = null;
+            (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+          }
+          // Clear per-thread state only for threads without an active run
+          for (const thread of host.threads.values()) {
+            if (!thread.chatRunId) {
+              thread.chatStream = null;
+              thread.chatStreamStartedAt = null;
+            }
+          }
+        });
       });
     },
     onClose: ({ code, reason }) => {
@@ -180,7 +191,9 @@ export function connectGateway(host: GatewayHost) {
     },
     onEvent: (evt) => handleGatewayEvent(host, evt),
     onGap: ({ expected, received }) => {
-      host.lastError = `event gap detected (expected seq ${expected}, got ${received}); refresh recommended`;
+      // Seq gaps are harmless for chat events (keyed by runId, not global seq).
+      // Log for debugging but don't surface to the user.
+      console.warn(`[gateway] seq gap: expected ${expected}, got ${received}`);
     },
   });
   host.client.start();
@@ -279,6 +292,44 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         }
         return;
       }
+    }
+
+    // Route chat events for visible-but-not-focused panes to their thread state.
+    // These events are NOT background (visible in a pane) but handleChatEvent will
+    // skip them because the sessionKey doesn't match the host's active session.
+    if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
+      const paneThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
+      const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
+      if (paneThread && payload) {
+        if (payload.state === "delta") {
+          const next = extractText(payload.message);
+          if (typeof next === "string") {
+            const current = paneThread.chatStream ?? "";
+            if (!current || next.length >= current.length) {
+              paneThread.chatStream = next;
+            }
+          }
+          if (payload.runId && !paneThread.chatRunId) {
+            paneThread.chatRunId = payload.runId;
+          }
+        } else if (
+          payload.state === "final" ||
+          payload.state === "error" ||
+          payload.state === "aborted"
+        ) {
+          paneThread.chatRunId = null;
+          paneThread.chatStream = null;
+          paneThread.chatStreamStartedAt = null;
+        }
+        paneThread.descriptor.lastActivityAt = Date.now();
+        host.threads = new Map(host.threads);
+
+        // Still need to load history on final for visible panes
+        if (payload.state === "final" && eventSessionKey && paneThreadId) {
+          void loadChatHistoryForThread(host, eventSessionKey, paneThreadId);
+        }
+      }
+      return;
     }
 
     if (payload?.sessionKey) {
@@ -611,6 +662,31 @@ function deriveClientSideTitle(text: string): string {
 }
 
 /**
+ * Load chat history into a specific (non-active) thread state.
+ * Used when a visible-but-not-focused pane's run completes.
+ */
+async function loadChatHistoryForThread(
+  host: GatewayHost,
+  sessionKey: string,
+  threadId: string,
+) {
+  if (!host.connected || !host.client) return;
+  const thread = host.threads.get(threadId);
+  if (!thread) return;
+  try {
+    const res = (await host.client.request("chat.history", {
+      sessionKey,
+      limit: 200,
+    })) as { messages?: unknown[]; thinkingLevel?: string | null };
+    thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+    thread.chatThinkingLevel = res.thinkingLevel ?? null;
+    host.threads = new Map(host.threads);
+  } catch {
+    // Non-critical
+  }
+}
+
+/**
  * Query chat.status for the current session (and visible split panes)
  * to restore the stop button after reconnect.
  */
@@ -619,9 +695,13 @@ async function queryChatStatus(host: GatewayHost) {
   try {
     const res = (await host.client.request("chat.status", {
       sessionKey: host.sessionKey,
-    })) as { activeRun?: { runId: string } | null } | undefined;
+    })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
     if (res?.activeRun?.runId) {
       host.chatRunId = res.activeRun.runId;
+      // Restore accumulated stream text so users see progress after reconnect
+      if (typeof res.activeRun.streamText === "string" && res.activeRun.streamText) {
+        (host as unknown as { chatStream: string | null }).chatStream = res.activeRun.streamText;
+      }
     }
   } catch {
     // Graceful degradation: older gateways may not support chat.status
@@ -634,12 +714,16 @@ async function queryChatStatus(host: GatewayHost) {
       try {
         const res = (await host.client!.request("chat.status", {
           sessionKey: leaf.threadId,
-        })) as { activeRun?: { runId: string } | null } | undefined;
+        })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
         if (res?.activeRun?.runId) {
           const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
           const thread = threadMapId ? host.threads.get(threadMapId) : null;
           if (thread) {
             thread.chatRunId = res.activeRun.runId;
+            // Restore accumulated stream text for this pane
+            if (typeof res.activeRun.streamText === "string" && res.activeRun.streamText) {
+              thread.chatStream = res.activeRun.streamText;
+            }
             host.threads = new Map(host.threads);
           }
         }

@@ -168,9 +168,11 @@ case "$COMMAND" in
         # OPENCLAW_ALLOW_MULTI_GATEWAY=1 bypasses the singleton lock so we
         # can run alongside the user's real gateway on port 18789.
         # OPENCLAW_GATEWAY_PORT ensures the port is resolved before config load.
+        # OPENCLAW_GATEWAY_DEV=1 enables dev-only HTTP endpoints (e.g. /api/rpc).
         nohup env \
             OPENCLAW_ALLOW_MULTI_GATEWAY=1 \
             OPENCLAW_GATEWAY_PORT="$port" \
+            OPENCLAW_GATEWAY_DEV=1 \
             node "$PROJECT_DIR/openclaw.mjs" gateway run \
             --port "$port" \
             --bind loopback \

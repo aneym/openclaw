@@ -73,48 +73,55 @@ const expandedGroups = new Set<string>()
 // Module-level search state (persists across re-renders)
 let threadSearchQuery = ''
 
+// Module-level inline-rename state (survives Lit re-renders)
+let renamingSessionKey: string | null = null
+let renamingValue = ''
+let renamingOriginalLabel = ''
+/** Whether to auto-focus/select the rename input on next render. */
+let renamingNeedsFocus = false
+
 const MAX_VISIBLE = 8
 
-function handleInlineRename(
-  event: Event,
+function startInlineRename(
   sessionKey: string,
   currentLabel: string,
-  onRename: (key: string, label: string) => void,
+  onRequestUpdate: () => void,
 ) {
-  const target = event.target as HTMLElement
-  const input = document.createElement('input')
-  input.className = 'nav-thread-item__rename-input'
-  input.value = currentLabel
-  input.setAttribute('aria-label', 'Rename thread')
-
-  const commit = () => {
-    const next = input.value.trim()
-    if (next && next !== currentLabel) {
-      onRename(sessionKey, next)
-    }
-    if (input.parentNode) {
-      input.parentNode.replaceChild(labelSpan, input)
-    }
-  }
-
-  const labelSpan = target
-  input.addEventListener('blur', commit)
-  input.addEventListener('keydown', (e: KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      e.preventDefault()
-      input.blur()
-    }
-    if (e.key === 'Escape') {
-      input.value = currentLabel
-      input.blur()
-    }
+  renamingSessionKey = sessionKey
+  renamingValue = currentLabel
+  renamingOriginalLabel = currentLabel
+  onRequestUpdate()
+  // Focus + select after Lit renders the input
+  requestAnimationFrame(() => {
+    const el = document.querySelector('.nav-thread-item__rename-input') as HTMLInputElement | null
+    el?.focus()
+    el?.select()
   })
+}
 
-  if (labelSpan.parentNode) {
-    labelSpan.parentNode.replaceChild(input, labelSpan)
-    input.focus()
-    input.select()
+function commitInlineRename(
+  onRename: (key: string, label: string) => void,
+  onRequestUpdate: () => void,
+) {
+  const next = renamingValue.trim()
+  const sessionKey = renamingSessionKey
+  const originalLabel = renamingOriginalLabel
+  renamingSessionKey = null
+  renamingValue = ''
+  renamingOriginalLabel = ''
+  renamingNeedsFocus = false
+  if (sessionKey && next && next !== originalLabel) {
+    onRename(sessionKey, next)
   }
+  onRequestUpdate()
+}
+
+function cancelInlineRename(onRequestUpdate: () => void) {
+  renamingSessionKey = null
+  renamingValue = ''
+  renamingOriginalLabel = ''
+  renamingNeedsFocus = false
+  onRequestUpdate()
 }
 
 /** Check if a session is a cron/automated session */
@@ -198,6 +205,16 @@ function groupSessions(sessions: NavSessionEntry[], openPaneKeys?: Set<string>):
       older.push(s)
     }
   }
+
+  // DEBUG: remove after investigating archive visibility
+  console.warn('[thread-list] groupSessions:', {
+    total: sessions.length,
+    active: active.length,
+    older: older.length,
+    automated: automated.length,
+    archived: archived.length,
+    sampleArchivedAt: sessions.slice(0, 3).map(s => ({ key: s.key.slice(0, 40), archivedAt: s.archivedAt })),
+  })
 
   const groups: SessionGroup[] = []
 
@@ -302,18 +319,43 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                     const isRunning = runningSessions.has(s.key)
                     const unread = unreadCounts.get(s.key) ?? 0
                     const label = sessionDisplayLabel(s)
+                    const isRenaming = renamingSessionKey === s.key
                     return html`
                       <button
                         class="nav-thread-item ${isActive ? 'nav-thread-item--active' : ''} ${isOpenInPane && !isActive ? 'nav-thread-item--open' : ''} ${isRunning && !isActive ? 'nav-thread-item--running' : ''}"
                         draggable="true"
                         @dragstart=${(e: DragEvent) => setDragData(e, s.key)}
-                        @click=${() => onSelect(s.key)}
+                        @click=${() => { if (!isRenaming) onSelect(s.key) }}
                         title="${label}\n${s.key}"
                       >
-                        <span
-                          class="nav-thread-item__label"
-                          @dblclick=${(e: Event) => handleInlineRename(e, s.key, label, onRename)}
-                        >${label}</span>
+                        ${isRenaming
+                          ? html`<input
+                              class="nav-thread-item__rename-input"
+                              .value=${renamingValue}
+                              aria-label="Rename thread"
+                              @input=${(e: Event) => {
+                                renamingValue = (e.target as HTMLInputElement).value
+                              }}
+                              @blur=${() => commitInlineRename(onRename, onRequestUpdate)}
+                              @keydown=${(e: KeyboardEvent) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault()
+                                  ;(e.target as HTMLInputElement).blur()
+                                }
+                                if (e.key === 'Escape') {
+                                  e.preventDefault()
+                                  cancelInlineRename(onRequestUpdate)
+                                }
+                              }}
+                              @click=${(e: Event) => e.stopPropagation()}
+                            />`
+                          : html`<span
+                              class="nav-thread-item__label"
+                              @dblclick=${(e: Event) => {
+                                e.stopPropagation()
+                                startInlineRename(s.key, label, onRequestUpdate)
+                              }}
+                            >${label}</span>`}
                         ${unread > 0
                           ? html`<span class="nav-thread-item__unread" aria-label="${unread} unread">${unread}</span>`
                           : nothing}

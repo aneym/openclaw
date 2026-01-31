@@ -158,26 +158,38 @@ public final class OpenClawChatViewModel {
         self.streamingAssistantText = nil
         self.sessionId = nil
         defer { self.isLoading = false }
-        do {
-            do {
-                try await self.transport.setActiveSessionKey(self.sessionKey)
-            } catch {
-                // Best-effort only; history/send/health still work without push events.
-            }
 
-            let payload = try await self.transport.requestHistory(sessionKey: self.sessionKey)
-            self.messages = Self.decodeMessages(payload.messages ?? [])
-            self.sessionId = payload.sessionId
-            if let level = payload.thinkingLevel, !level.isEmpty {
-                self.thinkingLevel = level
+        // Retry up to 10 times (5s total) to wait for the gateway connection.
+        var lastError: Error?
+        for attempt in 0..<10 {
+            if attempt > 0 {
+                chatUILogger.info("bootstrap retry \(attempt, privacy: .public)/10")
+                try? await Task.sleep(nanoseconds: 500_000_000)
             }
-            await self.pollHealthIfNeeded(force: true)
-            await self.fetchSessions(limit: 50)
-            self.errorText = nil
-        } catch {
-            self.errorText = error.localizedDescription
-            chatUILogger.error("bootstrap failed \(error.localizedDescription, privacy: .public)")
+            do {
+                do {
+                    try await self.transport.setActiveSessionKey(self.sessionKey)
+                } catch {
+                    // Best-effort only; history/send/health still work without push events.
+                }
+
+                let payload = try await self.transport.requestHistory(sessionKey: self.sessionKey)
+                self.messages = Self.decodeMessages(payload.messages ?? [])
+                self.sessionId = payload.sessionId
+                if let level = payload.thinkingLevel, !level.isEmpty {
+                    self.thinkingLevel = level
+                }
+                await self.pollHealthIfNeeded(force: true)
+                await self.fetchSessions(limit: 50)
+                self.errorText = nil
+                return
+            } catch {
+                lastError = error
+                chatUILogger.error("bootstrap attempt \(attempt, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
+        self.errorText = lastError?.localizedDescription
+        chatUILogger.error("bootstrap failed after retries: \(lastError?.localizedDescription ?? "unknown", privacy: .public)")
     }
 
     private static func decodeMessages(_ raw: [AnyCodable]) -> [OpenClawChatMessage] {

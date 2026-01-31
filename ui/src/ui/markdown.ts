@@ -2,18 +2,34 @@ import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { truncateText } from "./format";
 
+const renderer = new marked.Renderer();
+
+const COPY_ICON = '<svg viewBox="0 0 24 24"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const CHECK_ICON = '<svg viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></svg>';
+
+renderer.code = function ({ text, lang }: { text: string; lang?: string | undefined }) {
+  const escaped = escapeHtml(text);
+  const langLabel = lang ? `<span class="code-block__lang">${escapeHtml(lang)}</span>` : '<span></span>';
+  const encoded = btoa(unescape(encodeURIComponent(text)));
+  return `<div class="code-block-wrap"><div class="code-block__header">${langLabel}<button type="button" class="code-block__copy" data-code="${encoded}" title="Copy"><span class="code-block__copy-icon">${COPY_ICON}</span><span class="code-block__check-icon">${CHECK_ICON}</span></button></div><pre class="code-block"><code>${escaped}</code></pre></div>`;
+};
+
 marked.setOptions({
   gfm: true,
   breaks: true,
 });
+
+marked.use({ renderer });
 
 const allowedTags = [
   "a",
   "b",
   "blockquote",
   "br",
+  "button",
   "code",
   "del",
+  "div",
   "em",
   "h1",
   "h2",
@@ -25,6 +41,7 @@ const allowedTags = [
   "ol",
   "p",
   "pre",
+  "span",
   "strong",
   "table",
   "tbody",
@@ -33,9 +50,15 @@ const allowedTags = [
   "thead",
   "tr",
   "ul",
+  "svg",
+  "path",
+  "rect",
+  "circle",
+  "line",
+  "polyline",
 ];
 
-const allowedAttrs = ["class", "href", "rel", "target", "title", "start"];
+const allowedAttrs = ["class", "href", "rel", "target", "title", "start", "type", "data-code", "viewBox", "d", "x", "y", "width", "height", "rx", "ry", "cx", "cy", "r", "x1", "x2", "y1", "y2", "points", "fill", "stroke", "stroke-width", "stroke-linecap", "stroke-linejoin"];
 
 let hooksInstalled = false;
 const MARKDOWN_CHAR_LIMIT = 140_000;

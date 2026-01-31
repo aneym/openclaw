@@ -56,6 +56,77 @@ function extractImages(message: unknown): ImageBlock[] {
   return images;
 }
 
+type AudioBlock = {
+  filename: string;
+  url: string;
+};
+
+type AudioExtraction = {
+  audioFiles: AudioBlock[];
+  cleanedText: string;
+};
+
+const AUDIO_EXTS = new Set([
+  ".ogg", ".mp3", ".m4a", ".wav", ".aac", ".opus", ".flac", ".oga",
+]);
+
+// Match <file name="..." mime="...">BINARY</file> — binary can be anything
+const FILE_TAG_RE = /<file\s+name="([^"]+)"\s+mime="([^"]*)">\s*[\s\S]*?<\/file>/gi;
+const MEDIA_AUDIO_RE = /^<media:audio>\s*/i;
+const TRANSCRIPT_RE = /^\s*Transcript:\s*/i;
+
+function hasAudioExtension(filename: string): boolean {
+  const dotIdx = filename.lastIndexOf(".");
+  if (dotIdx === -1) return false;
+  return AUDIO_EXTS.has(filename.slice(dotIdx).toLowerCase());
+}
+
+/**
+ * Extract audio file references from message text that contains
+ * `<file name="..." mime="...">BINARY</file>` tags.
+ * Returns the audio files and text with binary stripped out.
+ */
+function extractAudioFromText(text: string): AudioExtraction {
+  const audioFiles: AudioBlock[] = [];
+  let cleaned = text;
+
+  cleaned = cleaned.replace(FILE_TAG_RE, (_match, name: string, mime: string) => {
+    const isAudio =
+      (typeof mime === "string" && mime.startsWith("audio/")) ||
+      hasAudioExtension(name);
+    if (isAudio) {
+      audioFiles.push({
+        filename: name,
+        url: `/api/media/${encodeURIComponent(name)}`,
+      });
+      return "";
+    }
+    return _match;
+  });
+
+  // Strip <media:audio> prefix
+  cleaned = cleaned.replace(MEDIA_AUDIO_RE, "");
+  // Strip "Transcript:" label
+  cleaned = cleaned.replace(TRANSCRIPT_RE, "");
+
+  return { audioFiles, cleanedText: cleaned.trim() };
+}
+
+function renderAudioPlayers(audioFiles: AudioBlock[]) {
+  if (audioFiles.length === 0) return nothing;
+  return html`
+    <div class="chat-audio-players">
+      ${audioFiles.map(
+        (af) => html`
+          <div class="chat-audio-player">
+            <audio controls preload="metadata" src=${af.url}></audio>
+          </div>
+        `,
+      )}
+    </div>
+  `;
+}
+
 export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
   return html`
     <div class="chat-group assistant">
@@ -333,7 +404,18 @@ function renderGroupedMessage(
     opts.showReasoning && role === "assistant"
       ? extractThinkingCached(message)
       : null;
-  const markdownBase = extractedText?.trim() ? extractedText : null;
+
+  // Extract audio files from text and strip binary content
+  const audioExtraction = extractedText
+    ? extractAudioFromText(extractedText)
+    : null;
+  const audioFiles = audioExtraction?.audioFiles ?? [];
+  const hasAudio = audioFiles.length > 0;
+  const textAfterAudio = hasAudio
+    ? audioExtraction!.cleanedText
+    : extractedText;
+
+  const markdownBase = textAfterAudio?.trim() ? textAfterAudio : null;
   const reasoningMarkdown = extractedThinking
     ? formatReasoningMarkdown(extractedThinking)
     : null;
@@ -366,12 +448,13 @@ function renderGroupedMessage(
   }
   const showInlineChips = hasToolCards && role !== "assistant";
 
-  if (!markdown && !showInlineChips && !hasImages) return nothing;
+  if (!markdown && !showInlineChips && !hasImages && !hasAudio) return nothing;
 
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
+      ${renderAudioPlayers(audioFiles)}
       ${reasoningMarkdown
         ? html`<div class="chat-thinking">${unsafeHTML(
             toSanitizedMarkdownHtml(reasoningMarkdown),

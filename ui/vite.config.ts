@@ -21,7 +21,7 @@ function normalizeBase(input: string): string {
 export default defineConfig(() => {
   const envBase = process.env.OPENCLAW_CONTROL_UI_BASE_PATH?.trim();
   const base = envBase ? normalizeBase(envBase) : "./";
-  const gatewayPort = process.env.OPENCLAW_GATEWAY_PORT || "18789";
+  const gatewayPort = process.env.OPENCLAW_GATEWAY_PORT || "19001";
   const gatewayOrigin = `http://localhost:${gatewayPort}`;
   return {
     base,

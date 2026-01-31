@@ -47,6 +47,11 @@ export function buildGatewayCronService(params: {
     storePath,
     cronEnabled,
     enqueueSystemEvent: (text, opts) => {
+      // Allow explicit sessionKey override (e.g. from wake with --session-key)
+      if (opts?.sessionKey) {
+        enqueueSystemEvent(text, { sessionKey: opts.sessionKey });
+        return;
+      }
       const { agentId, cfg: runtimeConfig } = resolveCronAgent(opts?.agentId);
       const sessionKey = resolveAgentMainSessionKey({
         cfg: runtimeConfig,

@@ -170,7 +170,14 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     const toolFailureSection = formatToolFailuresSection(toolFailures);
     const fallbackSummary = `${FALLBACK_SUMMARY}${toolFailureSection}${fileOpsSummary}`;
 
-    const model = ctx.model;
+    const runtime = getCompactionSafeguardRuntime(ctx.sessionManager);
+
+    // ctx.model may be undefined in embedded mode (SDK doesn't call extensionRunner.initialize).
+    // Fall back to the model stored in the runtime registry by the embedded runner.
+    const model = ctx.model ?? (runtime?.model as typeof ctx.model);
+    console.warn(
+      `[compaction-safeguard] ctx.model=${!!ctx.model}, runtime=${!!runtime}, runtime.model=${!!runtime?.model}, resolved model=${!!model}`,
+    );
     if (!model) {
       return {
         compaction: {

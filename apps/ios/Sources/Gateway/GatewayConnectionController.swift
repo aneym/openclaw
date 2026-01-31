@@ -3,8 +3,11 @@ import Darwin
 import Foundation
 import Network
 import Observation
+import OSLog
 import SwiftUI
 import UIKit
+
+private let connLogger = Logger(subsystem: "ai.openclaw", category: "GatewayConn")
 
 @MainActor
 @Observable
@@ -114,28 +117,47 @@ final class GatewayConnectionController {
     }
 
     private func maybeAutoConnect() {
-        guard !self.didAutoConnect else { return }
-        guard let appModel = self.appModel else { return }
-        guard appModel.gatewayServerName == nil else { return }
+        connLogger.info("maybeAutoConnect: didAutoConnect=\(self.didAutoConnect, privacy: .public)")
+        guard !self.didAutoConnect else {
+            connLogger.info("maybeAutoConnect: skipping — already auto-connected")
+            return
+        }
+        guard let appModel = self.appModel else {
+            connLogger.error("maybeAutoConnect: no appModel")
+            return
+        }
+        guard appModel.gatewayServerName == nil else {
+            connLogger.info("maybeAutoConnect: already has serverName")
+            return
+        }
 
         let defaults = UserDefaults.standard
         let manualEnabled = defaults.bool(forKey: "gateway.manual.enabled")
 
         let instanceId = defaults.string(forKey: "node.instanceId")?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !instanceId.isEmpty else { return }
+        connLogger.info("maybeAutoConnect: manual=\(manualEnabled, privacy: .public) instanceId=\(instanceId, privacy: .public)")
+        guard !instanceId.isEmpty else {
+            connLogger.error("maybeAutoConnect: empty instanceId!")
+            return
+        }
 
         let token = GatewaySettingsStore.loadGatewayToken(instanceId: instanceId)
         let password = GatewaySettingsStore.loadGatewayPassword(instanceId: instanceId)
+        connLogger.info("maybeAutoConnect: token=\(token != nil ? "present" : "nil", privacy: .public) password=\(password != nil ? "present" : "nil", privacy: .public)")
 
         if manualEnabled {
             let manualHost = defaults.string(forKey: "gateway.manual.host")?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            guard !manualHost.isEmpty else { return }
+            guard !manualHost.isEmpty else {
+                connLogger.error("maybeAutoConnect: manual enabled but empty host")
+                return
+            }
 
             let manualPort = defaults.integer(forKey: "gateway.manual.port")
             let resolvedPort = manualPort > 0 ? manualPort : 18789
             let manualTLS = defaults.bool(forKey: "gateway.manual.tls")
+            connLogger.info("maybeAutoConnect: manual host=\(manualHost, privacy: .public) port=\(resolvedPort, privacy: .public) tls=\(manualTLS, privacy: .public)")
 
             let stableID = self.manualStableID(host: manualHost, port: resolvedPort)
             let tlsParams = self.resolveManualTLSParams(stableID: stableID, tlsEnabled: manualTLS)
@@ -144,8 +166,12 @@ final class GatewayConnectionController {
                 host: manualHost,
                 port: resolvedPort,
                 useTLS: tlsParams?.required == true)
-            else { return }
+            else {
+                connLogger.error("maybeAutoConnect: failed to build URL")
+                return
+            }
 
+            connLogger.info("maybeAutoConnect: connecting manual url=\(url.absoluteString, privacy: .public)")
             self.didAutoConnect = true
             self.startAutoConnect(
                 url: url,

@@ -89,6 +89,7 @@ async function runGatewayCommand(opts: GatewayRunOpts) {
   }
 
   if (devMode) {
+    process.env.OPENCLAW_GATEWAY_DEV = "1";
     await ensureDevGatewayConfig({ reset: Boolean(opts.reset) });
   }
 

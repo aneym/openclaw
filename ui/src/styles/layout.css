@@ -208,6 +208,43 @@
 }
 
 /* ===========================================
+   Dev Mode Indicators
+   =========================================== */
+
+/* Dev mode topbar — amber stripe */
+.shell[data-dev] .topbar {
+  border-top: 3px solid #f59e0b;
+  background: linear-gradient(to bottom, rgba(245, 158, 11, 0.06), var(--bg) 60%);
+}
+
+.dev-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  height: 20px;
+  white-space: nowrap;
+}
+
+/* UI Dev (vite dev server) — amber */
+.dev-badge.ui-dev {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Gateway Dev — teal */
+.dev-badge.gw-dev {
+  background: var(--accent-2-subtle);
+  color: var(--accent-2);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+/* ===========================================
    Navigation Sidebar
    =========================================== */
 
