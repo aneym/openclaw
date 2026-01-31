@@ -286,8 +286,9 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       }
     }
     if (state === "final") {
-      void loadChatHistory(host as unknown as OpenClawApp);
-      void maybeAutoRenameSession(host);
+      void loadChatHistory(host as unknown as OpenClawApp).then(() => {
+        void maybeAutoRenameSession(host);
+      });
     }
     return;
   }

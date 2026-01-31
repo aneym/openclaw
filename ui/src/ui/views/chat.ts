@@ -305,6 +305,30 @@ export function renderChat(props: ChatProps) {
     >
       ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
       ${repeat(buildChatItems(props), (item) => item.key, (item) => {
+        if (item.kind === "load-more") {
+          return html`<div class="chat-load-more">
+            <button
+              class="chat-load-more__btn"
+              type="button"
+              @click=${(e: Event) => {
+                const btn = e.currentTarget as HTMLElement;
+                const thread = btn.closest(".chat-thread");
+                const prevHeight = thread?.scrollHeight ?? 0;
+                item.onLoadMore();
+                // Re-render by dispatching a custom event the app-render can pick up
+                btn.dispatchEvent(new CustomEvent("chat-load-more", { bubbles: true, composed: true }));
+                // Preserve scroll position after new messages are prepended
+                requestAnimationFrame(() => {
+                  if (thread) {
+                    const newHeight = thread.scrollHeight;
+                    thread.scrollTop += newHeight - prevHeight;
+                  }
+                });
+              }}
+            >Load ${Math.min(LOAD_MORE_BATCH, item.remaining)} older messages${item.remaining > LOAD_MORE_BATCH ? ` (${item.remaining} remaining)` : ""}</button>
+          </div>`;
+        }
+
         if (item.kind === "reading-indicator") {
           return renderReadingIndicatorGroup(assistantIdentity);
         }
@@ -476,7 +500,20 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-const CHAT_HISTORY_RENDER_LIMIT = 20;
+const CHAT_HISTORY_RENDER_LIMIT = 50;
+const LOAD_MORE_BATCH = 50;
+
+/** Per-session state tracking how many messages to render. */
+const sessionRenderLimits = new Map<string, number>();
+
+function getSessionRenderLimit(sessionKey: string): number {
+  return sessionRenderLimits.get(sessionKey) ?? CHAT_HISTORY_RENDER_LIMIT;
+}
+
+function expandSessionRenderLimit(sessionKey: string, total: number): void {
+  const current = getSessionRenderLimit(sessionKey);
+  sessionRenderLimits.set(sessionKey, Math.min(current + LOAD_MORE_BATCH, total));
+}
 
 function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   const result: Array<ChatItem | MessageGroup> = [];
@@ -528,15 +565,15 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  const historyStart = Math.max(0, history.length - CHAT_HISTORY_RENDER_LIMIT);
+  const limit = getSessionRenderLimit(props.sessionKey);
+  const historyStart = Math.max(0, history.length - limit);
   if (historyStart > 0) {
     items.push({
-      kind: "message",
-      key: "chat:history:notice",
-      message: {
-        role: "system",
-        content: `Showing most recent ${CHAT_HISTORY_RENDER_LIMIT} messages (${historyStart} older messages — scroll up or refresh to load more).`,
-        timestamp: Date.now(),
+      kind: "load-more",
+      key: "chat:history:load-more",
+      remaining: historyStart,
+      onLoadMore: () => {
+        expandSessionRenderLimit(props.sessionKey, history.length);
       },
     });
   }

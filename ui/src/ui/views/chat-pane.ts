@@ -88,7 +88,17 @@ export function renderChatPane(props: ChatPaneProps) {
     canAbort: isActiveSession ? Boolean(state.chatRunId) : Boolean(thread?.chatRunId),
     onAbort: () => void state.handleAbortChat(),
     onQueueRemove: (id) => state.removeQueuedMessage(id),
-    onNewSession: () => void state.handleSendChat('/new', { restoreDraft: true }),
+    onNewSession: () => {
+      // Create a fresh thread and assign it to this pane
+      const parentKey = state.sessionKey.split(':thread:')[0];
+      const desc = createThreadDescriptor(parentKey);
+      const newThread = createThreadState(desc);
+      state.threads.set(desc.id, newThread);
+      state.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+      saveThreadDescriptors(state.getThreadDescriptors());
+      state.threads = new Map(state.threads);
+      state.setThreadInPane(leaf.id, desc.sessionKey);
+    },
     sidebarOpen: paneState?.sidebarOpen ?? false,
     sidebarContent: paneState?.sidebarContent ?? null,
     sidebarError: paneState?.sidebarError ?? null,
