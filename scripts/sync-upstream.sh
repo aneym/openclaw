@@ -20,6 +20,13 @@ KINETIC_OWNED_PATHS=(
   "skills/merge/"
   ".claude/"
   "AGENTS.md"
+  # Branding overrides (kbot / Kinetic)
+  "ui/public/favicon.svg"
+  "ui/public/favicon.ico"
+  "ui/public/favicon-32.png"
+  "ui/public/apple-touch-icon.png"
+  "ui/index.html"
+  "ui/src/ui/app-render.ts"
 )
 
 echo "=== Fetching upstream ==="

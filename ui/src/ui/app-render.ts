@@ -88,6 +88,7 @@ import { syncUrlWithSessionKey } from "./app-settings";
 import type { NavSessionEntry } from "./views/thread-list";
 import { createThreadDescriptor, createThreadState } from "./thread-state";
 import { saveThreadDescriptors } from "./thread-storage";
+import { allLeaves } from "./split-tree";
 
 const AVATAR_DATA_RE = /^data:/i;
 const AVATAR_HTTP_RE = /^https?:\/\//i;
@@ -184,10 +185,10 @@ export function renderApp(state: AppViewState) {
           </button>
           <div class="brand">
             <div class="brand-logo">
-              <img src="https://mintcdn.com/clawhub/4rYvG-uuZrMK_URE/assets/pixel-lobster.svg?fit=max&auto=format&n=4rYvG-uuZrMK_URE&q=85&s=da2032e9eac3b5d9bfe7eb96ca6a8a26" alt="OpenClaw" />
+              <img src="/favicon.svg" alt="kbot" />
             </div>
             <div class="brand-text">
-              <div class="brand-title">OPENCLAW</div>
+              <div class="brand-title">KBOT</div>
               <div class="brand-sub">Gateway Dashboard</div>
             </div>
           </div>
@@ -265,6 +266,21 @@ export function renderApp(state: AppViewState) {
                       },
                       onDelete: (sessionKey) => {
                         void deleteSession(state, sessionKey);
+                      },
+                      onArchive: (sessionKey) => {
+                        void patchSession(state, sessionKey, { archived: true });
+                        if (state.splitLayout) {
+                          const leaf = allLeaves(state.splitLayout.root).find(
+                            (l) => l.threadId === sessionKey,
+                          );
+                          if (leaf) state.closePane(leaf.id);
+                        }
+                        if (state.sessionKey === sessionKey) {
+                          startNewSession(state);
+                        }
+                      },
+                      onUnarchive: (sessionKey) => {
+                        void patchSession(state, sessionKey, { archived: false });
                       },
                       onNewSession: () => startNewSession(state),
                       onRequestUpdate: () => {
