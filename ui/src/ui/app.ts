@@ -63,6 +63,7 @@ import type {
 } from "./controllers/exec-approvals";
 import type { DevicePairingList } from "./controllers/devices";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import {
   resetToolStream as resetToolStreamInternal,
   type ToolStreamEntry,
@@ -140,7 +141,7 @@ export class OpenClawApp extends LitElement {
   @state() lastError: string | null = null;
   @state() eventLog: EventLogEntry[] = [];
   private eventLogBuffer: EventLogEntry[] = [];
-  private toolStreamSyncTimer: number | null = null;
+  toolStreamSyncTimer: number | null = null;
   private sidebarCloseTimer: number | null = null;
 
   @state() assistantName = injectedAssistantIdentity.name;
@@ -197,6 +198,9 @@ export class OpenClawApp extends LitElement {
   @state() execApprovalQueue: ExecApprovalRequest[] = [];
   @state() execApprovalBusy = false;
   @state() execApprovalError: string | null = null;
+  @state() toolApprovalQueue: ToolApprovalRequest[] = [];
+  @state() toolApprovalBusy = false;
+  @state() toolApprovalError: string | null = null;
   @state() pendingGatewayUrl: string | null = null;
 
   @state() configLoading = false;
@@ -301,8 +305,8 @@ export class OpenClawApp extends LitElement {
   private logsPollInterval: number | null = null;
   private debugPollInterval: number | null = null;
   private logsScrollFrame: number | null = null;
-  private toolStreamById = new Map<string, ToolStreamEntry>();
-  private toolStreamOrder: string[] = [];
+  toolStreamById = new Map<string, ToolStreamEntry>();
+  toolStreamOrder: string[] = [];
   refreshSessionsAfterChat = new Set<string>();
   basePath = "";
   visibilityHandler: (() => void) | null = null;
@@ -505,6 +509,24 @@ export class OpenClawApp extends LitElement {
       this.execApprovalError = `Exec approval failed: ${String(err)}`;
     } finally {
       this.execApprovalBusy = false;
+    }
+  }
+
+  async handleToolApprovalDecision(decision: "allow-once" | "allow-always" | "deny") {
+    const active = this.toolApprovalQueue[0];
+    if (!active || !this.client || this.toolApprovalBusy) return;
+    this.toolApprovalBusy = true;
+    this.toolApprovalError = null;
+    try {
+      await this.client.request("tool.approval.resolve", {
+        id: active.id,
+        decision,
+      });
+      this.toolApprovalQueue = this.toolApprovalQueue.filter((entry) => entry.id !== active.id);
+    } catch (err) {
+      this.toolApprovalError = `Tool approval failed: ${String(err)}`;
+    } finally {
+      this.toolApprovalBusy = false;
     }
   }
 
@@ -904,6 +926,24 @@ export class OpenClawApp extends LitElement {
         const targetThread = this.threads.get(targetThreadId);
         if (targetThread) {
           restoreThreadState(this, targetThread);
+
+          // Bug 4 guard: if the target thread has an in-flight history load,
+          // re-restore once it completes so the host sees fresh data.
+          if (targetThread._historyLoading) {
+            const capturedPaneId = paneId;
+            const poll = () => {
+              if (!targetThread._historyLoading) {
+                // Only apply if this pane is still focused (user didn't switch again)
+                if (this.focusedPaneId === capturedPaneId) {
+                  restoreThreadState(this, targetThread);
+                  this.threads = new Map(this.threads);
+                }
+              } else {
+                setTimeout(poll, 50);
+              }
+            };
+            setTimeout(poll, 50);
+          }
         }
       }
     }

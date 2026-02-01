@@ -8,7 +8,13 @@ import type { EventLogEntry } from "./app-events";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types";
 import type { Tab } from "./navigation";
 import type { UiSettings } from "./storage";
-import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream";
+import {
+  handleAgentEvent,
+  handleAgentEventForThread,
+  resetToolStream,
+  resetToolStreamForThread,
+  type AgentEventPayload,
+} from "./app-tool-stream";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat";
 import {
   applySettings,
@@ -16,16 +22,22 @@ import {
   refreshActiveTab,
   setLastActiveSessionKey,
 } from "./app-settings";
-import { handleChatEvent, type ChatEventPayload } from "./controllers/chat";
-import { extractText } from "./chat/message-extract";
+import { handleChatEvent, handleChatEventForThread, type ChatEventPayload } from "./controllers/chat";
 import {
   addExecApproval,
   parseExecApprovalRequested,
   parseExecApprovalResolved,
   removeExecApproval,
 } from "./controllers/exec-approval";
+import {
+  addToolApproval,
+  parseToolApprovalRequested,
+  parseToolApprovalResolved,
+  removeToolApproval,
+} from "./controllers/tool-approval";
 import type { OpenClawApp } from "./app";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
 import { loadSessions, patchSession } from "./controllers/sessions";
 import type { SessionsListResult } from "./types";
@@ -60,6 +72,8 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  toolApprovalQueue: ToolApprovalRequest[];
+  toolApprovalError: string | null;
   threads: Map<string, ThreadState>;
   activeThreadId: string | null;
   sessionKeyToThreadId: Map<string, string>;
@@ -134,6 +148,8 @@ export function connectGateway(host: GatewayHost) {
   host.connected = false;
   host.execApprovalQueue = [];
   host.execApprovalError = null;
+  host.toolApprovalQueue = [];
+  host.toolApprovalError = null;
 
   host.client?.stop();
   host.client = new GatewayBrowserClient({
@@ -147,9 +163,9 @@ export function connectGateway(host: GatewayHost) {
       host.lastError = null;
       host.hello = hello;
       applySnapshot(host, hello);
-      // Don't null out stream state yet — queryChatStatus will reconcile.
-      // This prevents the flash of empty state when a stream is still active.
-      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+      // Don't reset tool stream here — defer until queryChatStatus confirms
+      // whether an active run exists. Resetting eagerly wipes tool history
+      // that queryChatStatus cannot restore (Bug 5).
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
@@ -167,16 +183,18 @@ export function connectGateway(host: GatewayHost) {
         // If an active run exists with streamText, the stream stays alive.
         // Otherwise, clear orphaned state.
         void queryChatStatus(host).then(() => {
-          // Clear main session stream state only if no active run was restored
+          // Clear main session stream/tool state only if no active run was restored
           if (!host.chatRunId) {
             (host as unknown as { chatStream: string | null }).chatStream = null;
             (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+            resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
           }
           // Clear per-thread state only for threads without an active run
           for (const thread of host.threads.values()) {
             if (!thread.chatRunId) {
               thread.chatStream = null;
               thread.chatStreamStartedAt = null;
+              resetToolStreamForThread(thread);
             }
           }
         });
@@ -230,6 +248,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         // Route to background thread: skip tool stream processing
         const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
         if (bgThreadId && bgThreadId !== host.activeThreadId) return;
+      } else if (agentSessionKey !== host.sessionKey) {
+        // Visible-but-not-focused pane: route to per-thread tool stream
+        const paneThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+        const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
+        if (paneThread) {
+          handleAgentEventForThread(paneThread, agentPayload);
+          host.threads = new Map(host.threads);
+        }
+        return;
       }
     } else if (agentSessionKey && agentSessionKey !== host.sessionKey) {
       // Single pane mode: existing background thread logic
@@ -237,6 +264,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       if (bgThreadId && bgThreadId !== host.activeThreadId) return;
     }
 
+    // Focused session: use host-level tool stream
     handleAgentEvent(
       host as unknown as Parameters<typeof handleAgentEvent>[0],
       agentPayload,
@@ -295,39 +323,46 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     }
 
     // Route chat events for visible-but-not-focused panes to their thread state.
-    // These events are NOT background (visible in a pane) but handleChatEvent will
-    // skip them because the sessionKey doesn't match the host's active session.
+    // Full lifecycle: state machine, tool stream reset, queue flush, auto-rename.
     if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
       const paneThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
       const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
       if (paneThread && payload) {
-        if (payload.state === "delta") {
-          const next = extractText(payload.message);
-          if (typeof next === "string") {
-            const current = paneThread.chatStream ?? "";
-            if (!current || next.length >= current.length) {
-              paneThread.chatStream = next;
+        const threadState = handleChatEventForThread(paneThread, payload);
+
+        if (threadState === "final" || threadState === "error" || threadState === "aborted") {
+          resetToolStreamForThread(paneThread);
+          const runId = payload.runId;
+          if (runId && host.refreshSessionsAfterChat.has(runId)) {
+            host.refreshSessionsAfterChat.delete(runId);
+            if (threadState === "final") {
+              void loadSessions(host as unknown as OpenClawApp, {
+                activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+              });
             }
           }
-          if (payload.runId && !paneThread.chatRunId) {
-            paneThread.chatRunId = payload.runId;
+
+          if (threadState === "final" && eventSessionKey && paneThreadId) {
+            void loadChatHistoryForThread(host, eventSessionKey, paneThreadId).then(() => {
+              void maybeAutoRenameSession(
+                host,
+                eventSessionKey,
+                paneThread.chatMessages as Parameters<typeof maybeAutoRenameSession>[2],
+              );
+              // Flush queued messages for this thread's session
+              void flushChatQueueForEvent(
+                host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+              );
+            });
+          } else {
+            void flushChatQueueForEvent(
+              host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+            );
           }
-        } else if (
-          payload.state === "final" ||
-          payload.state === "error" ||
-          payload.state === "aborted"
-        ) {
-          paneThread.chatRunId = null;
-          paneThread.chatStream = null;
-          paneThread.chatStreamStartedAt = null;
         }
+
         paneThread.descriptor.lastActivityAt = Date.now();
         host.threads = new Map(host.threads);
-
-        // Still need to load history on final for visible panes
-        if (payload.state === "final" && eventSessionKey && paneThreadId) {
-          void loadChatHistoryForThread(host, eventSessionKey, paneThreadId);
-        }
       }
       return;
     }
@@ -406,6 +441,26 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
     }
   }
+
+  if (evt.event === "tool.approval.requested") {
+    const entry = parseToolApprovalRequested(evt.payload);
+    if (entry) {
+      host.toolApprovalQueue = addToolApproval(host.toolApprovalQueue, entry);
+      host.toolApprovalError = null;
+      const delay = Math.max(0, entry.expiresAtMs - Date.now() + 500);
+      window.setTimeout(() => {
+        host.toolApprovalQueue = removeToolApproval(host.toolApprovalQueue, entry.id);
+      }, delay);
+    }
+    return;
+  }
+
+  if (evt.event === "tool.approval.resolved") {
+    const resolved = parseToolApprovalResolved(evt.payload);
+    if (resolved) {
+      host.toolApprovalQueue = removeToolApproval(host.toolApprovalQueue, resolved.id);
+    }
+  }
 }
 
 /** Sessions that have already been auto-renamed (avoids re-triggering).
@@ -480,7 +535,6 @@ export async function batchRenameUnnamedSessions(host: GatewayHost) {
   // Process up to 10 sessions, one at a time
   const batch = unnamed.slice(0, 10);
   for (const session of batch) {
-    markRenamed(session.key);
     try {
       // Load chat history for this session
       const res = (await host.client!.request("chat.history", {
@@ -502,6 +556,9 @@ export async function batchRenameUnnamedSessions(host: GatewayHost) {
         );
       if (!title || isBadTitle(title)) continue;
 
+      // Mark renamed AFTER successful title generation (not before)
+      markRenamed(session.key);
+
       const patch: { label: string; icon?: string } = { label: title };
       if (result?.icon) patch.icon = result.icon;
       void patchSession(
@@ -520,10 +577,14 @@ export async function batchRenameUnnamedSessions(host: GatewayHost) {
  * Claude Haiku via the gateway's OpenAI-compatible HTTP API. Falls back
  * to a client-side heuristic if the LLM call fails.
  */
-async function maybeAutoRenameSession(host: GatewayHost) {
+async function maybeAutoRenameSession(
+  host: GatewayHost,
+  explicitSessionKey?: string,
+  explicitMessages?: Array<{ role?: string; content?: Array<{ type?: string; text?: string }> | string }>,
+) {
   if (!host.connected || !host.client) return;
 
-  const sessionKey = host.sessionKey;
+  const sessionKey = explicitSessionKey ?? host.sessionKey;
   if (isRenamed(sessionKey)) return;
 
   // Check current label from the gateway sessions list
@@ -543,7 +604,7 @@ async function maybeAutoRenameSession(host: GatewayHost) {
   }
 
   // Need at least one user message and one assistant reply
-  const messages = host.chatMessages as Array<{
+  const messages = (explicitMessages ?? host.chatMessages) as Array<{
     role?: string;
     content?: Array<{ type?: string; text?: string }> | string;
   }>;
@@ -551,12 +612,13 @@ async function maybeAutoRenameSession(host: GatewayHost) {
   const assistantMsg = messages.find((m) => m.role === "assistant");
   if (!userMsg || !assistantMsg) return;
 
-  markRenamed(sessionKey);
-
   // Try LLM-based title, fall back to client-side heuristic
   const result = await generateTitleViaLLM(host, messages);
   const title = result?.title || deriveClientSideTitle(extractMessageText(userMsg));
   if (!title || isBadTitle(title)) return;
+
+  // Mark renamed AFTER successful title generation (not before)
+  markRenamed(sessionKey);
 
   const patch: { label: string; icon?: string } = { label: title };
   if (result?.icon) patch.icon = result.icon;
@@ -673,6 +735,7 @@ async function loadChatHistoryForThread(
   if (!host.connected || !host.client) return;
   const thread = host.threads.get(threadId);
   if (!thread) return;
+  thread._historyLoading = true;
   try {
     const res = (await host.client.request("chat.history", {
       sessionKey,
@@ -683,6 +746,8 @@ async function loadChatHistoryForThread(
     host.threads = new Map(host.threads);
   } catch {
     // Non-critical
+  } finally {
+    thread._historyLoading = false;
   }
 }
 

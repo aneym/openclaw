@@ -42,6 +42,7 @@ import { renderNodes } from "./views/nodes";
 import { renderOverview } from "./views/overview";
 import { renderSessions } from "./views/sessions";
 import { renderExecApprovalPrompt } from "./views/exec-approval";
+import { renderToolApprovalPrompt } from "./views/tool-approval";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation";
 import {
   approveDevicePairing,
@@ -787,6 +788,7 @@ export function renderApp(state: AppViewState) {
           : nothing}
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderToolApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
     </div>
   `;

@@ -311,7 +311,7 @@ export function renderChatPane(props: ChatPaneProps) {
         draggable="true"
         @dragstart=${handleTitlebarDragStart}
       >
-        <span class="split-pane__titlebar-label" title=${sessionKey}>
+        <span class="split-pane__titlebar-label" title="${paneTitle} — drag to rearrange, right-click for options">
           ${paneTitle}
         </span>
         <span class="split-pane__titlebar-meta">
@@ -322,8 +322,20 @@ export function renderChatPane(props: ChatPaneProps) {
               : html`<span class="split-pane__titlebar-status split-pane__titlebar-status--empty">empty</span>`}
         </span>
         <button
+          class="split-pane__titlebar-copy"
+          data-tooltip="Copy session ID"
+          @click=${(e: Event) => {
+            e.stopPropagation()
+            void navigator.clipboard.writeText(sessionKey).then(() => {
+              const btn = e.currentTarget as HTMLElement
+              btn.classList.add('split-pane__titlebar-copy--copied')
+              setTimeout(() => btn.classList.remove('split-pane__titlebar-copy--copied'), 1200)
+            })
+          }}
+        ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button>
+        <button
           class="split-pane__titlebar-reset"
-          title="Reset session"
+          data-tooltip="Reset session"
           @click=${(e: Event) => {
             e.stopPropagation()
             state.chatMessage = ''
@@ -338,7 +350,7 @@ export function renderChatPane(props: ChatPaneProps) {
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8a6 6 0 0110.472-4"/><path d="M14 8a6 6 0 01-10.472 4"/><path d="M12.5 1v3.5H9"/><path d="M3.5 15v-3.5H7"/></svg></button>
         <button
           class="split-pane__titlebar-archive"
-          title="Archive session"
+          data-tooltip="Archive session"
           @click=${(e: Event) => {
             e.stopPropagation()
             void patchSession(state, sessionKey, { archived: true })
@@ -347,7 +359,7 @@ export function renderChatPane(props: ChatPaneProps) {
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>
         <button
           class="split-pane__titlebar-close"
-          title="Close pane"
+          data-tooltip="Close pane"
           @click=${(e: Event) => {
             e.stopPropagation()
             state.closePane(leaf.id)

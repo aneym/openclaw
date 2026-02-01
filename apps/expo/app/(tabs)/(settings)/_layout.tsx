@@ -1,3 +1,4 @@
+import { PlatformColor } from 'react-native'
 import { Stack } from 'expo-router/stack'
 
 export default function SettingsLayout() {
@@ -5,6 +6,7 @@ export default function SettingsLayout() {
     <Stack
       screenOptions={{
         headerLargeTitle: true,
+        headerTintColor: PlatformColor('label'),
       }}
     />
   )

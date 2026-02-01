@@ -1,12 +1,9 @@
 /**
  * Transient UI state for each visible pane.
  *
- * This is separate from ThreadState (which holds chat data).
- * PaneState tracks per-pane UI concerns like scroll position,
- * sidebar visibility, and tool stream routing.
+ * This is separate from ThreadState (which holds chat data and tool stream).
+ * PaneState tracks per-pane UI concerns like scroll position and sidebar visibility.
  */
-
-import type { ToolStreamEntry } from './app-tool-stream'
 
 export interface PaneState {
   paneId: string
@@ -16,8 +13,6 @@ export interface PaneState {
   sidebarContent: string | null
   sidebarError: string | null
   sidebarSplitRatio: number
-  toolStreamById: Map<string, ToolStreamEntry>
-  toolStreamOrder: string[]
 }
 
 export function createPaneState(paneId: string, threadId: string): PaneState {
@@ -29,8 +24,6 @@ export function createPaneState(paneId: string, threadId: string): PaneState {
     sidebarContent: null,
     sidebarError: null,
     sidebarSplitRatio: 0.6,
-    toolStreamById: new Map(),
-    toolStreamOrder: [],
   }
 }
 

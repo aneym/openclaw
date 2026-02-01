@@ -73,6 +73,8 @@ export type CronJob = {
   updatedAtMs: number;
   schedule: CronSchedule;
   sessionTarget: CronSessionTarget;
+  /** Override the resolved session key (e.g. target a specific thread). */
+  sessionKey?: string;
   wakeMode: CronWakeMode;
   payload: CronPayload;
   isolation?: CronIsolation;
@@ -86,9 +88,11 @@ export type CronStoreFile = {
 
 export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" | "state"> & {
   state?: Partial<CronJobState>;
+  sessionKey?: string;
 };
 
 export type CronJobPatch = Partial<Omit<CronJob, "id" | "createdAtMs" | "state" | "payload">> & {
   payload?: CronPayloadPatch;
   state?: Partial<CronJobState>;
+  sessionKey?: string;
 };

@@ -1,5 +1,6 @@
 import { generateUUID } from './uuid'
 import type { ChatAttachment, ChatQueueItem } from './ui-types'
+import type { ToolStreamEntry } from './app-tool-stream'
 
 export interface ThreadDescriptor {
   id: string
@@ -23,6 +24,11 @@ export interface ThreadState {
   chatQueue: ChatQueueItem[]
   chatLoading: boolean
   chatThinkingLevel: string | null
+  toolStreamById: Map<string, ToolStreamEntry>
+  toolStreamOrder: string[]
+  toolStreamSyncTimer: number | null
+  /** True while an async history load is in-flight for this thread. */
+  _historyLoading: boolean
   unreadCount: number
   hasNewMessages: boolean
 }
@@ -57,6 +63,10 @@ export function createThreadState(descriptor: ThreadDescriptor): ThreadState {
     chatQueue: [],
     chatLoading: false,
     chatThinkingLevel: null,
+    toolStreamById: new Map(),
+    toolStreamOrder: [],
+    toolStreamSyncTimer: null,
+    _historyLoading: false,
     unreadCount: 0,
     hasNewMessages: false,
   }
@@ -74,6 +84,9 @@ type SnapshotHost = {
   chatQueue: ChatQueueItem[]
   chatLoading: boolean
   chatThinkingLevel: string | null
+  toolStreamById: Map<string, ToolStreamEntry>
+  toolStreamOrder: string[]
+  toolStreamSyncTimer: number | null
 }
 
 export function snapshotThreadState(host: SnapshotHost): Omit<ThreadState, 'descriptor' | 'unreadCount' | 'hasNewMessages'> {
@@ -89,6 +102,10 @@ export function snapshotThreadState(host: SnapshotHost): Omit<ThreadState, 'desc
     chatQueue: host.chatQueue,
     chatLoading: host.chatLoading,
     chatThinkingLevel: host.chatThinkingLevel,
+    toolStreamById: new Map(host.toolStreamById),
+    toolStreamOrder: [...host.toolStreamOrder],
+    toolStreamSyncTimer: host.toolStreamSyncTimer,
+    _historyLoading: false,
   }
 }
 
@@ -104,4 +121,7 @@ export function restoreThreadState(host: SnapshotHost, thread: ThreadState): voi
   host.chatQueue = thread.chatQueue
   host.chatLoading = thread.chatLoading
   host.chatThinkingLevel = thread.chatThinkingLevel
+  host.toolStreamById = new Map(thread.toolStreamById)
+  host.toolStreamOrder = [...thread.toolStreamOrder]
+  host.toolStreamSyncTimer = thread.toolStreamSyncTimer
 }

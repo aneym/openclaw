@@ -19,6 +19,10 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import { type PluginServicesHandle, startPluginServices } from "../plugins/services.js";
 import { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import {
+  shouldWakeInterruptedSessions,
+  wakeInterruptedSessions,
+} from "./server-interrupted-sessions.js";
+import {
   scheduleRestartSentinelWake,
   shouldWakeFromRestartSentinel,
 } from "./server-restart-sentinel.js";
@@ -148,6 +152,15 @@ export async function startGatewaySidecars(params: {
     });
   } catch (err) {
     params.log.warn(`plugin services failed to start: ${String(err)}`);
+  }
+
+  // Wake sessions that were mid-turn when the previous gateway process died.
+  // Runs before the sentinel wake so we can peek at the sentinel file to
+  // avoid duplicate notifications.
+  if (shouldWakeInterruptedSessions()) {
+    setTimeout(() => {
+      void wakeInterruptedSessions();
+    }, 500);
   }
 
   if (shouldWakeFromRestartSentinel()) {

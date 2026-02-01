@@ -1,26 +1,31 @@
 #!/usr/bin/env bash
 # Start gateway (dev profile) + Vite UI for local development.
-# Generates a stable dev token on first run, reuses it on subsequent runs.
+# Reads the gateway token from the dev config so the printed URL works.
 
 set -euo pipefail
 
-STATE_DIR="${HOME}/.openclaw-dev"
-TOKEN_FILE="${STATE_DIR}/.dev-token"
+CONFIG="${HOME}/.openclaw-dev/openclaw.json"
 
-mkdir -p "$STATE_DIR"
-if [ ! -f "$TOKEN_FILE" ]; then
-  openssl rand -hex 24 > "$TOKEN_FILE"
+# Read token from dev config (config takes precedence over env in auth.ts)
+TOKEN=""
+if [ -f "$CONFIG" ]; then
+  TOKEN=$(node -e "
+    const c = JSON.parse(require('fs').readFileSync('$CONFIG','utf8'));
+    process.stdout.write(c.gateway?.auth?.token ?? '');
+  " 2>/dev/null || true)
 fi
-TOKEN=$(cat "$TOKEN_FILE")
 
 export OPENCLAW_PROFILE=dev
 export OPENCLAW_SKIP_CHANNELS=1
-export OPENCLAW_GATEWAY_TOKEN="$TOKEN"
 
 pnpm gateway:watch &
 pnpm ui:dev &
 
 sleep 4
-printf '\n  Dev UI: http://localhost:5173/?token=%s\n\n' "$TOKEN"
+if [ -n "$TOKEN" ]; then
+  printf '\n  Dev UI: http://localhost:5173/?token=%s\n\n' "$TOKEN"
+else
+  printf '\n  Dev UI: http://localhost:5173/\n  (no token configured in %s)\n\n' "$CONFIG"
+fi
 
 wait

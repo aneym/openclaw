@@ -88,8 +88,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   // Show "compacting..." while active
   if (status.active) {
     return html`
-      <div class="callout info compaction-indicator compaction-indicator--active">
-        ${icons.loader} Compacting context...
+      <div class="compaction-toast compaction-toast--active">
+        ${icons.loader} Compacting context…
       </div>
     `;
   }
@@ -99,8 +99,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
     const elapsed = Date.now() - status.completedAt;
     if (elapsed < COMPACTION_TOAST_DURATION_MS) {
       return html`
-        <div class="callout success compaction-indicator compaction-indicator--complete">
-          ${icons.check} Context compacted
+        <div class="compaction-toast compaction-toast--complete">
+          ${icons.check} Compacted
         </div>
       `;
     }
@@ -242,6 +242,7 @@ function renderAttachmentPreview(props: ChatProps) {
               class="chat-attachment__remove"
               type="button"
               aria-label="Remove attachment"
+              title="Remove attachment"
               @click=${() => {
                 const next = (props.attachments ?? []).filter(
                   (a) => a.id !== att.id,
@@ -455,6 +456,7 @@ export function renderChat(props: ChatProps) {
       class="chat-scroll-bottom"
       type="button"
       aria-label="Scroll to bottom"
+      title="Scroll to bottom"
       @click=${handleScrollToBottom}
     >
       ${icons.arrowDown}
@@ -470,8 +472,6 @@ export function renderChat(props: ChatProps) {
       ${props.error
         ? html`<div class="callout danger">${props.error}</div>`
         : nothing}
-
-      ${renderCompactionIndicator(props.compactionStatus)}
 
       ${props.focusMode
         ? html`
@@ -537,6 +537,7 @@ export function renderChat(props: ChatProps) {
                         class="chat-queue__remove"
                         type="button"
                         aria-label="Remove queued message"
+                        title="Remove from queue"
                         @click=${() => props.onQueueRemove(item.id)}
                       >
                         ${icons.x}
@@ -549,6 +550,7 @@ export function renderChat(props: ChatProps) {
           `
         : nothing}
 
+      ${renderCompactionIndicator(props.compactionStatus)}
       <div class="chat-compose">
         ${renderAttachmentPreview(props)}
         <div class="chat-compose__row">

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { Alert, FlatList, Text, View } from 'react-native'
+import { Alert, FlatList, PlatformColor, Text, View } from 'react-native'
 import { Stack } from 'expo-router/stack'
 import { useLocalSearchParams, useNavigation } from 'expo-router'
 import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated'
@@ -107,7 +107,7 @@ export default function ThreadScreen() {
         {chat.isStreaming ? (
           <Stack.Toolbar.Button
             icon="stop.circle.fill"
-            tintColor="red"
+            tintColor={PlatformColor('systemRed')}
             onPress={chat.abort}
           />
         ) : (

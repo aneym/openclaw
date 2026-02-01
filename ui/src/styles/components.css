@@ -554,29 +554,47 @@
   color: var(--ok);
 }
 
-/* Compaction indicator */
-.compaction-indicator {
-  font-size: 13px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-  animation: fade-in 0.2s var(--ease-out);
+/* Compaction toast — subtle pill above compose bar */
+.compaction-toast {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1;
+  padding: 4px 12px;
+  margin: 0 auto;
+  width: fit-content;
+  border-radius: 999px;
+  color: var(--muted);
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  animation: compaction-fade-in 0.25s var(--ease-out);
 }
 
-.compaction-indicator--active {
-  animation: compaction-pulse 1.5s ease-in-out infinite;
+.compaction-toast svg {
+  width: 12px;
+  height: 12px;
 }
 
-.compaction-indicator--complete {
-  animation: fade-in 0.2s var(--ease-out);
+.compaction-toast--active {
+  animation: compaction-fade-in 0.25s var(--ease-out), compaction-pulse 2s ease-in-out 0.25s infinite;
+}
+
+.compaction-toast--complete {
+  color: var(--ok);
+  border-color: rgba(34, 197, 94, 0.2);
+  animation: compaction-fade-in 0.25s var(--ease-out);
+}
+
+@keyframes compaction-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes compaction-pulse {
-  0%, 100% {
-    opacity: 0.7;
-  }
-  50% {
-    opacity: 1;
-  }
+  0%, 100% { opacity: 0.6; }
+  50%      { opacity: 1; }
 }
 
 /* ===========================================
@@ -1487,4 +1505,18 @@
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.tool-approval-input {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background: var(--secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font-family: var(--mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 160px;
+  overflow-y: auto;
 }

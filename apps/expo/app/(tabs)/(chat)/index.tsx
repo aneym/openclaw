@@ -12,26 +12,33 @@ import type { ThreadDescriptor } from '@/lib/use-threads'
 export default function ThreadListScreen() {
   const router = useRouter()
   const { state } = useGateway()
-  const { threads, createThread, deleteThread, renameThread } = useThreads()
+  const { threads, loading, createThread, deleteThread, renameThread } =
+    useThreads()
   const [search, setSearch] = useState('')
   const [didAutoCreate, setDidAutoCreate] = useState(false)
 
-  // Auto-create first thread on connect if none exist
+  // Auto-create first thread on connect if none exist (wait for remote load)
   useEffect(() => {
-    if (state !== 'connected' || threads.length > 0 || didAutoCreate) return
+    if (
+      state !== 'connected' ||
+      loading ||
+      threads.length > 0 ||
+      didAutoCreate
+    )
+      return
     setDidAutoCreate(true)
     const thread = createThread('New thread')
-    router.push(`/(chat)/${thread.id}`)
-  }, [state, threads.length, didAutoCreate, createThread, router])
+    router.push(`/thread/${thread.id}`)
+  }, [state, loading, threads.length, didAutoCreate, createThread, router])
 
   const handleNewThread = useCallback(() => {
     const thread = createThread()
-    router.push(`/(chat)/${thread.id}`)
+    router.push(`/thread/${thread.id}`)
   }, [createThread, router])
 
   const handleSelect = useCallback(
     (thread: ThreadDescriptor) => {
-      router.push(`/(chat)/${thread.id}`)
+      router.push(`/thread/${thread.id}`)
     },
     [router],
   )
