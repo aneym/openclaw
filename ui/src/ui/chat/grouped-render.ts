@@ -159,6 +159,7 @@ export function renderStreamingGroup(
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
   onOpenFilePreview?: (filePath: string) => void,
+  onOpenCodingSession?: () => void,
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
@@ -179,6 +180,7 @@ export function renderStreamingGroup(
           { isStreaming: true, showReasoning: false },
           onOpenSidebar,
           onOpenFilePreview,
+          onOpenCodingSession,
         )}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
@@ -194,6 +196,7 @@ export function renderMessageGroup(
   opts: {
     onOpenSidebar?: (content: string) => void;
     onOpenFilePreview?: (filePath: string) => void;
+    onOpenCodingSession?: () => void;
     showReasoning: boolean;
     assistantName?: string;
     assistantAvatar?: string | null;
@@ -349,6 +352,7 @@ function renderGroupedMessages(
   opts: {
     onOpenSidebar?: (content: string) => void;
     onOpenFilePreview?: (filePath: string) => void;
+    onOpenCodingSession?: () => void;
     showReasoning: boolean;
   },
 ) {
@@ -425,6 +429,7 @@ function renderGroupedMessages(
           },
           opts.onOpenSidebar,
           opts.onOpenFilePreview,
+          opts.onOpenCodingSession,
         ),
       );
     } else {
@@ -438,6 +443,7 @@ function renderGroupedMessages(
           },
           opts.onOpenSidebar,
           opts.onOpenFilePreview,
+          opts.onOpenCodingSession,
         ),
       );
     }
@@ -452,6 +458,7 @@ function renderGroupedMessage(
   opts: { isStreaming: boolean; showReasoning: boolean },
   onOpenSidebar?: (content: string) => void,
   onOpenFilePreview?: (filePath: string) => void,
+  onOpenCodingSession?: () => void,
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -494,7 +501,7 @@ function renderGroupedMessage(
   // Tool-result messages always render as compact chips (text via sidebar)
   if (hasToolCards && isToolResult) {
     return html`${toolCards.map((card) =>
-      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview),
+      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
     )}`;
   }
 
@@ -503,7 +510,7 @@ function renderGroupedMessage(
   const isAssistantCallOnly = role === "assistant" && hasToolCards && !markdown;
   if (isAssistantCallOnly) {
     return html`${toolCards.map((card) =>
-      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview),
+      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
     )}`;
   }
   const showInlineChips = hasToolCards && role !== "assistant";
@@ -530,7 +537,7 @@ function renderGroupedMessage(
       ${
         showInlineChips
           ? html`<div class="chat-tool-chips">${toolCards.map((card) =>
-              renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview),
+              renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
             )}</div>`
           : nothing
       }

@@ -30,6 +30,11 @@
       "title": "Bash",
       "detailKeys": ["command"]
     },
+    "exec": {
+      "icon": "wrench",
+      "title": "Exec",
+      "detailKeys": ["command"]
+    },
     "process": {
       "icon": "wrench",
       "title": "Process",

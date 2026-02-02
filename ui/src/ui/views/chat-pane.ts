@@ -149,6 +149,8 @@ export function renderChatPane(props: ChatPaneProps) {
     onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
     // File preview → delegates to global artifact panel
     onOpenFilePreview: (filePath: string) => state.handleOpenFilePreview(filePath, true),
+    // Coding session → opens coding sessions panel
+    onOpenCodingSession: () => state.handleOpenCodingSession(),
     assistantName: state.assistantName,
     assistantAvatar: state.assistantAvatar,
     openSessionKeys,
