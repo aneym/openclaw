@@ -23,6 +23,11 @@ function schedule(coalesceMs: number) {
     scheduled = false;
     const active = handler;
     if (!active) {
+      // Handler not registered yet — keep pendingReason and retry once handler arrives.
+      // setHeartbeatWakeHandler will re-schedule when it sees pendingReason is set.
+      console.error(
+        `[heartbeat-wake] timer fired but no handler yet, pendingReason=${pendingReason}`,
+      );
       return;
     }
     if (running) {
@@ -58,12 +63,18 @@ function schedule(coalesceMs: number) {
 export function setHeartbeatWakeHandler(next: HeartbeatWakeHandler | null) {
   handler = next;
   if (handler && pendingReason) {
+    console.error(
+      `[heartbeat-wake] handler registered with pending reason=${pendingReason}, re-scheduling`,
+    );
     schedule(DEFAULT_COALESCE_MS);
   }
 }
 
 export function requestHeartbeatNow(opts?: { reason?: string; coalesceMs?: number }) {
   pendingReason = opts?.reason ?? pendingReason ?? "requested";
+  console.error(
+    `[heartbeat-wake] requestHeartbeatNow: reason=${pendingReason}, hasHandler=${handler !== null}`,
+  );
   schedule(opts?.coalesceMs ?? DEFAULT_COALESCE_MS);
 }
 

@@ -1,13 +1,16 @@
-import { useCallback, useEffect, useState } from 'react'
-import { Alert, FlatList, Text, View } from 'react-native'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Alert, Pressable, SectionList, Text, View } from 'react-native'
 import { Stack } from 'expo-router/stack'
 import { useRouter } from 'expo-router'
+import { SymbolView } from 'expo-symbols'
 import { useGateway } from '@/lib/use-gateway'
-import { useThreads } from '@/lib/use-threads'
+import { useThreads, groupThreads } from '@/lib/use-threads'
 import { ThreadRow } from '@/components/thread-row'
 import { ConnectionStatus } from '@/components/connection-status'
 import { colors } from '@/lib/colors'
-import type { ThreadDescriptor } from '@/lib/use-threads'
+import type { ThreadDescriptor, ThreadSection } from '@/lib/use-threads'
+
+const DEFAULT_COLLAPSED = new Set(['Older', 'Automated', 'Archived'])
 
 export default function ThreadListScreen() {
   const router = useRouter()
@@ -16,6 +19,9 @@ export default function ThreadListScreen() {
     useThreads()
   const [search, setSearch] = useState('')
   const [didAutoCreate, setDidAutoCreate] = useState(false)
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    () => new Set(DEFAULT_COLLAPSED),
+  )
 
   // Auto-create first thread on connect if none exist (wait for remote load)
   useEffect(() => {
@@ -73,11 +79,30 @@ export default function ThreadListScreen() {
     [deleteThread],
   )
 
+  const toggleSection = useCallback((title: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev)
+      if (next.has(title)) next.delete(title)
+      else next.add(title)
+      return next
+    })
+  }, [])
+
   const filtered = search
     ? threads.filter((t) =>
         t.label.toLowerCase().includes(search.toLowerCase()),
       )
     : threads
+
+  // Apply collapsing: collapsed sections get empty data arrays
+  const sections = useMemo(() => {
+    const raw = groupThreads(filtered)
+    return raw.map((s) => ({
+      ...s,
+      data: collapsed.has(s.title) ? [] : s.data,
+      count: s.data.length,
+    }))
+  }, [filtered, collapsed])
 
   const renderItem = useCallback(
     ({ item }: { item: ThreadDescriptor }) => (
@@ -91,25 +116,61 @@ export default function ThreadListScreen() {
     [handleSelect, handleRename, handleDelete],
   )
 
-  const keyExtractor = useCallback(
-    (item: ThreadDescriptor) => item.id,
-    [],
+  const renderSectionHeader = useCallback(
+    ({ section }: { section: ThreadSection & { count?: number } }) => {
+      const isCollapsed = collapsed.has(section.title)
+      return (
+        <Pressable
+          onPress={() => toggleSection(section.title)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            paddingTop: 20,
+            paddingBottom: 6,
+            paddingHorizontal: 4,
+          }}
+        >
+          <SymbolView
+            name={isCollapsed ? 'chevron.right' : 'chevron.down'}
+            tintColor={colors.secondaryText}
+            size={10}
+            weight="bold"
+          />
+          <Text
+            style={{
+              fontSize: 13,
+              fontWeight: '600',
+              color: colors.secondaryText,
+              textTransform: 'uppercase',
+              letterSpacing: 0.5,
+            }}
+          >
+            {section.title}
+          </Text>
+          <Text
+            style={{
+              fontSize: 13,
+              color: colors.tertiaryText,
+            }}
+          >
+            {section.count ?? section.data.length}
+          </Text>
+        </Pressable>
+      )
+    },
+    [collapsed, toggleSection],
   )
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          title: 'Threads',
-          headerLargeTitle: true,
-          headerSearchBarOptions: {
-            placeholder: 'Search threads',
-            autoCapitalize: 'none',
-            hideWhenScrolling: true,
-            onChangeText: (e) => setSearch(e.nativeEvent.text),
-            onCancelButtonPress: () => setSearch(''),
-          },
-        }}
+      <Stack.Screen.Title large>Threads</Stack.Screen.Title>
+      <Stack.SearchBar
+        placeholder="Search threads"
+        autoCapitalize="none"
+        hideWhenScrolling
+        onChangeText={(e) => setSearch(e.nativeEvent.text)}
+        onCancelButtonPress={() => setSearch('')}
       />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
@@ -143,10 +204,11 @@ export default function ThreadListScreen() {
             </Text>
           </View>
         ) : (
-          <FlatList
-            data={filtered}
+          <SectionList
+            sections={sections}
             renderItem={renderItem}
-            keyExtractor={keyExtractor}
+            renderSectionHeader={renderSectionHeader}
+            keyExtractor={(item) => item.id}
             contentContainerStyle={{
               paddingHorizontal: 16,
               paddingTop: 8,
@@ -154,6 +216,7 @@ export default function ThreadListScreen() {
             }}
             contentInsetAdjustmentBehavior="automatic"
             keyboardDismissMode="on-drag"
+            stickySectionHeadersEnabled={false}
             ListEmptyComponent={
               <View
                 style={{

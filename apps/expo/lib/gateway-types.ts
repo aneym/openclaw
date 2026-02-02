@@ -106,7 +106,11 @@ export interface SessionEntry {
   displayName?: string
   icon?: string
   kind?: string
-  lastActivityAt?: number
+  updatedAt?: number | null
+  archivedAt?: number
+  lastMessagePreview?: string
+  channel?: string
+  derivedTitle?: string
 }
 
 export interface SessionsListResult {

@@ -5,8 +5,15 @@ export default function SettingsLayout() {
   return (
     <Stack
       screenOptions={{
+        headerTransparent: true,
+        headerShadowVisible: false,
+        headerLargeTitleShadowVisible: false,
+        headerLargeStyle: { backgroundColor: 'transparent' },
+        headerTitleStyle: { color: PlatformColor('label') as unknown as string },
+        headerTintColor: PlatformColor('label') as unknown as string,
         headerLargeTitle: true,
-        headerTintColor: PlatformColor('label'),
+        headerBlurEffect: 'none',
+        headerBackButtonDisplayMode: 'minimal',
       }}
     />
   )

@@ -1,14 +1,15 @@
-import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
-import { loadSessions } from "./controllers/sessions";
-import { generateUUID } from "./uuid";
-import { resetToolStream } from "./app-tool-stream";
+import type { OpenClawApp } from "./app";
+import type { GatewayHelloOk } from "./gateway";
+import type { ChatAttachment, ChatQueueItem } from "./ui-types";
+import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
 import { scheduleChatScroll, schedulePaneChatScroll } from "./app-scroll";
 import { setLastActiveSessionKey } from "./app-settings";
+import { resetToolStream } from "./app-tool-stream";
+import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
+import { loadSessions } from "./controllers/sessions";
 import { normalizeBasePath } from "./navigation";
-import type { GatewayHelloOk } from "./gateway";
-import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
-import type { OpenClawApp } from "./app";
-import type { ChatAttachment, ChatQueueItem } from "./ui-types";
+import { clearDraft, clearAttachments, saveQueue } from "./draft-storage";
+import { generateUUID } from "./uuid";
 
 type ChatHost = {
   connected: boolean;
@@ -94,6 +95,7 @@ function enqueueChatMessage(
       refreshSessions,
     },
   ];
+  saveQueue(host.sessionKey, host.chatQueue);
 }
 
 async function sendChatMessageNow(
@@ -118,7 +120,10 @@ async function sendChatMessageNow(
     host.chatAttachments = opts.previousAttachments;
   }
   if (ok) {
-    setLastActiveSessionKey(host as unknown as Parameters<typeof setLastActiveSessionKey>[0], host.sessionKey);
+    setLastActiveSessionKey(
+      host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
+      host.sessionKey,
+    );
   }
   if (ok && opts?.restoreDraft && opts.previousDraft?.trim()) {
     host.chatMessage = opts.previousDraft;
@@ -141,17 +146,20 @@ async function flushChatQueue(host: ChatHost) {
   const [next, ...rest] = host.chatQueue;
   if (!next) return;
   host.chatQueue = rest;
+  saveQueue(host.sessionKey, host.chatQueue);
   const ok = await sendChatMessageNow(host, next.text, {
     attachments: next.attachments,
     refreshSessions: next.refreshSessions,
   });
   if (!ok) {
     host.chatQueue = [next, ...host.chatQueue];
+    saveQueue(host.sessionKey, host.chatQueue);
   }
 }
 
 export function removeQueuedMessage(host: ChatHost, id: string) {
   host.chatQueue = host.chatQueue.filter((item) => item.id !== id);
+  saveQueue(host.sessionKey, host.chatQueue);
 }
 
 export async function handleSendChat(
@@ -179,6 +187,8 @@ export async function handleSendChat(
     host.chatMessage = "";
     // Clear attachments when sending
     host.chatAttachments = [];
+    clearDraft(host.sessionKey);
+    clearAttachments(host.sessionKey);
   }
 
   // Scroll to bottom immediately so the user sees their message
@@ -219,7 +229,9 @@ type SessionDefaultsSnapshot = {
 function resolveAgentIdForSession(host: ChatHost): string | null {
   const parsed = parseAgentSessionKey(host.sessionKey);
   if (parsed?.agentId) return parsed.agentId;
-  const snapshot = host.hello?.snapshot as { sessionDefaults?: SessionDefaultsSnapshot } | undefined;
+  const snapshot = host.hello?.snapshot as
+    | { sessionDefaults?: SessionDefaultsSnapshot }
+    | undefined;
   const fallback = snapshot?.sessionDefaults?.defaultAgentId?.trim();
   return fallback || "main";
 }

@@ -2,6 +2,15 @@ import type { Tab } from "./navigation";
 import type { UiSettings } from "./storage";
 import { connectGateway } from "./app-gateway";
 import {
+  startLogsPolling,
+  startNodesPolling,
+  stopLogsPolling,
+  stopNodesPolling,
+  startDebugPolling,
+  stopDebugPolling,
+} from "./app-polling";
+import { observeTopbar, scheduleChatScroll, schedulePaneChatScroll, scheduleLogsScroll } from "./app-scroll";
+import {
   applySettingsFromUrl,
   attachThemeListener,
   detachThemeListener,
@@ -10,17 +19,9 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings";
-import { observeTopbar, scheduleChatScroll, schedulePaneChatScroll, scheduleLogsScroll } from "./app-scroll";
-import {
-  startLogsPolling,
-  startNodesPolling,
-  stopLogsPolling,
-  stopNodesPolling,
-  startDebugPolling,
-  stopDebugPolling,
-} from "./app-polling";
 import { installKeyboardShortcuts, removeKeyboardShortcuts } from "./keyboard-shortcuts";
 import type { SplitPaneLayout } from "./split-tree";
+import { findLeaf } from "./split-tree";
 import { refreshChat } from "./app-chat";
 
 type LifecycleHost = {
@@ -40,6 +41,7 @@ type LifecycleHost = {
   initThreadsFromStorage: () => void;
   restoreSplitLayout: () => void;
   // Split pane management (for keyboard shortcuts)
+  sessionKey: string;
   splitLayout: SplitPaneLayout | null;
   focusedPaneId: string | null;
   splitPane: (direction: 'horizontal' | 'vertical') => void;
@@ -79,19 +81,10 @@ export function handleConnected(host: LifecycleHost) {
     if (link) link.href = url;
   }
   host.basePath = inferBasePath();
-  applySettingsFromUrl(
-    host as unknown as Parameters<typeof applySettingsFromUrl>[0],
-  );
-  syncTabWithLocation(
-    host as unknown as Parameters<typeof syncTabWithLocation>[0],
-    true,
-  );
-  syncThemeWithSettings(
-    host as unknown as Parameters<typeof syncThemeWithSettings>[0],
-  );
-  attachThemeListener(
-    host as unknown as Parameters<typeof attachThemeListener>[0],
-  );
+  applySettingsFromUrl(host as unknown as Parameters<typeof applySettingsFromUrl>[0]);
+  syncTabWithLocation(host as unknown as Parameters<typeof syncTabWithLocation>[0], true);
+  syncThemeWithSettings(host as unknown as Parameters<typeof syncThemeWithSettings>[0]);
+  attachThemeListener(host as unknown as Parameters<typeof attachThemeListener>[0]);
   window.addEventListener("popstate", host.popStateHandler);
   // Always load saved thread descriptors (threads are always enabled)
   host.initThreadsFromStorage();
@@ -114,6 +107,15 @@ export function handleConnected(host: LifecycleHost) {
   } else {
     // Fall back to localStorage split layout
     host.restoreSplitLayout();
+  }
+  // Sync sessionKey to the focused pane so live state targets the right pane
+  // after HMR / reload. Both URL and localStorage paths set focusedPaneId but
+  // don't switch the active session.
+  if (host.splitLayout && host.focusedPaneId) {
+    const focusedLeaf = findLeaf(host.splitLayout.root, host.focusedPaneId);
+    if (focusedLeaf) {
+      host.sessionKey = focusedLeaf.threadId;
+    }
   }
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
   if (host.tab === "logs") {
@@ -146,18 +148,15 @@ export function handleDisconnected(host: LifecycleHost) {
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
   stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
-  detachThemeListener(
-    host as unknown as Parameters<typeof detachThemeListener>[0],
-  );
+  detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
   host.topbarObserver?.disconnect();
   host.topbarObserver = null;
 }
 
-export function handleUpdated(
-  host: LifecycleHost,
-  changed: Map<PropertyKey, unknown>,
-) {
-  // Auto-focus the chat composer when the gateway first connects
+export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unknown>) {
+  // Auto-focus the chat composer when the gateway first connects.
+  // In split-pane mode, scope to the focused pane to avoid triggering
+  // @focusin on the wrong pane (which would override the restored focus).
   if (
     host.tab === "chat" &&
     changed.has("connected") &&
@@ -165,7 +164,13 @@ export function handleUpdated(
     !changed.get("connected")
   ) {
     setTimeout(() => {
-      const el = document.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+      let el: HTMLTextAreaElement | null = null;
+      if (host.splitLayout && host.focusedPaneId) {
+        const paneEl = document.querySelector(`.split-pane[data-pane-id="${host.focusedPaneId}"]`);
+        el = paneEl?.querySelector<HTMLTextAreaElement>('.chat-compose textarea') ?? null;
+      } else {
+        el = document.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+      }
       if (el && !el.disabled) el.focus();
     }, 50);
   }

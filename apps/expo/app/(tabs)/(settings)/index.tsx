@@ -70,7 +70,7 @@ export default function SettingsScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: 'Settings', headerLargeTitle: true }} />
+      <Stack.Screen.Title large>Settings</Stack.Screen.Title>
       <ScrollView
         style={{ flex: 1, backgroundColor: colors.background }}
         contentContainerStyle={{ padding: 16, gap: 24 }}

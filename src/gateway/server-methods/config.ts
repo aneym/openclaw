@@ -360,6 +360,29 @@ export const configHandlers: GatewayRequestHandlers = {
       );
       return;
     }
+
+    // Guard: reject config.apply if new config loses significant content vs existing.
+    // This prevents accidental full-replace with a partial config (e.g. agent calling
+    // config.apply instead of config.patch). Use config.patch for partial updates.
+    const allowDestructive = (params as { allowDestructive?: unknown }).allowDestructive === true;
+    if (snapshot.exists && snapshot.config && !allowDestructive) {
+      const existingKeys = Object.keys(snapshot.config).filter((k) => k !== "meta");
+      const newKeys = Object.keys(validated.config).filter((k) => k !== "meta");
+      const droppedKeys = existingKeys.filter((k) => !newKeys.includes(k));
+      if (droppedKeys.length > 0 && droppedKeys.length >= existingKeys.length * 0.5) {
+        respond(
+          false,
+          undefined,
+          errorShape(
+            ErrorCodes.INVALID_REQUEST,
+            `config.apply would drop ${droppedKeys.length} of ${existingKeys.length} top-level sections (${droppedKeys.join(", ")}). ` +
+              `This looks like a partial config — use config.patch instead, or pass allowDestructive: true to force.`,
+          ),
+        );
+        return;
+      }
+    }
+
     await writeConfigFile(validated.config);
 
     const sessionKey =

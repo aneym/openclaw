@@ -11,6 +11,7 @@ import { allLeafIds, allLeaves } from '../split-tree'
 import { getDragData, getDragPaneData, hasDragData, hasDragPaneData, hasAnyDragData, setDragPaneData, resolveDropZone, dropZoneToDirection } from '../split-dnd'
 import { createThreadDescriptor, createThreadState } from '../thread-state'
 import { saveThreadDescriptors } from '../thread-storage'
+import { saveDraft, saveAttachments } from '../draft-storage'
 import type { PaneContextMenuCallbacks } from '../components/pane-context-menu'
 import '../components/pane-context-menu'
 import { humanizeSessionKey } from './thread-list'
@@ -84,6 +85,7 @@ export function renderChatPane(props: ChatPaneProps) {
       } else if (thread) {
         thread.chatMessage = next
       }
+      saveDraft(sessionKey, next)
     },
     attachments: isActiveSession ? state.chatAttachments : (thread?.chatAttachments ?? []),
     onAttachmentsChange: (next) => {
@@ -92,6 +94,7 @@ export function renderChatPane(props: ChatPaneProps) {
       } else if (thread) {
         thread.chatAttachments = next
       }
+      saveAttachments(sessionKey, next)
     },
     onSend: () => void state.handleSendChat(),
     canAbort: isActiveSession ? Boolean(state.chatRunId) : Boolean(thread?.chatRunId),

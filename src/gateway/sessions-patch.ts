@@ -111,6 +111,9 @@ export async function applySessionsPatchToStore(params: {
         }
       }
       next.label = parsed.label;
+      // User-set label overrides auto-title — clear the flag so
+      // server-side auto-titling never overwrites it.
+      delete next.autoTitle;
     }
   }
 

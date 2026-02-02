@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
+import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { SymbolView } from 'expo-symbols'
 import * as Haptics from 'expo-haptics'
 import { accentColor, colors } from '@/lib/colors'
@@ -11,6 +12,7 @@ interface ChatInputProps {
 
 export function ChatInput({ onSend, disabled }: ChatInputProps) {
   const [text, setText] = useState('')
+  const insets = useSafeAreaInsets()
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim()
@@ -31,7 +33,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         alignItems: 'flex-end',
         paddingHorizontal: 12,
         paddingTop: 8,
-        paddingBottom: 4,
+        paddingBottom: Math.max(insets.bottom, 8),
         backgroundColor: colors.background,
         gap: 8,
       }}

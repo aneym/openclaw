@@ -1,4 +1,8 @@
 /**
+ * @deprecated — Server-side auto-titling now happens in session-auto-title.ts
+ * after each agent turn. This HTTP endpoint is kept for backward compatibility
+ * (the TUI still uses it) but should be removed in a future release.
+ *
  * Lightweight title generation endpoint using the embedded Pi agent runtime.
  * Uses runAgent() so auth (including OAuth) is handled properly.
  * No persistent session creation — temp session file is cleaned up after.
@@ -9,7 +13,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-
 import {
   resolveAgentDir,
   resolveDefaultAgentId,

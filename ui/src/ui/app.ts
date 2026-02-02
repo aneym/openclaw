@@ -1,10 +1,10 @@
 import { LitElement, html, nothing } from "lit";
 import { customElement, state } from "lit/decorators.js";
-
+import type { EventLogEntry } from "./app-events";
+import type { DevicePairingList } from "./controllers/devices";
+import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
-import { resolveInjectedAssistantIdentity } from "./assistant-identity";
-import { loadSettings, type UiSettings } from "./storage";
-import { renderApp } from "./app-render";
 import type { Tab } from "./navigation";
 import type { ResolvedTheme, ThemeMode } from "./theme";
 import type { ThreadState } from "./thread-state";
@@ -36,10 +36,8 @@ import type {
   StatusSummary,
   NostrProfile,
 } from "./types";
-import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types";
-import type { EventLogEntry } from "./app-events";
-import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults";
-import type { SplitPaneLayout } from "./split-tree";
+import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
+import type { SplitPaneLayout, SplitDirection } from "./split-tree";
 import {
   createLeaf,
   splitLeaf as splitLeafTree,
@@ -55,46 +53,9 @@ import {
   updateBranchRatio,
   nextLeafId,
 } from "./split-tree";
-import type { SplitDirection } from "./split-tree";
 import { type PaneState, syncPaneStates } from "./pane-state";
-import type {
-  ExecApprovalsFile,
-  ExecApprovalsSnapshot,
-} from "./controllers/exec-approvals";
-import type { DevicePairingList } from "./controllers/devices";
-import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { SkillMessage } from "./controllers/skills";
 import type { ToolApprovalRequest } from "./controllers/tool-approval";
-import {
-  resetToolStream as resetToolStreamInternal,
-  type ToolStreamEntry,
-} from "./app-tool-stream";
-import {
-  exportLogs as exportLogsInternal,
-  handleChatScroll as handleChatScrollInternal,
-  handleLogsScroll as handleLogsScrollInternal,
-  resetChatScroll as resetChatScrollInternal,
-} from "./app-scroll";
-import { connectGateway as connectGatewayInternal } from "./app-gateway";
-import {
-  handleConnected,
-  handleDisconnected,
-  handleFirstUpdated,
-  handleUpdated,
-} from "./app-lifecycle";
-import {
-  applySettings as applySettingsInternal,
-  loadCron as loadCronInternal,
-  loadOverview as loadOverviewInternal,
-  setTab as setTabInternal,
-  setTheme as setThemeInternal,
-  onPopState as onPopStateInternal,
-  syncUrlWithPanes as syncUrlWithPanesInternal,
-} from "./app-settings";
-import {
-  handleAbortChat as handleAbortChatInternal,
-  handleSendChat as handleSendChatInternal,
-  removeQueuedMessage as removeQueuedMessageInternal,
-} from "./app-chat";
 import {
   handleChannelConfigReload as handleChannelConfigReloadInternal,
   handleChannelConfigSave as handleChannelConfigSaveInternal,
@@ -108,8 +69,44 @@ import {
   handleWhatsAppStart as handleWhatsAppStartInternal,
   handleWhatsAppWait as handleWhatsAppWaitInternal,
 } from "./app-channels";
-import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
+import {
+  handleAbortChat as handleAbortChatInternal,
+  handleSendChat as handleSendChatInternal,
+  removeQueuedMessage as removeQueuedMessageInternal,
+} from "./app-chat";
+import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults";
+import { connectGateway as connectGatewayInternal } from "./app-gateway";
+import {
+  handleConnected,
+  handleDisconnected,
+  handleFirstUpdated,
+  handleUpdated,
+} from "./app-lifecycle";
+import { renderApp } from "./app-render";
+import {
+  exportLogs as exportLogsInternal,
+  handleChatScroll as handleChatScrollInternal,
+  handleLogsScroll as handleLogsScrollInternal,
+  resetChatScroll as resetChatScrollInternal,
+} from "./app-scroll";
+import {
+  applySettings as applySettingsInternal,
+  loadCron as loadCronInternal,
+  loadOverview as loadOverviewInternal,
+  setTab as setTabInternal,
+  setTheme as setThemeInternal,
+  onPopState as onPopStateInternal,
+  syncUrlWithPanes as syncUrlWithPanesInternal,
+} from "./app-settings";
+import {
+  resetToolStream as resetToolStreamInternal,
+  type ToolStreamEntry,
+} from "./app-tool-stream";
+import { resolveInjectedAssistantIdentity } from "./assistant-identity";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity";
+import { loadSettings, type UiSettings } from "./storage";
+import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types";
+import { loadDraft, clearDraft, loadAttachments, clearAttachments, loadQueue } from "./draft-storage";
 
 declare global {
   interface Window {
@@ -311,9 +308,7 @@ export class OpenClawApp extends LitElement {
   basePath = "";
   visibilityHandler: (() => void) | null = null;
   private popStateHandler = () =>
-    onPopStateInternal(
-      this as unknown as Parameters<typeof onPopStateInternal>[0],
-    );
+    onPopStateInternal(this as unknown as Parameters<typeof onPopStateInternal>[0]);
   private themeMedia: MediaQueryList | null = null;
   private themeMediaHandler: ((event: MediaQueryListEvent) => void) | null = null;
   private topbarObserver: ResizeObserver | null = null;
@@ -326,6 +321,13 @@ export class OpenClawApp extends LitElement {
     super.connectedCallback();
     handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.addEventListener("chat-load-more", () => this.requestUpdate());
+    // Restore draft + attachments + queue for the active session (survives HMR)
+    const draft = loadDraft(this.sessionKey);
+    if (draft && !this.chatMessage) this.chatMessage = draft;
+    const attachments = loadAttachments(this.sessionKey);
+    if (attachments.length && !this.chatAttachments.length) this.chatAttachments = attachments;
+    const queue = loadQueue(this.sessionKey);
+    if (queue.length && !this.chatQueue.length) this.chatQueue = queue;
   }
 
   protected firstUpdated() {
@@ -338,16 +340,11 @@ export class OpenClawApp extends LitElement {
   }
 
   protected updated(changed: Map<PropertyKey, unknown>) {
-    handleUpdated(
-      this as unknown as Parameters<typeof handleUpdated>[0],
-      changed,
-    );
+    handleUpdated(this as unknown as Parameters<typeof handleUpdated>[0], changed);
   }
 
   connect() {
-    connectGatewayInternal(
-      this as unknown as Parameters<typeof connectGatewayInternal>[0],
-    );
+    connectGatewayInternal(this as unknown as Parameters<typeof connectGatewayInternal>[0]);
   }
 
   handleChatScroll(event: Event) {
@@ -369,15 +366,11 @@ export class OpenClawApp extends LitElement {
   }
 
   resetToolStream() {
-    resetToolStreamInternal(
-      this as unknown as Parameters<typeof resetToolStreamInternal>[0],
-    );
+    resetToolStreamInternal(this as unknown as Parameters<typeof resetToolStreamInternal>[0]);
   }
 
   resetChatScroll() {
-    resetChatScrollInternal(
-      this as unknown as Parameters<typeof resetChatScrollInternal>[0],
-    );
+    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
   }
 
   async loadAssistantIdentity() {
@@ -385,10 +378,7 @@ export class OpenClawApp extends LitElement {
   }
 
   applySettings(next: UiSettings) {
-    applySettingsInternal(
-      this as unknown as Parameters<typeof applySettingsInternal>[0],
-      next,
-    );
+    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], next);
   }
 
   setTab(next: Tab) {
@@ -396,29 +386,19 @@ export class OpenClawApp extends LitElement {
   }
 
   setTheme(next: ThemeMode, context?: Parameters<typeof setThemeInternal>[2]) {
-    setThemeInternal(
-      this as unknown as Parameters<typeof setThemeInternal>[0],
-      next,
-      context,
-    );
+    setThemeInternal(this as unknown as Parameters<typeof setThemeInternal>[0], next, context);
   }
 
   async loadOverview() {
-    await loadOverviewInternal(
-      this as unknown as Parameters<typeof loadOverviewInternal>[0],
-    );
+    await loadOverviewInternal(this as unknown as Parameters<typeof loadOverviewInternal>[0]);
   }
 
   async loadCron() {
-    await loadCronInternal(
-      this as unknown as Parameters<typeof loadCronInternal>[0],
-    );
+    await loadCronInternal(this as unknown as Parameters<typeof loadCronInternal>[0]);
   }
 
   async handleAbortChat() {
-    await handleAbortChatInternal(
-      this as unknown as Parameters<typeof handleAbortChatInternal>[0],
-    );
+    await handleAbortChatInternal(this as unknown as Parameters<typeof handleAbortChatInternal>[0]);
   }
 
   async abortThreadRun(sessionKey: string, runId: string): Promise<boolean> {
@@ -534,10 +514,10 @@ export class OpenClawApp extends LitElement {
     const nextGatewayUrl = this.pendingGatewayUrl;
     if (!nextGatewayUrl) return;
     this.pendingGatewayUrl = null;
-    applySettingsInternal(
-      this as unknown as Parameters<typeof applySettingsInternal>[0],
-      { ...this.settings, gatewayUrl: nextGatewayUrl },
-    );
+    applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
+      ...this.settings,
+      gatewayUrl: nextGatewayUrl,
+    });
     this.connect();
   }
 
@@ -678,14 +658,30 @@ export class OpenClawApp extends LitElement {
     if (saved.length > 0) {
       for (const desc of saved) {
         const thread = createThreadState(desc);
+        // Restore draft text + attachments + queue that survived HMR / page reload
+        const draft = loadDraft(desc.sessionKey);
+        if (draft) thread.chatMessage = draft;
+        const attachments = loadAttachments(desc.sessionKey);
+        if (attachments.length) thread.chatAttachments = attachments;
+        const savedQueue = loadQueue(desc.sessionKey);
+        if (savedQueue.length) thread.chatQueue = savedQueue;
         this.threads.set(desc.id, thread);
         this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
       }
       const lastId = this.settings.lastActiveThreadId;
       this.activeThreadId =
         lastId && this.threads.has(lastId) ? lastId : saved[0].id;
-      // Do NOT override sessionKey here — it's already set from
-      // URL params or localStorage by applySettingsFromUrl().
+      // Sync host sessionKey to match the active thread so that
+      // loadChatHistory fetches the correct session after reconnect/HMR.
+      // Only override if the URL didn't explicitly set a session key
+      // (applySettingsFromUrl runs before this, so check for ?session= param).
+      const urlHasExplicitSession = new URLSearchParams(window.location.search).has('session');
+      if (!urlHasExplicitSession) {
+        const activeThread = this.threads.get(this.activeThreadId);
+        if (activeThread) {
+          this.sessionKey = activeThread.descriptor.sessionKey;
+        }
+      }
     }
   }
 
@@ -950,6 +946,8 @@ export class OpenClawApp extends LitElement {
 
     // replaceState — focus change is minor, not a meaningful navigation
     this.syncUrlWithPanes(true);
+    // Persist so HMR / reload restores the correct focused pane
+    this.persistSplitLayout();
 
     // Cancel any pending focus timer from a previous focusPane call —
     // without this, stale timers fire and force focus to the wrong pane,
@@ -1129,6 +1127,22 @@ export class OpenClawApp extends LitElement {
     this.splitLayout = layout;
     this.focusedPaneId = layout.focusedPaneId;
     this.syncPaneStatesFromLayout();
+
+    // Restore the focused pane's session key so the live state (chatMessage,
+    // chatMessages, etc.) targets the correct pane after HMR / page reload.
+    if (layout.focusedPaneId) {
+      const focusedLeaf = findLeaf(layout.root, layout.focusedPaneId);
+      if (focusedLeaf && focusedLeaf.threadId !== this.sessionKey) {
+        this.sessionKey = focusedLeaf.threadId;
+        const threadId = this.sessionKeyToThreadId.get(focusedLeaf.threadId);
+        if (threadId) {
+          const thread = this.threads.get(threadId);
+          if (thread) {
+            restoreThreadState(this, thread);
+          }
+        }
+      }
+    }
   }
 
   /**
@@ -1175,6 +1189,7 @@ export class OpenClawApp extends LitElement {
           // Non-critical — pane will show empty until next refresh
         }
       }
+      thread.chatLoading = false;
     }
     // Trigger re-render for all panes
     this.threads = new Map(this.threads)

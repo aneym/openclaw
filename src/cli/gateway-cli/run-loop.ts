@@ -53,6 +53,12 @@ export async function runGatewayLoop(params: {
         clearTimeout(forceExitTimer);
         server = null;
         if (isRestart) {
+          // Dev mode: exit cleanly so the supervisor can respawn with fresh code
+          if (process.env.OPENCLAW_GATEWAY_DEV === "1") {
+            cleanupSignals();
+            await lock?.release();
+            params.runtime.exit(0);
+          }
           shuttingDown = false;
           restartResolver?.();
         } else {

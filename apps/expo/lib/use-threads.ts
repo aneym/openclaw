@@ -11,6 +11,10 @@ export interface ThreadDescriptor {
   parentSessionKey: string
   /** True for threads created locally (not from gateway sessions.list) */
   isLocal?: boolean
+  /** Session kind from gateway (direct, group, global, etc.) */
+  kind?: string
+  /** Timestamp when thread was archived */
+  archivedAt?: number
 }
 
 const STORAGE_KEY = 'openclaw.threads'
@@ -20,19 +24,30 @@ function generateId(): string {
   return `${hex()}${hex()}-${hex()}-4${hex().slice(1)}-${hex()}-${hex()}${hex()}${hex()}`
 }
 
+function dedup(list: ThreadDescriptor[]): ThreadDescriptor[] {
+  const seen = new Set<string>()
+  const result: ThreadDescriptor[] = []
+  for (const t of list) {
+    if (seen.has(t.id)) continue
+    seen.add(t.id)
+    result.push(t)
+  }
+  return result
+}
+
 function loadDescriptors(): ThreadDescriptor[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
+    return Array.isArray(parsed) ? dedup(parsed) : []
   } catch {
     return []
   }
 }
 
 function saveDescriptors(descriptors: ThreadDescriptor[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(descriptors))
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(dedup(descriptors)))
 }
 
 /** Derive a human-readable label from a gateway session key. */
@@ -59,28 +74,86 @@ function humanizeSessionKey(key: string): string {
   return key.slice(0, 30)
 }
 
+/** Simple hash of a string to a hex ID, for stable dedup-safe keys. */
+function hashKey(str: string): string {
+  let h = 0x811c9dc5
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return (h >>> 0).toString(16).padStart(8, '0')
+}
+
 /** Convert a gateway SessionEntry into a ThreadDescriptor. */
 function sessionToDescriptor(
   session: SessionEntry,
   parentSessionKey: string,
 ): ThreadDescriptor {
-  // Extract a stable ID from the session key
+  // Extract a stable ID from the session key — find :thread:{uuid} at any position
   const parts = session.key.split(':')
-  const threadPart = parts[3] === 'thread' ? parts[4] : undefined
-  const id = threadPart || session.key
+  const threadIdx = parts.indexOf('thread')
+  const threadPart = threadIdx >= 0 ? parts[threadIdx + 1] : undefined
+  // Use the thread UUID if available, otherwise hash the session key for a safe ID
+  const id = threadPart || `remote-${hashKey(session.key)}`
+  const ts = session.updatedAt ?? Date.now()
 
   return {
     id,
     sessionKey: session.key,
     label:
       session.displayName ||
+      session.derivedTitle ||
       session.label ||
       humanizeSessionKey(session.key),
-    createdAt: session.lastActivityAt || Date.now(),
-    lastActivityAt: session.lastActivityAt || Date.now(),
+    createdAt: ts,
+    lastActivityAt: ts,
     parentSessionKey,
     isLocal: false,
+    kind: session.kind,
+    archivedAt: session.archivedAt,
   }
+}
+
+export interface ThreadSection {
+  title: string
+  data: ThreadDescriptor[]
+}
+
+const ACTIVE_THRESHOLD_MS = 1_200_000 // 20 minutes
+
+function isCronThread(t: ThreadDescriptor): boolean {
+  const key = t.sessionKey.toLowerCase()
+  return key.includes(':cron:') || key.includes(':cron-') || t.kind === 'global'
+}
+
+/** Group threads matching web UI: Active, Older, Automated, Archived */
+export function groupThreads(threads: ThreadDescriptor[]): ThreadSection[] {
+  if (threads.length === 0) return []
+
+  const now = Date.now()
+  const active: ThreadDescriptor[] = []
+  const older: ThreadDescriptor[] = []
+  const automated: ThreadDescriptor[] = []
+  const archived: ThreadDescriptor[] = []
+
+  for (const t of threads) {
+    if (t.archivedAt) {
+      archived.push(t)
+    } else if (isCronThread(t)) {
+      automated.push(t)
+    } else if (t.lastActivityAt && now - t.lastActivityAt < ACTIVE_THRESHOLD_MS) {
+      active.push(t)
+    } else {
+      older.push(t)
+    }
+  }
+
+  const sections: ThreadSection[] = []
+  if (active.length > 0) sections.push({ title: 'Active', data: active })
+  if (older.length > 0) sections.push({ title: 'Older', data: older })
+  if (automated.length > 0) sections.push({ title: 'Automated', data: automated })
+  if (archived.length > 0) sections.push({ title: 'Archived', data: archived })
+  return sections
 }
 
 export interface UseThreadsReturn {
@@ -229,12 +302,16 @@ export function useThreads(): UseThreadsReturn {
     }
   }, [parentSessionKey, persist])
 
-  // Merge local + remote, dedup by sessionKey, sort by lastActivityAt
-  const localKeys = new Set(localThreads.map((t) => t.sessionKey))
-  const uniqueRemote = remoteThreads.filter(
-    (t) => !localKeys.has(t.sessionKey),
-  )
-  const merged = [...localThreads, ...uniqueRemote].sort(
+  // Merge local + remote, then hard-dedup by id
+  const allThreads = [...localThreads, ...remoteThreads]
+  const seenIds = new Set<string>()
+  const deduped: ThreadDescriptor[] = []
+  for (const t of allThreads) {
+    if (seenIds.has(t.id)) continue
+    seenIds.add(t.id)
+    deduped.push(t)
+  }
+  const merged = deduped.sort(
     (a, b) => b.lastActivityAt - a.lastActivityAt,
   )
 

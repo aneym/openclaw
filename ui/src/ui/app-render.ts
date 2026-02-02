@@ -86,6 +86,7 @@ import { loadCronRuns, toggleCronJob, runCronJob, removeCronJob, addCronJob } fr
 import { loadDebug, callDebugMethod } from "./controllers/debug";
 import { loadLogs } from "./controllers/logs";
 import { syncUrlWithSessionKey } from "./app-settings";
+import { clearQueue } from "./draft-storage";
 import type { NavSessionEntry } from "./views/thread-list";
 import { createThreadDescriptor, createThreadState } from "./thread-state";
 import { saveThreadDescriptors } from "./thread-storage";
@@ -261,7 +262,7 @@ export function renderApp(state: AppViewState) {
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
         ${TAB_GROUPS.map((group) => {
-          const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
+          const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? (group.label !== "Chat");
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
           return html`
             <div class="nav-group ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
@@ -354,23 +355,39 @@ export function renderApp(state: AppViewState) {
             </div>
           `;
         })}
-        <div class="nav-group nav-group--links">
-          <div class="nav-label nav-label--static">
-            <span class="nav-label__text">Resources</span>
-          </div>
-          <div class="nav-group__items">
-            <a
-              class="nav-item nav-item--external"
-              href="https://docs.openclaw.ai"
-              target="_blank"
-              rel="noreferrer"
-              title="Docs (opens in new tab)"
+        ${(() => {
+          const resCollapsed = state.settings.navGroupsCollapsed["Resources"] ?? true;
+          return html`
+          <div class="nav-group nav-group--links ${resCollapsed ? "nav-group--collapsed" : ""}">
+            <button
+              class="nav-label"
+              @click=${() => {
+                const next = { ...state.settings.navGroupsCollapsed };
+                next["Resources"] = !resCollapsed;
+                state.applySettings({
+                  ...state.settings,
+                  navGroupsCollapsed: next,
+                });
+              }}
+              aria-expanded=${!resCollapsed}
             >
-              <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
-              <span class="nav-item__text">Docs</span>
-            </a>
-          </div>
-        </div>
+              <span class="nav-label__text">Resources</span>
+              <span class="nav-label__chevron">${resCollapsed ? "+" : "−"}</span>
+            </button>
+            <div class="nav-group__items">
+              <a
+                class="nav-item nav-item--external"
+                href="https://docs.openclaw.ai"
+                target="_blank"
+                rel="noreferrer"
+                title="Docs (opens in new tab)"
+              >
+                <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
+                <span class="nav-item__text">Docs</span>
+              </a>
+            </div>
+          </div>`;
+        })()}
       </aside>
       <div
         class="nav-resize-handle ${state.settings.navCollapsed ? 'nav-resize-handle--hidden' : ''}"
@@ -641,6 +658,7 @@ export function renderApp(state: AppViewState) {
           ? renderChat({
               sessionKey: state.sessionKey,
               onSessionKeyChange: (next) => {
+                clearQueue(state.sessionKey);
                 state.sessionKey = next;
                 state.chatMessage = "";
                 state.chatAttachments = [];

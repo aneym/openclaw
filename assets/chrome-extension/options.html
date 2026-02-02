@@ -96,7 +96,7 @@
         margin-bottom: 6px;
       }
       input {
-        width: 160px;
+        width: 260px;
         padding: 10px 12px;
         border-radius: 12px;
         border: 1px solid var(--border);
@@ -134,6 +134,13 @@
         font-family: ui-monospace, Menlo, Monaco, Consolas, "SF Mono", monospace;
         font-size: 12px;
       }
+      pre {
+        font-family: ui-monospace, Menlo, Monaco, Consolas, "SF Mono", monospace;
+        font-size: 12px;
+        margin: 4px 0 0 0;
+        white-space: pre-line;
+        color: var(--muted);
+      }
       a {
         color: color-mix(in oklab, var(--accent) 85%, canvasText 15%);
       }
@@ -167,8 +174,8 @@
         <div class="card">
           <h2>Getting started</h2>
           <p>
-            If you see a red <code>!</code> badge on the extension icon, the relay server is not reachable.
-            Start OpenClaw’s browser relay on this machine (Gateway or node host), then click the toolbar button again.
+            If you see a red <code>!</code> badge on the extension icon, no relay servers are reachable.
+            Start OpenClaw's browser relay on this machine (Gateway or node host), then click the toolbar button again.
           </p>
           <p>
             Full guide (install, remote Gateway, security): <a href="https://docs.openclaw.ai/tools/chrome-extension" target="_blank" rel="noreferrer">docs.openclaw.ai/tools/chrome-extension</a>
@@ -176,16 +183,17 @@
         </div>
 
         <div class="card">
-          <h2>Relay port</h2>
-          <label for="port">Port</label>
+          <h2>Relay ports</h2>
+          <label for="ports">Ports (comma-separated)</label>
           <div class="row">
-            <input id="port" inputmode="numeric" pattern="[0-9]*" />
+            <input id="ports" placeholder="18792, 19004" />
             <button id="save" type="button">Save</button>
           </div>
           <div class="hint">
-            Default: <code>18792</code>. Extension connects to: <code id="relay-url">http://127.0.0.1:&lt;port&gt;/</code>.
-            Only change this if your OpenClaw profile uses a different <code>cdpUrl</code> port.
+            Default: <code>18792</code>. Add multiple ports to connect to several OpenClaw gateways simultaneously (e.g. prod + dev).
+            Each attached tab is shared with all reachable relays.
           </div>
+          <pre id="relay-urls"></pre>
           <div class="status" id="status"></div>
         </div>
       </div>

@@ -3,6 +3,7 @@ import { resolveAnnounceTargetFromKey } from "../agents/tools/sessions-send-help
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import { agentCommand } from "../commands/agent.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
+import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { resolveOutboundTarget } from "../infra/outbound/targets.js";
 import {
   consumeRestartSentinel,
@@ -17,11 +18,13 @@ import { loadSessionEntry } from "./session-utils.js";
 export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   const sentinel = await consumeRestartSentinel();
   if (!sentinel) {
+    console.error("[restart-sentinel] no sentinel found");
     return;
   }
   const payload = sentinel.payload;
   const sessionKey = payload.sessionKey?.trim();
   const message = formatRestartSentinelMessage(payload);
+  console.error(`[restart-sentinel] found sentinel: sessionKey=${sessionKey} message=${message}`);
   const summary = summarizeRestartSentinel(payload);
 
   if (!sessionKey) {
@@ -63,7 +66,13 @@ export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   const channel = channelRaw ? normalizeChannelId(channelRaw) : null;
   const to = origin?.to;
   if (!channel || !to) {
+    console.error(
+      `[restart-sentinel] no channel/to (channel=${channel}, to=${to}), enqueuing system event + heartbeat`,
+    );
     enqueueSystemEvent(message, { sessionKey });
+    // For webchat and other sessions without an external "to", trigger a
+    // heartbeat so the agent processes the system event and can continue.
+    requestHeartbeatNow({ reason: "restart-sentinel" });
     return;
   }
 
