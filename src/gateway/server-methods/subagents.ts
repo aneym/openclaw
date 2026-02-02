@@ -6,10 +6,8 @@ import {
 
 export const subagentsHandlers: GatewayRequestHandlers = {
   "subagents.list": ({ params, respond }) => {
-    const requesterSessionKey =
-      typeof (params as Record<string, unknown>).requesterSessionKey === "string"
-        ? ((params as Record<string, unknown>).requesterSessionKey as string).trim()
-        : "";
+    const raw = params.requesterSessionKey;
+    const requesterSessionKey = typeof raw === "string" ? raw.trim() : "";
 
     const runs = requesterSessionKey
       ? listSubagentRunsForRequester(requesterSessionKey)

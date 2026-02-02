@@ -43,7 +43,9 @@ export function setSubagentBroadcast(fn: SubagentBroadcastFn) {
 }
 
 function broadcastSubagentEvent(phase: "start" | "end" | "error", entry: SubagentRunRecord) {
-  if (!broadcastFn) return;
+  if (!broadcastFn) {
+    return;
+  }
   broadcastFn("subagent", {
     phase,
     runId: entry.runId,
@@ -241,7 +243,7 @@ function ensureListener() {
       entry.outcome = { status: "ok" };
     }
     persistSubagentRuns();
-    broadcastSubagentEvent(phase as "end" | "error", entry);
+    broadcastSubagentEvent(phase, entry);
 
     if (!beginSubagentCleanup(evt.runId)) {
       return;
