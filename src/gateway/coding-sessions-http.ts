@@ -7,7 +7,7 @@
  * POST   /api/coding-sessions/:id/respond  → pipe answer back to Claude Code stdin
  * POST   /api/coding-sessions/:id/terminal → open tmux session in Terminal.app
  * POST   /api/coding-sessions/:id          → update session state (upsert)
- * DELETE /api/coding-sessions/:id          → remove session from state
+ * POST   /api/coding-sessions/:id/dismiss  → remove session from state
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -71,8 +71,8 @@ export function handleCodingSessionsRequest(
     return true;
   }
 
-  /* ── Delete / dismiss a session from state ── */
-  if (req.method === "DELETE" && /^\/api\/coding-sessions\/[^/]+$/.test(pathname)) {
+  /* ── Dismiss — remove a session from state ── */
+  if (req.method === "POST" && /^\/api\/coding-sessions\/[^/]+\/dismiss$/.test(pathname)) {
     const id = pathname.split("/")[3]!;
     const state = readState();
     if (!state.sessions[id]) {
@@ -268,7 +268,8 @@ export function handleCodingSessionsRequest(
     !pathname.endsWith("/kill") &&
     !pathname.endsWith("/log") &&
     !pathname.endsWith("/respond") &&
-    !pathname.endsWith("/terminal")
+    !pathname.endsWith("/terminal") &&
+    !pathname.endsWith("/dismiss")
   ) {
     const id = pathname.split("/")[3]!;
     let body = "";

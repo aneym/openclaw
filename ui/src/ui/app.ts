@@ -818,7 +818,7 @@ export class OpenClawApp extends LitElement {
 
   async handleCodingDismiss(id: string) {
     try {
-      await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}`, { method: "DELETE" });
+      await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/dismiss`, { method: "POST" });
       void this.fetchCodingSessions();
     } catch {}
   }
