@@ -1,6 +1,7 @@
 import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
+import type { ChatAbortControllerEntry } from "./chat-abort.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import {
@@ -33,6 +34,7 @@ export async function startGatewaySidecars(params: {
   defaultWorkspaceDir: string;
   deps: CliDeps;
   startChannels: () => Promise<void>;
+  chatAbortControllers?: Map<string, ChatAbortControllerEntry>;
   log: { warn: (msg: string) => void };
   logHooks: {
     info: (msg: string) => void;
@@ -159,7 +161,10 @@ export async function startGatewaySidecars(params: {
   // avoid duplicate notifications.
   if (shouldWakeInterruptedSessions()) {
     setTimeout(() => {
-      void wakeInterruptedSessions();
+      void wakeInterruptedSessions({
+        deps: params.deps,
+        chatAbortControllers: params.chatAbortControllers,
+      });
     }, 500);
   }
 

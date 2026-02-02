@@ -155,12 +155,7 @@
 }
 
 .nav-thread-item--running .nav-thread-item__label {
-  animation: thread-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes thread-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  /* no animation */
 }
 
 .nav-thread-item__icon {

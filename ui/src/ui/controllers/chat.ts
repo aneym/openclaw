@@ -175,6 +175,16 @@ export function handleChatEvent(
   }
 
   if (payload.state === "delta") {
+    // Adopt the runId from incoming deltas when chatRunId is null (e.g. after
+    // page reload / reconnect). This makes the stop button appear instantly
+    // as soon as the first streaming chunk arrives, rather than waiting for
+    // the slower queryChatStatus round-trip.
+    if (!state.chatRunId && payload.runId) {
+      state.chatRunId = payload.runId;
+      if (!state.chatStreamStartedAt) {
+        state.chatStreamStartedAt = Date.now();
+      }
+    }
     const next = extractText(payload.message);
     if (typeof next === "string") {
       const current = state.chatStream ?? "";
@@ -219,15 +229,19 @@ export function handleChatEventForThread(
   }
 
   if (payload.state === "delta") {
+    // Adopt runId from incoming deltas when chatRunId is null (reconnect).
+    if (!thread.chatRunId && payload.runId) {
+      thread.chatRunId = payload.runId;
+      if (!thread.chatStreamStartedAt) {
+        thread.chatStreamStartedAt = Date.now();
+      }
+    }
     const next = extractText(payload.message);
     if (typeof next === "string") {
       const current = thread.chatStream ?? "";
       if (!current || next.length >= current.length) {
         thread.chatStream = next;
       }
-    }
-    if (payload.runId && !thread.chatRunId) {
-      thread.chatRunId = payload.runId;
     }
   } else if (payload.state === "final") {
     thread.chatStream = null;

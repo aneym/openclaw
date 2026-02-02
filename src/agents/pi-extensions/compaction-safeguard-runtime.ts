@@ -1,7 +1,14 @@
 export type CompactionSafeguardRuntimeValue = {
   maxHistoryShare?: number;
-  /** Model fallback for embedded mode where ctx.model is uninitialized. */
-  model?: unknown;
+  contextWindowTokens?: number;
+  /** Custom instructions appended to compaction summarization prompts. */
+  customInstructions?: string;
+  /**
+   * Minimum token count to trigger actual summarization.
+   * Below this threshold, the previous summary is preserved as-is to prevent
+   * double-compaction from degrading context. Default: 10000.
+   */
+  minTokensForCompaction?: number;
 };
 
 // Session-scoped runtime registry keyed by object identity.
@@ -16,7 +23,7 @@ export function setCompactionSafeguardRuntime(
     return;
   }
 
-  const key = sessionManager as object;
+  const key = sessionManager;
   if (value === null) {
     REGISTRY.delete(key);
     return;
@@ -32,5 +39,5 @@ export function getCompactionSafeguardRuntime(
     return null;
   }
 
-  return REGISTRY.get(sessionManager as object) ?? null;
+  return REGISTRY.get(sessionManager) ?? null;
 }

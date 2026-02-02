@@ -248,6 +248,14 @@ export type AgentCompactionConfig = {
   reserveTokensFloor?: number;
   /** Max share of context window for history during safeguard pruning (0.1–0.9, default 0.5). */
   maxHistoryShare?: number;
+  /** Custom instructions appended to compaction summarization prompts (both auto and manual). */
+  customInstructions?: string;
+  /**
+   * Minimum token count to trigger actual summarization during compaction.
+   * Below this threshold, the previous summary is preserved as-is to prevent
+   * double-compaction from degrading context. Default: 10000.
+   */
+  minTokensForCompaction?: number;
   /** Pre-compaction memory flush (agentic turn). Default: enabled. */
   memoryFlush?: AgentCompactionMemoryFlushConfig;
 };

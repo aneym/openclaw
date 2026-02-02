@@ -2,21 +2,21 @@ import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types";
-import type { ChatAttachment, ChatQueueItem } from "../ui-types";
-import { humanizeSessionKey } from "./thread-list";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
-import { icons } from "../icons";
-import {
-  isToolResultMessage,
-  normalizeMessage,
-  normalizeRoleForGrouping,
-} from "../chat/message-normalizer";
+import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render";
 import { extractToolCards } from "../chat/tool-cards";
+import {
+  isToolResultMessage,
+  normalizeMessage,
+  normalizeRoleForGrouping,
+} from "../chat/message-normalizer";
+import { icons } from "../icons";
+import { humanizeSessionKey } from "./thread-list";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
 import "../components/resizable-divider";
 
@@ -49,7 +49,7 @@ export type ChatProps = {
   sessions: SessionsListResult | null;
   // Focus mode
   focusMode: boolean;
-  // Sidebar state
+  // Sidebar state (legacy — single-pane only)
   sidebarOpen?: boolean;
   sidebarContent?: string | null;
   sidebarError?: string | null;
@@ -73,6 +73,8 @@ export type ChatProps = {
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // File preview callback (opens global artifact panel)
+  onOpenFilePreview?: (filePath: string) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -185,10 +187,7 @@ async function compressImage(
   return { dataUrl: fallback, mimeType: "image/jpeg" };
 }
 
-function handlePaste(
-  e: ClipboardEvent,
-  props: ChatProps,
-) {
+function handlePaste(e: ClipboardEvent, props: ChatProps) {
   const items = e.clipboardData?.items;
   if (!items || !props.onAttachmentsChange) return;
 
@@ -244,9 +243,7 @@ function renderAttachmentPreview(props: ChatProps) {
               aria-label="Remove attachment"
               title="Remove attachment"
               @click=${() => {
-                const next = (props.attachments ?? []).filter(
-                  (a) => a.id !== att.id,
-                );
+                const next = (props.attachments ?? []).filter((a) => a.id !== att.id);
                 props.onAttachmentsChange?.(next);
               }}
             >
@@ -345,9 +342,7 @@ export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
   const canAbort = Boolean(props.canAbort && props.onAbort);
-  const activeSession = props.sessions?.sessions?.find(
-    (row) => row.key === props.sessionKey,
-  );
+  const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
   const showReasoning = props.showThinking && reasoningLevel !== "off";
   const assistantIdentity = {
@@ -362,8 +357,8 @@ export function renderChat(props: ChatProps) {
       ? "Message (↩ to send, Shift+↩ for line breaks, paste images)"
       : "Message (connecting…)";
 
-  const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const splitRatio = props.splitRatio ?? 0.6;
   const handleThreadScroll = (e: Event) => {
     props.onChatScroll?.(e);
     const container = e.currentTarget as HTMLElement;
@@ -431,26 +426,29 @@ export function renderChat(props: ChatProps) {
           return renderReadingIndicatorGroup(assistantIdentity);
         }
 
-        if (item.kind === "stream") {
-          return renderStreamingGroup(
-            item.text,
-            item.startedAt,
-            props.onOpenSidebar,
-            assistantIdentity,
-          );
-        }
+          if (item.kind === "stream") {
+            return renderStreamingGroup(
+              item.text,
+              item.startedAt,
+              props.onOpenSidebar,
+              assistantIdentity,
+              props.onOpenFilePreview,
+            );
+          }
 
-        if (item.kind === "group") {
-          return renderMessageGroup(item, {
-            onOpenSidebar: props.onOpenSidebar,
-            showReasoning,
-            assistantName: props.assistantName,
-            assistantAvatar: assistantIdentity.avatar,
-          });
-        }
+          if (item.kind === "group") {
+            return renderMessageGroup(item, {
+              onOpenSidebar: props.onOpenSidebar,
+              onOpenFilePreview: props.onOpenFilePreview,
+              showReasoning,
+              assistantName: props.assistantName,
+              assistantAvatar: assistantIdentity.avatar,
+            });
+          }
 
-        return nothing;
-      })}
+          return nothing;
+        },
+      )}
     </div>
     <button
       class="chat-scroll-bottom"
@@ -465,13 +463,11 @@ export function renderChat(props: ChatProps) {
 
   return html`
     <section class="card chat">
-      ${props.disabledReason
-        ? html`<div class="callout">${props.disabledReason}</div>`
-        : nothing}
+      ${props.disabledReason ? html`<div class="callout">${props.disabledReason}</div>` : nothing}
 
-      ${props.error
-        ? html`<div class="callout danger">${props.error}</div>`
-        : nothing}
+      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
+
+      ${renderCompactionIndicator(props.compactionStatus)}
 
       ${props.focusMode
         ? html`
@@ -485,7 +481,8 @@ export function renderChat(props: ChatProps) {
               ${icons.x}
             </button>
           `
-        : nothing}
+          : nothing
+      }
 
       <div
         class="chat-split-container ${sidebarOpen ? "chat-split-container--open" : ""}"
@@ -497,12 +494,12 @@ export function renderChat(props: ChatProps) {
           ${thread}
         </div>
 
-        ${sidebarOpen
-          ? html`
+        ${
+          sidebarOpen
+            ? html`
               <resizable-divider
                 .splitRatio=${splitRatio}
-                @resize=${(e: CustomEvent) =>
-                  props.onSplitRatioChange?.(e.detail.splitRatio)}
+                @resize=${(e: CustomEvent) => props.onSplitRatioChange?.(e.detail.splitRatio)}
               ></resizable-divider>
               <div class="chat-sidebar">
                 ${renderMarkdownSidebar({
@@ -516,23 +513,25 @@ export function renderChat(props: ChatProps) {
                 })}
               </div>
             `
-          : nothing}
+            : nothing
+        }
       </div>
 
-      ${props.queue.length
-        ? html`
+      ${
+        props.queue.length
+          ? html`
             <div class="chat-queue" role="status" aria-live="polite">
               <div class="chat-queue__title">Queued (${props.queue.length})</div>
               <div class="chat-queue__list">
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
-                      <span class="chat-queue__text">
-                        ${item.text ||
-                        (item.attachments?.length
-                          ? `📎 ${item.attachments.length}`
-                          : "")}
-                      </span>
+                      <div class="chat-queue__text">
+                        ${
+                          item.text ||
+                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
+                        }
+                      </div>
                       <button
                         class="chat-queue__remove"
                         type="button"
@@ -548,9 +547,9 @@ export function renderChat(props: ChatProps) {
               </div>
             </div>
           `
-        : nothing}
+          : nothing
+      }
 
-      ${renderCompactionIndicator(props.compactionStatus)}
       <div class="chat-compose">
         ${renderAttachmentPreview(props)}
         <div class="chat-compose__row">
@@ -704,7 +703,10 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
       message: msg,
     });
   }
-  if (props.showThinking) {
+  // Always show tool activity chips during an active run (stream non-null).
+  // When not streaming, only show if showThinking is enabled.
+  const showTools = props.showThinking || (props.stream !== null && tools.length > 0);
+  if (showTools) {
     for (let i = 0; i < tools.length; i++) {
       items.push({
         kind: "message",

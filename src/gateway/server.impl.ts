@@ -510,6 +510,7 @@ export async function startGatewayServer(
     defaultWorkspaceDir,
     deps,
     startChannels,
+    chatAbortControllers,
     log,
     logHooks,
     logChannels,

@@ -20,6 +20,13 @@ const TURN_PREFIX_INSTRUCTIONS =
 const MAX_TOOL_FAILURES = 8;
 const MAX_TOOL_FAILURE_CHARS = 240;
 
+/**
+ * Default minimum token count below which we skip re-summarization to prevent
+ * double-compaction from degrading context. When tokensBefore is below this
+ * threshold, the previous summary is carried forward as-is.
+ */
+const DEFAULT_MIN_TOKENS_FOR_COMPACTION = 10_000;
+
 type ToolFailure = {
   toolCallId: string;
   toolName: string;
@@ -160,7 +167,7 @@ function formatFileOperations(readFiles: string[], modifiedFiles: string[]): str
 
 export default function compactionSafeguardExtension(api: ExtensionAPI): void {
   api.on("session_before_compact", async (event, ctx) => {
-    const { preparation, customInstructions, signal } = event;
+    const { preparation, customInstructions: eventCustomInstructions, signal } = event;
     const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
     const fileOpsSummary = formatFileOperations(readFiles, modifiedFiles);
     const toolFailures = collectToolFailures([
@@ -170,14 +177,42 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     const toolFailureSection = formatToolFailuresSection(toolFailures);
     const fallbackSummary = `${FALLBACK_SUMMARY}${toolFailureSection}${fileOpsSummary}`;
 
+    // ── Double-compaction prevention ──────────────────────────────────
+    // If tokensBefore is very low, this is likely a double-compaction where
+    // Pi re-triggered immediately after a previous compaction. Preserve the
+    // previous summary to avoid context degradation from re-summarizing.
     const runtime = getCompactionSafeguardRuntime(ctx.sessionManager);
+    const minTokens = runtime?.minTokensForCompaction ?? DEFAULT_MIN_TOKENS_FOR_COMPACTION;
+    const tokensBefore = preparation.tokensBefore;
+    if (
+      minTokens > 0 &&
+      typeof tokensBefore === "number" &&
+      Number.isFinite(tokensBefore) &&
+      tokensBefore < minTokens
+    ) {
+      const preservedSummary = preparation.previousSummary
+        ? `${preparation.previousSummary}${toolFailureSection}${fileOpsSummary}`
+        : fallbackSummary;
+      console.warn(
+        `Compaction safeguard: skipping re-summarization (tokensBefore=${tokensBefore} < minTokens=${minTokens}). Preserving previous summary.`,
+      );
+      return {
+        compaction: {
+          summary: preservedSummary,
+          firstKeptEntryId: preparation.firstKeptEntryId,
+          tokensBefore: preparation.tokensBefore,
+          details: { readFiles, modifiedFiles },
+        },
+      };
+    }
 
-    // ctx.model may be undefined in embedded mode (SDK doesn't call extensionRunner.initialize).
-    // Fall back to the model stored in the runtime registry by the embedded runner.
-    const model = ctx.model ?? (runtime?.model as typeof ctx.model);
-    console.warn(
-      `[compaction-safeguard] ctx.model=${!!ctx.model}, runtime=${!!runtime}, runtime.model=${!!runtime?.model}, resolved model=${!!model}`,
-    );
+    // ── Merge custom instructions (config-level + event-level) ──────
+    const runtimeCustomInstructions = runtime?.customInstructions;
+    const customInstructions =
+      [runtimeCustomInstructions, eventCustomInstructions].filter(Boolean).join("\n\n") ||
+      undefined;
+
+    const model = ctx.model;
     if (!model) {
       return {
         compaction: {
@@ -202,7 +237,6 @@ export default function compactionSafeguardExtension(api: ExtensionAPI): void {
     }
 
     try {
-      const runtime = getCompactionSafeguardRuntime(ctx.sessionManager);
       const modelContextWindow = resolveContextWindowTokens(model);
       const contextWindowTokens = runtime?.contextWindowTokens ?? modelContextWindow;
       const turnPrefixMessages = preparation.turnPrefixMessages ?? [];

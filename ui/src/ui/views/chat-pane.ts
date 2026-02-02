@@ -123,37 +123,16 @@ export function renderChatPane(props: ChatPaneProps) {
       state.threads = new Map(state.threads);
       state.setThreadInPane(leaf.id, desc.sessionKey);
     },
-    sidebarOpen: paneState?.sidebarOpen ?? false,
-    sidebarContent: paneState?.sidebarContent ?? null,
-    sidebarError: paneState?.sidebarError ?? null,
-    splitRatio: paneState?.sidebarSplitRatio ?? 0.6,
-    onOpenSidebar: (content: string) => {
-      if (paneState) {
-        paneState.sidebarContent = content
-        paneState.sidebarError = null
-        paneState.sidebarOpen = true
-        // Trigger reactivity through app state
-        state.paneStates = new Map(state.paneStates)
-      } else {
-        state.handleOpenSidebar(content)
-      }
-    },
-    onCloseSidebar: () => {
-      if (paneState) {
-        paneState.sidebarOpen = false
-        state.paneStates = new Map(state.paneStates)
-      } else {
-        state.handleCloseSidebar()
-      }
-    },
-    onSplitRatioChange: (ratio: number) => {
-      if (paneState) {
-        paneState.sidebarSplitRatio = Math.max(0.4, Math.min(0.7, ratio))
-        state.paneStates = new Map(state.paneStates)
-      } else {
-        state.handleSplitRatioChange(ratio)
-      }
-    },
+    // Legacy sidebar (not used in split-pane, but required by ChatProps)
+    sidebarOpen: false,
+    sidebarContent: null,
+    sidebarError: null,
+    splitRatio: 0.6,
+    onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
+    onCloseSidebar: () => state.handleCloseSidebar(),
+    onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
+    // File preview → delegates to global artifact panel
+    onOpenFilePreview: (filePath: string) => state.handleOpenFilePreview(filePath, true),
     assistantName: state.assistantName,
     assistantAvatar: state.assistantAvatar,
     openSessionKeys,

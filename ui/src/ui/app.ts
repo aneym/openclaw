@@ -53,7 +53,8 @@ import {
   updateBranchRatio,
   nextLeafId,
 } from "./split-tree";
-import { type PaneState, syncPaneStates } from "./pane-state";
+import { type PaneState, type ArtifactTab, syncPaneStates } from "./pane-state";
+import { fetchFileContent } from "./controllers/file";
 import type { SkillMessage } from "./controllers/skills";
 import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import {
@@ -169,6 +170,14 @@ export class OpenClawApp extends LitElement {
   @state() sidebarContent: string | null = null;
   @state() sidebarError: string | null = null;
   @state() splitRatio = this.settings.splitRatio;
+
+  // Global artifact panel state (renders to the right of all panes)
+  @state() artifactOpen = false;
+  @state() artifactTabs: import('./pane-state').ArtifactTab[] = [];
+  @state() artifactActiveTabId: string | null = null;
+  @state() artifactSplitRatio = 0.65;
+  artifactClosedPaths: Set<string> = new Set();
+  private artifactRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   // Split pane layout state
   @state() splitLayout: SplitPaneLayout | null = null;
@@ -554,6 +563,198 @@ export class OpenClawApp extends LitElement {
     const newRatio = Math.max(0.4, Math.min(0.7, ratio));
     this.splitRatio = newRatio;
     this.applySettings({ ...this.settings, splitRatio: newRatio });
+  }
+
+  // ── Global artifact panel handlers ──
+
+  handleOpenFilePreview(filePath: string, manual = false) {
+    // Don't auto-reopen paths the user explicitly closed (manual clicks always work)
+    if (!manual && this.artifactClosedPaths.has(filePath)) return;
+
+    const existing = this.artifactTabs.find((t) => t.filePath === filePath);
+    if (existing) {
+      this.artifactActiveTabId = existing.id;
+      this.artifactOpen = true;
+      this.refreshArtifactTab(existing.id);
+      return;
+    }
+
+    const tabId = `artifact-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const fileName = filePath.split("/").pop() ?? filePath;
+    const newTab: ArtifactTab = {
+      id: tabId,
+      filePath,
+      fileName,
+      content: null,
+      mtime: null,
+      loading: true,
+      error: null,
+    };
+    this.artifactTabs = [...this.artifactTabs, newTab];
+    this.artifactActiveTabId = tabId;
+    this.artifactOpen = true;
+    this.refreshArtifactTab(tabId);
+  }
+
+  handleArtifactTabSelect(tabId: string) {
+    this.artifactActiveTabId = tabId;
+  }
+
+  handleArtifactTabClose(tabId: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (tab?.filePath) this.artifactClosedPaths.add(tab.filePath);
+    this.artifactTabs = this.artifactTabs.filter((t) => t.id !== tabId);
+    if (this.artifactActiveTabId === tabId) {
+      this.artifactActiveTabId = this.artifactTabs[this.artifactTabs.length - 1]?.id ?? null;
+    }
+    if (this.artifactTabs.length === 0) {
+      this.artifactOpen = false;
+    }
+  }
+
+  handleArtifactRefresh(tabId: string) {
+    this.refreshArtifactTab(tabId);
+  }
+
+  handleArtifactClose() {
+    this.artifactOpen = false;
+  }
+
+  handleArtifactToggleRaw(tabId: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    const isMd = tab.fileName.endsWith('.md') || tab.fileName.endsWith('.mdx');
+    if (isMd) {
+      // For markdown: toggle between rendered → editing → rendered
+      if (tab.editing) {
+        // Cancel editing
+        tab.editing = false;
+        tab.editDraft = undefined;
+      } else {
+        // Enter edit mode
+        tab.editing = true;
+        tab.editDraft = tab.content ?? '';
+      }
+    } else {
+      tab.showRaw = !tab.showRaw;
+    }
+    this.artifactTabs = [...this.artifactTabs];
+  }
+
+  private artifactAutoSaveTimers: Map<string, ReturnType<typeof setTimeout>> = new Map();
+
+  /** Called on every editor-update event. Debounces and auto-saves. */
+  handleArtifactAutoSave(tabId: string, content: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    (tab as ArtifactTab & { editDraft?: string }).editDraft = content;
+
+    // Clear existing timer
+    const existing = this.artifactAutoSaveTimers.get(tabId);
+    if (existing) clearTimeout(existing);
+
+    // Debounce 1.5s then save
+    this.artifactAutoSaveTimers.set(tabId, setTimeout(() => {
+      this.artifactAutoSaveTimers.delete(tabId);
+      this.handleArtifactSave(tabId, content);
+    }, 1500));
+  }
+
+  handleArtifactSave(tabId: string, content: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (!tab) return;
+    // Skip save if content hasn't changed
+    if (content === tab.content) return;
+
+    tab.saving = true;
+    this.artifactTabs = [...this.artifactTabs];
+
+    import('./controllers/file').then(({ writeFileContent }) =>
+      writeFileContent(this.basePath, tab.filePath, content, this.password)
+        .then((result) => {
+          const t = this.artifactTabs.find((t) => t.id === tabId);
+          if (!t) return;
+          t.content = content;
+          t.mtime = result.mtime;
+          t.saving = false;
+          this.artifactTabs = [...this.artifactTabs];
+        })
+        .catch((err: Error) => {
+          const t = this.artifactTabs.find((t) => t.id === tabId);
+          if (!t) return;
+          t.saving = false;
+          t.error = err.message;
+          this.artifactTabs = [...this.artifactTabs];
+        })
+    );
+  }
+
+  handleArtifactCopy(tabId: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (tab?.content) {
+      navigator.clipboard.writeText(tab.content).catch(() => {});
+    }
+  }
+
+  /** Reset closed-paths set (call on new user message so auto-open works again). */
+  resetArtifactClosedPaths() {
+    this.artifactClosedPaths.clear();
+  }
+
+  private refreshArtifactTab(tabId: string) {
+    // Debounce: 300ms per tab to handle rapid Write/Edit calls
+    const existing = this.artifactRefreshTimers.get(tabId);
+    if (existing) clearTimeout(existing);
+
+    this.artifactRefreshTimers.set(
+      tabId,
+      setTimeout(() => {
+        this.artifactRefreshTimers.delete(tabId);
+        this.doRefreshArtifactTab(tabId);
+      }, 300),
+    );
+  }
+
+  private async doRefreshArtifactTab(tabId: string) {
+    const tab = this.artifactTabs.find((t) => t.id === tabId);
+    if (!tab || tab.isLegacy) return;
+
+    // Set loading
+    tab.loading = true;
+    tab.error = null;
+    this.artifactTabs = [...this.artifactTabs];
+
+    try {
+      const result = await fetchFileContent(this.basePath, tab.filePath, this.password);
+      const t = this.artifactTabs.find((t) => t.id === tabId);
+      if (!t) return; // tab was closed during fetch
+      t.content = result.content;
+      t.mtime = result.mtime;
+      t.loading = false;
+      t.error = null;
+      t.updated = true;
+      // Auto-enter edit mode for markdown files
+      const isMd = t.fileName.endsWith('.md') || t.fileName.endsWith('.mdx');
+      if (isMd && !t.editing) {
+        t.editing = true;
+        t.editDraft = result.content;
+      }
+      this.artifactTabs = [...this.artifactTabs];
+      // Clear updated flash after 1.5s
+      setTimeout(() => {
+        const t2 = this.artifactTabs.find((t) => t.id === tabId);
+        if (t2) {
+          t2.updated = false;
+          this.artifactTabs = [...this.artifactTabs];
+        }
+      }, 1500);
+    } catch (err: unknown) {
+      const t = this.artifactTabs.find((t) => t.id === tabId);
+      if (!t) return;
+      t.loading = false;
+      t.error = err instanceof Error ? err.message : String(err);
+      this.artifactTabs = [...this.artifactTabs];
+    }
   }
 
   switchThread(threadId: string) {

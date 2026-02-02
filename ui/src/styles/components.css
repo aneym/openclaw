@@ -1081,7 +1081,6 @@
 
 .chat-bubble.streaming {
   border-color: transparent !important;
-  animation: chatStreamPulse 2s ease-in-out infinite;
 }
 
 @media (prefers-reduced-motion: reduce) {

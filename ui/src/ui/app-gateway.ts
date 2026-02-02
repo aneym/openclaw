@@ -156,9 +156,59 @@ export function connectGateway(host: GatewayHost) {
       host.lastError = null;
       host.hello = hello;
       applySnapshot(host, hello);
-      // Don't reset tool stream here — defer until queryChatStatus confirms
-      // whether an active run exists. Resetting eagerly wipes tool history
-      // that queryChatStatus cannot restore (Bug 5).
+
+      // ── Reconnect state reset ──────────────────────────────────────
+      // On reconnect (especially after gateway restart), stale client-side
+      // state must be cleared so the UI accurately reflects the new gateway.
+
+      // 1. Clear runningSessions — the old gateway's runs are gone.
+      //    queryChatStatus below will re-populate for any truly active runs.
+      host.runningSessions = new Set();
+
+      // 2. Clear chatSending — if a send was in-flight when the WS dropped,
+      //    the promise rejected without reaching the finally block, leaving
+      //    chatSending=true forever. This unblocks isChatBusy() → queue flush.
+      (host as unknown as { chatSending: boolean }).chatSending = false;
+
+      // 3. Clear per-thread chatSending for the same reason.
+      for (const thread of host.threads.values()) {
+        thread.chatSending = false;
+      }
+
+      // 4. Clear compaction toast — the "end" event will never arrive from
+      //    the old process.
+      (host as unknown as { compactionStatus: unknown }).compactionStatus = null;
+      // ──────────────────────────────────────────────────────────────
+
+      // ── Restore active runs IMMEDIATELY ────────────────────────────
+      // queryChatStatus is the fastest path to restoring the stop button
+      // after reconnect. Run it FIRST, before any slow history/session loads.
+      // Incoming delta events also adopt runId (see handleChatEvent), but
+      // queryChatStatus is proactive — it works even if no chunks arrive yet.
+      void queryChatStatus(host).then(() => {
+        // Clear main session stream/tool state only if no active run was restored
+        if (!host.chatRunId) {
+          (host as unknown as { chatStream: string | null }).chatStream = null;
+          (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        }
+        // Clear per-thread state only for threads without an active run
+        for (const thread of host.threads.values()) {
+          if (!thread.chatRunId) {
+            thread.chatStream = null;
+            thread.chatStreamStartedAt = null;
+            resetToolStreamForThread(thread);
+          }
+        }
+
+        // Flush queued messages — after reconnect, if no run is active,
+        // queued messages would sit forever without this explicit flush.
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      });
+      // ──────────────────────────────────────────────────────────────
+
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
@@ -176,25 +226,6 @@ export function connectGateway(host: GatewayHost) {
         void host.loadAllPaneHistories().then(() => {
           // Force all panes to bottom after history loads
           host.scrollAllPanesToBottom();
-        });
-        // Query chat.status FIRST, then reconcile stream state.
-        // If an active run exists with streamText, the stream stays alive.
-        // Otherwise, clear orphaned state.
-        void queryChatStatus(host).then(() => {
-          // Clear main session stream/tool state only if no active run was restored
-          if (!host.chatRunId) {
-            (host as unknown as { chatStream: string | null }).chatStream = null;
-            (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
-            resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-          }
-          // Clear per-thread state only for threads without an active run
-          for (const thread of host.threads.values()) {
-            if (!thread.chatRunId) {
-              thread.chatStream = null;
-              thread.chatStreamStartedAt = null;
-              resetToolStreamForThread(thread);
-            }
-          }
         });
       });
     },
@@ -501,15 +532,25 @@ async function loadChatHistoryForThread(
  */
 async function queryChatStatus(host: GatewayHost) {
   if (!host.connected || !host.client) return;
+
+  // Collect session keys that have an active run so we can rebuild runningSessions
+  const activeSessionKeys: string[] = [];
+
   try {
     const res = (await host.client.request("chat.status", {
       sessionKey: host.sessionKey,
     })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
     if (res?.activeRun?.runId) {
       host.chatRunId = res.activeRun.runId;
-      // Restore accumulated stream text so users see progress after reconnect
-      if (typeof res.activeRun.streamText === "string" && res.activeRun.streamText) {
-        (host as unknown as { chatStream: string | null }).chatStream = res.activeRun.streamText;
+      activeSessionKeys.push(host.sessionKey);
+      // Restore stream state so the UI shows the correct visual:
+      // - If streamText has content → show the streamed text
+      // - If streamText is empty/null → show the three-dot reading indicator
+      // Either way, chatStream must be non-null to signal "active run".
+      const streamText = typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+      (host as unknown as { chatStream: string | null }).chatStream = streamText;
+      if (!(host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt) {
+        (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = Date.now();
       }
     }
   } catch {
@@ -525,13 +566,16 @@ async function queryChatStatus(host: GatewayHost) {
           sessionKey: leaf.threadId,
         })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
         if (res?.activeRun?.runId) {
+          activeSessionKeys.push(leaf.threadId);
           const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
           const thread = threadMapId ? host.threads.get(threadMapId) : null;
           if (thread) {
             thread.chatRunId = res.activeRun.runId;
-            // Restore accumulated stream text for this pane
-            if (typeof res.activeRun.streamText === "string" && res.activeRun.streamText) {
-              thread.chatStream = res.activeRun.streamText;
+            // Restore stream state: non-null chatStream signals "active run"
+            const paneStreamText = typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+            thread.chatStream = paneStreamText;
+            if (!thread.chatStreamStartedAt) {
+              thread.chatStreamStartedAt = Date.now();
             }
             host.threads = new Map(host.threads);
           }
@@ -540,6 +584,12 @@ async function queryChatStatus(host: GatewayHost) {
         // Ignore per-pane failures
       }
     }
+  }
+
+  // Rebuild runningSessions from verified active runs.
+  // We cleared runningSessions on reconnect; now restore only confirmed-active ones.
+  if (activeSessionKeys.length > 0) {
+    host.runningSessions = new Set(activeSessionKeys);
   }
 }
 

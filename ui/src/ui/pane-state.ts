@@ -5,10 +5,33 @@
  * PaneState tracks per-pane UI concerns like scroll position and sidebar visibility.
  */
 
+export interface ArtifactTab {
+  id: string
+  filePath: string
+  fileName: string
+  content: string | null
+  mtime: number | null
+  loading: boolean
+  error: string | null
+  /** True when the tab shows raw tool output instead of a file. */
+  isLegacy?: boolean
+  /** For markdown files: whether to show raw source or rendered. */
+  showRaw?: boolean
+  /** Brief visual indicator that content was updated. */
+  updated?: boolean
+  /** Currently in edit mode. */
+  editing?: boolean
+  /** Draft content while editing. */
+  editDraft?: string
+  /** Currently saving to disk. */
+  saving?: boolean
+}
+
 export interface PaneState {
   paneId: string
   threadId: string
   scrollUserNearBottom: boolean
+  // Legacy sidebar fields
   sidebarOpen: boolean
   sidebarContent: string | null
   sidebarError: string | null

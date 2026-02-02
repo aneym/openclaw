@@ -238,11 +238,28 @@ export type AppViewState = {
   handleOpenSidebar: (content: string) => void;
   handleCloseSidebar: () => void;
   handleSplitRatioChange: (ratio: number) => void;
+  // Artifact panel handlers
+  handleOpenFilePreview: (filePath: string, manual?: boolean) => void;
+  handleArtifactTabSelect: (tabId: string) => void;
+  handleArtifactTabClose: (tabId: string) => void;
+  handleArtifactRefresh: (tabId: string) => void;
+  handleArtifactClose: () => void;
+  handleArtifactToggleRaw: (tabId: string) => void;
+  handleArtifactCopy: (tabId: string) => void;
+  handleArtifactAutoSave: (tabId: string, content: string) => void;
+  handleArtifactSave: (tabId: string, content: string) => void;
+  resetArtifactClosedPaths: () => void;
   // Sidebar state
   sidebarOpen: boolean;
   sidebarContent: string | null;
   sidebarError: string | null;
   splitRatio: number;
+  // Global artifact panel state (renders to the right of all panes)
+  artifactOpen: boolean;
+  artifactTabs: import('./pane-state').ArtifactTab[];
+  artifactActiveTabId: string | null;
+  artifactSplitRatio: number;
+  artifactClosedPaths: Set<string>;
   // Split pane layout
   splitLayout: SplitPaneLayout | null;
   focusedPaneId: string | null;

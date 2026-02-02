@@ -18,6 +18,7 @@ import {
   handleControlUiHttpRequest,
   handleWebUiHttpRequest,
 } from "./control-ui.js";
+import { handleFileHttpRequest } from "./file-http.js";
 import { applyHookMappings } from "./hooks-mapping.js";
 import {
   extractHookToken,
@@ -259,6 +260,14 @@ export function createGatewayHttpServer(opts: {
       ) {
         return;
 <<<<<<< HEAD
+      }
+      if (
+        await handleFileHttpRequest(req, res, {
+          auth: resolvedAuth,
+          trustedProxies,
+        })
+      ) {
+        return;
       }
       if (await handleSlackHttpRequest(req, res)) {
         return;

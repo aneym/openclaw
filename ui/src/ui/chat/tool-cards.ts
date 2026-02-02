@@ -1,11 +1,13 @@
 import { html, nothing } from "lit";
-
-import { formatToolDetail, resolveToolDisplay } from "../tool-display";
-import { icons } from "../icons";
 import type { ToolCard } from "../types/chat-types";
-import { formatToolOutputForSidebar } from "./tool-helpers";
-import { isToolResultMessage } from "./message-normalizer";
+import { icons } from "../icons";
+import { formatToolDetail, resolveToolDisplay } from "../tool-display";
 import { extractTextCached } from "./message-extract";
+import { isToolResultMessage } from "./message-normalizer";
+import { formatToolOutputForSidebar, getTruncatedPreview } from "./tool-helpers";
+
+/** Tool names that operate on files (used for file preview). */
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit"]);
 
 export function extractToolCards(message: unknown): ToolCard[] {
   const m = message as Record<string, unknown>;
@@ -34,10 +36,7 @@ export function extractToolCards(message: unknown): ToolCard[] {
     cards.push({ kind: "result", name, text });
   }
 
-  if (
-    isToolResultMessage(message) &&
-    !cards.some((card) => card.kind === "result")
-  ) {
+  if (isToolResultMessage(message) && !cards.some((card) => card.kind === "result")) {
     const name =
       (typeof m.toolName === "string" && m.toolName) ||
       (typeof m.tool_name === "string" && m.tool_name) ||
@@ -49,25 +48,58 @@ export function extractToolCards(message: unknown): ToolCard[] {
   return cards;
 }
 
+/**
+ * Extract the file path from a tool card's args, if present.
+ */
+export function extractFilePathFromCard(card: ToolCard): string | undefined {
+  if (!card.args || typeof card.args !== "object") return undefined;
+  const args = card.args as Record<string, unknown>;
+  const filePath =
+    (typeof args.file_path === "string" && args.file_path) ||
+    (typeof args.path === "string" && args.path) ||
+    undefined;
+  return filePath || undefined;
+}
+
+/**
+ * Check if a tool card represents a file-mutating tool (write/edit).
+ */
+export function isFileMutatingTool(card: ToolCard): boolean {
+  const name = card.name.toLowerCase();
+  return name === "write" || name === "edit";
+}
+
 export function renderToolCardSidebar(
   card: ToolCard,
   onOpenSidebar?: (content: string) => void,
+  onOpenFilePreview?: (filePath: string) => void,
 ) {
   const display = resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
   const hasText = Boolean(card.text?.trim());
+  const toolName = card.name.toLowerCase();
+  const isFileTool = FILE_TOOL_NAMES.has(toolName);
+  const filePath = isFileTool ? extractFilePathFromCard(card) : undefined;
 
-  const canClick = Boolean(onOpenSidebar);
+  const canClick = Boolean(onOpenSidebar || (onOpenFilePreview && filePath));
   const handleClick = canClick
     ? () => {
-        if (hasText) {
-          onOpenSidebar!(formatToolOutputForSidebar(card.text!));
+        // For file tools with a path, prefer file preview
+        if (onOpenFilePreview && filePath) {
+          onOpenFilePreview(filePath);
           return;
         }
-        const info = `## ${display.label}\n\n${
-          detail ? `**Command:** \`${detail}\`\n\n` : ""
-        }*No output — tool completed successfully.*`;
-        onOpenSidebar!(info);
+        // Fallback to legacy sidebar
+        if (onOpenSidebar) {
+          if (hasText) {
+            onOpenSidebar(formatToolOutputForSidebar(card.text!));
+            return;
+          }
+          const info = `## ${display.label}\n\n${
+            detail ? `**Command:** \`${detail}\`\n\n` : ""
+          }*No output — tool completed successfully.*`;
+          onOpenSidebar(info);
+        }
       }
     : undefined;
 
