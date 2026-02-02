@@ -46,6 +46,7 @@ import {
   handleAbortChat as handleAbortChatInternal,
   handleSendChat as handleSendChatInternal,
   removeQueuedMessage as removeQueuedMessageInternal,
+  sendQueuedMessageNow as sendQueuedMessageNowInternal,
 } from "./app-chat";
 import { DEFAULT_CRON_FORM, DEFAULT_LOG_LEVEL_FILTERS } from "./app-defaults";
 import { connectGateway as connectGatewayInternal } from "./app-gateway";
@@ -434,6 +435,21 @@ export class OpenClawApp extends LitElement {
 
   async handleAbortChat() {
     await handleAbortChatInternal(this as unknown as Parameters<typeof handleAbortChatInternal>[0]);
+  }
+
+  async handleSendChatImmediately() {
+    await handleSendChatInternal(
+      this as unknown as Parameters<typeof handleSendChatInternal>[0],
+      undefined,
+      { sendImmediately: true },
+    );
+  }
+
+  async handleQueueSendNow(id: string) {
+    await sendQueuedMessageNowInternal(
+      this as unknown as Parameters<typeof sendQueuedMessageNowInternal>[0],
+      id,
+    );
   }
 
   async abortThreadRun(sessionKey: string, runId: string): Promise<boolean> {

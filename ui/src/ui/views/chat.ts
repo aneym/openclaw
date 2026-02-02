@@ -68,6 +68,8 @@ export type ChatProps = {
   onSend: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
+  onQueueSendNow: (id: string) => void;
+  onSendImmediately: () => void;
   onNewSession: () => void;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
@@ -575,6 +577,15 @@ export function renderChat(props: ChatProps) {
                         }
                       </div>
                       <button
+                        class="chat-queue__send-now"
+                        type="button"
+                        aria-label="Send this message now"
+                        title="Send now"
+                        @click=${() => props.onQueueSendNow(item.id)}
+                      >
+                        ${icons.zap}
+                      </button>
+                      <button
                         class="chat-queue__remove"
                         type="button"
                         aria-label="Remove queued message"
@@ -634,6 +645,16 @@ export function renderChat(props: ChatProps) {
               title="${isBusy ? "Queue" : "Send"}"
               @click=${props.onSend}
             >${icons.arrowUp}</button>
+            ${
+              isBusy
+                ? html`<button
+                  class="btn chat-compose__icon-btn chat-compose__icon-btn--send-now"
+                  ?disabled=${!props.connected}
+                  title="Send Now"
+                  @click=${props.onSendImmediately}
+                >${icons.zap}</button>`
+                : nothing
+            }
           </div>
         </div>
       </div>

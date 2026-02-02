@@ -124,6 +124,8 @@ export function renderChatPane(props: ChatPaneProps) {
       }
     },
     onQueueRemove: (id) => state.removeQueuedMessage(id),
+    onQueueSendNow: (id) => void state.handleQueueSendNow(id),
+    onSendImmediately: () => void state.handleSendChatImmediately(),
     onNewSession: () => {
       // Create a fresh thread and assign it to this pane
       const parentKey = state.sessionKey.split(":thread:")[0];

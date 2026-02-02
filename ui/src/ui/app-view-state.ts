@@ -245,7 +245,9 @@ export type AppViewState = {
   handleCallDebugMethod: (method: string, params: string) => Promise<void>;
   // Chat interaction methods
   handleChatScroll: (event: Event) => void;
-  handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean }) => Promise<void>;
+  handleSendChat: (messageOverride?: string, opts?: { restoreDraft?: boolean; sendImmediately?: boolean }) => Promise<void>;
+  handleSendChatImmediately: () => Promise<void>;
+  handleQueueSendNow: (id: string) => Promise<void>;
   handleAbortChat: () => Promise<void>;
   abortThreadRun: (sessionKey: string, runId: string) => Promise<boolean>;
   removeQueuedMessage: (id: string) => void;

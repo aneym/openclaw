@@ -159,10 +159,67 @@ export function removeQueuedMessage(host: ChatHost, id: string) {
   saveQueue(host.sessionKey, host.chatQueue);
 }
 
+/**
+ * Poll until `host.chatRunId` clears (abort completed) or timeout.
+ * Returns true if abort completed, false on timeout.
+ */
+export async function waitForAbortComplete(
+  host: ChatHost,
+  timeoutMs = 5000,
+): Promise<boolean> {
+  if (!host.chatRunId) return true;
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!host.chatRunId) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
+/**
+ * Abort current run, wait for it to clear, then send a message immediately.
+ */
+export async function sendChatImmediately(
+  host: ChatHost,
+  message: string,
+  attachments?: ChatAttachment[],
+) {
+  await abortChatRun(host as unknown as OpenClawApp);
+  const cleared = await waitForAbortComplete(host);
+  if (!cleared) {
+    // Timeout — enqueue as fallback so the message isn't lost
+    enqueueChatMessage(host, message, attachments);
+    return;
+  }
+  await sendChatMessageNow(host, message, {
+    attachments: attachments?.length ? attachments : undefined,
+  });
+}
+
+/**
+ * Pull a specific queued message out and send it immediately (abort first).
+ */
+export async function sendQueuedMessageNow(host: ChatHost, id: string) {
+  const item = host.chatQueue.find((q) => q.id === id);
+  if (!item) return;
+  host.chatQueue = host.chatQueue.filter((q) => q.id !== id);
+  saveQueue(host.sessionKey, host.chatQueue);
+  await sendChatImmediately(host, item.text, item.attachments);
+}
+
 export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
-  opts?: { restoreDraft?: boolean },
+  opts?: { restoreDraft?: boolean; sendImmediately?: boolean },
 ) {
   if (!host.connected) return;
   const previousDraft = host.chatMessage;
@@ -192,6 +249,10 @@ export async function handleSendChat(
   scrollChat(host, true);
 
   if (isChatBusy(host)) {
+    if (opts?.sendImmediately) {
+      await sendChatImmediately(host, message, attachmentsToSend);
+      return;
+    }
     enqueueChatMessage(host, message, attachmentsToSend, refreshSessions);
     return;
   }

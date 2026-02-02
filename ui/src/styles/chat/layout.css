@@ -425,6 +425,22 @@
   stroke: none;
 }
 
+.chat-compose__icon-btn--send-now {
+  background: var(--warning, #e5a100);
+  color: #000;
+}
+
+.chat-compose__icon-btn--send-now:hover {
+  background: var(--warning-hover, #cc8f00);
+}
+
+.chat-compose__icon-btn--send-now svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+  stroke: none;
+}
+
 /* Chat controls - moved to content-header area, left aligned */
 .chat-controls {
   display: flex;

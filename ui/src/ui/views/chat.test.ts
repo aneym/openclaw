@@ -43,6 +43,8 @@ function createProps(overrides: Partial<ChatProps> = {}): ChatProps {
     onDraftChange: () => undefined,
     onSend: () => undefined,
     onQueueRemove: () => undefined,
+    onQueueSendNow: () => undefined,
+    onSendImmediately: () => undefined,
     onNewSession: () => undefined,
     ...overrides,
   };
