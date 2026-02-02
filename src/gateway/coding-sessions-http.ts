@@ -1,14 +1,19 @@
 /**
- * coding-sessions-http.ts — HTTP API for coding session state
+ * coding-sessions-http.ts — HTTP API for coding session state + live output
  *
  * GET  /api/coding-sessions              → list all sessions
+ * GET  /api/coding-sessions/:id/log      → raw output from exec session registry
  * POST /api/coding-sessions/:id/kill     → kill a session
- * POST /api/coding-sessions/:id          → update session state
+ * POST /api/coding-sessions/:id          → update session state (upsert)
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { getSession, getFinishedSession } from "../agents/bash-process-registry.js";
+import { sliceLogLines } from "../agents/bash-tools.shared.js";
+
+/* ── State file helpers ── */
 
 function getStateFilePath(): string {
   const workspace =
@@ -38,6 +43,13 @@ function json(res: ServerResponse, data: unknown, status = 200) {
   res.end(JSON.stringify(data));
 }
 
+function parseQuery(req: IncomingMessage): URLSearchParams {
+  const qIdx = req.url?.indexOf("?") ?? -1;
+  return new URLSearchParams(qIdx >= 0 ? req.url!.slice(qIdx + 1) : "");
+}
+
+/* ── Router ── */
+
 export function handleCodingSessionsRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -45,18 +57,65 @@ export function handleCodingSessionsRequest(
 ): boolean {
   if (!pathname.startsWith("/api/coding-sessions")) return false;
 
-  // List sessions
+  /* ── List all sessions ── */
   if (req.method === "GET" && pathname === "/api/coding-sessions") {
     const state = readState();
-    const sessions = Object.values(state.sessions).sort((a: any, b: any) => {
-      return new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime();
-    });
+    const sessions = Object.values(state.sessions).sort(
+      (a: any, b: any) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
+    );
     json(res, { sessions });
     return true;
   }
 
-  // Kill a session
-  if (req.method === "POST" && pathname.match(/^\/api\/coding-sessions\/[^/]+\/kill$/)) {
+  /* ── Log endpoint — raw output from exec session registry ── */
+  if (req.method === "GET" && /^\/api\/coding-sessions\/[^/]+\/log$/.test(pathname)) {
+    const id = pathname.split("/")[3]!;
+    const state = readState();
+    const session = state.sessions[id];
+    if (!session) {
+      json(res, { error: "Session not found" }, 404);
+      return true;
+    }
+
+    const execId = session.execSessionId;
+    if (!execId) {
+      json(res, { lines: "", totalLines: 0, totalChars: 0, running: false });
+      return true;
+    }
+
+    // Look up in the native exec session registry
+    const execRunning = getSession(execId);
+    const execFinished = getFinishedSession(execId);
+    const target = execRunning ?? execFinished;
+
+    if (!target) {
+      json(res, {
+        lines: "",
+        totalLines: 0,
+        totalChars: 0,
+        running: false,
+        expired: true,
+      });
+      return true;
+    }
+
+    const qs = parseQuery(req);
+    const offset = parseInt(qs.get("offset") || "0", 10);
+    const limit = parseInt(qs.get("limit") || "500", 10);
+    const { slice, totalLines, totalChars } = sliceLogLines(target.aggregated, offset, limit);
+
+    json(res, {
+      lines: slice,
+      totalLines,
+      totalChars,
+      running: !!execRunning && !execRunning.exited,
+      offset,
+    });
+    return true;
+  }
+
+  /* ── Kill a session ── */
+  if (req.method === "POST" && /^\/api\/coding-sessions\/[^/]+\/kill$/.test(pathname)) {
     const id = pathname.split("/")[3]!;
     const state = readState();
     const session = state.sessions[id];
@@ -67,19 +126,23 @@ export function handleCodingSessionsRequest(
     if (session.pid) {
       try {
         process.kill(session.pid, "SIGTERM");
-      } catch {}
+      } catch {
+        /* already dead */
+      }
     }
     session.status = "aborted";
+    session.finishedAt = new Date().toISOString();
     writeState(state);
     json(res, { ok: true, id });
     return true;
   }
 
-  // Update a session (agent posts progress here)
+  /* ── Update / upsert a session (agent writes metadata here) ── */
   if (
     req.method === "POST" &&
-    pathname.match(/^\/api\/coding-sessions\/[^/]+$/) &&
-    !pathname.includes("/kill")
+    /^\/api\/coding-sessions\/[^/]+$/.test(pathname) &&
+    !pathname.endsWith("/kill") &&
+    !pathname.endsWith("/log")
   ) {
     const id = pathname.split("/")[3]!;
     let body = "";

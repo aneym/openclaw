@@ -857,10 +857,15 @@ function renderChatWithArtifactPanel(state: AppViewState) {
           ${renderCodingPanel({
             sessions: state.codingSessions,
             expanded: state.codingExpanded,
-            onToggleExpand: (id) => state.handleCodingToggleExpand(id),
-            onKill: (id) => state.handleCodingKill(id),
+            sessionEvents: state.codingSessionEvents,
+            sessionPhases: state.codingSessionPhases,
+            terminalOpen: state.codingTerminalOpen,
+            onToggleExpand: (id: string) => state.handleCodingToggleExpand(id),
+            onKill: (id: string) => state.handleCodingKill(id),
             onClose: () => state.toggleCodingPanel(),
             onRefresh: () => state.fetchCodingSessions(),
+            onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
+            onCloseTerminal: () => state.handleCloseCodingTerminal(),
           })}
         </div>
       ` : nothing}

@@ -10,6 +10,7 @@ import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { Tab } from "./navigation";
 import type { SplitPaneLayout, SplitDirection } from "./split-tree";
 import type { ResolvedTheme, ThemeMode } from "./theme";
+import { parseStreamEvents, detectCurrentPhase } from "./views/coding-panel.js";
 import type { ThreadState } from "./thread-state";
 import type {
   AgentsListResult,
@@ -191,7 +192,11 @@ export class OpenClawApp extends LitElement {
   @state() codingPanelOpen = false;
   @state() codingSessions: import('./views/coding-panel').CodingSession[] = [];
   @state() codingExpanded: Set<string> = new Set();
+  @state() codingSessionEvents: Map<string, import('./views/coding-panel').StreamEvent[]> = new Map();
+  @state() codingSessionPhases: Map<string, import('./views/coding-panel').Phase> = new Map();
+  @state() codingTerminalOpen: string | null = null;
   private codingPollTimer: ReturnType<typeof setInterval> | null = null;
+  private codingLogOffsets: Map<string, number> = new Map();
   artifactClosedPaths: Set<string> = new Set();
   private artifactRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -717,25 +722,66 @@ export class OpenClawApp extends LitElement {
       this.startCodingPoll();
     } else {
       this.stopCodingPoll();
+      this.codingTerminalOpen = null;
     }
+  }
+
+  private get codingBaseUrl() {
+    return this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
   }
 
   async fetchCodingSessions() {
     try {
-      const baseUrl = this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
-      const res = await fetch(`${baseUrl}/api/coding-sessions`);
+      const res = await fetch(`${this.codingBaseUrl}/api/coding-sessions`);
       if (res.ok) {
         const data = await res.json();
         this.codingSessions = data.sessions || [];
+        // Fetch logs for all active or expanded sessions
+        for (const s of this.codingSessions) {
+          if (s.execSessionId && (s.status === "running" || s.status === "starting" || this.codingExpanded.has(s.id) || this.codingTerminalOpen === s.id)) {
+            void this.fetchCodingLog(s.id);
+          }
+        }
       }
-    } catch {
-      // silent fail
-    }
+    } catch { /* silent */ }
+  }
+
+  async fetchCodingLog(id: string) {
+    try {
+      const offset = this.codingLogOffsets.get(id) || 0;
+      const res = await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/log?offset=${offset}&limit=200`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!data.lines && data.totalLines === 0) return;
+
+      // Parse new events from the raw lines
+      const newEvents = parseStreamEvents(data.lines);
+
+      if (newEvents.length > 0) {
+        const existing = this.codingSessionEvents.get(id) || [];
+        const combined = [...existing, ...newEvents];
+        // Keep last 500 events max
+        const trimmed = combined.length > 500 ? combined.slice(-500) : combined;
+
+        const nextEvents = new Map(this.codingSessionEvents);
+        nextEvents.set(id, trimmed);
+        this.codingSessionEvents = nextEvents;
+
+        const nextPhases = new Map(this.codingSessionPhases);
+        nextPhases.set(id, detectCurrentPhase(trimmed));
+        this.codingSessionPhases = nextPhases;
+      }
+
+      // Update offset to fetch only new lines next time
+      if (data.totalLines > 0) {
+        this.codingLogOffsets.set(id, data.totalLines);
+      }
+    } catch { /* silent */ }
   }
 
   startCodingPoll() {
     this.stopCodingPoll();
-    this.codingPollTimer = setInterval(() => void this.fetchCodingSessions(), 3000);
+    this.codingPollTimer = setInterval(() => void this.fetchCodingSessions(), 2000);
   }
 
   stopCodingPoll() {
@@ -750,14 +796,24 @@ export class OpenClawApp extends LitElement {
     if (next.has(id)) next.delete(id);
     else next.add(id);
     this.codingExpanded = next;
+    // Immediately fetch log when expanding
+    if (next.has(id)) void this.fetchCodingLog(id);
   }
 
   async handleCodingKill(id: string) {
     try {
-      const baseUrl = this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
-      await fetch(`${baseUrl}/api/coding-sessions/${id}/kill`, { method: "POST" });
+      await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/kill`, { method: "POST" });
       void this.fetchCodingSessions();
     } catch {}
+  }
+
+  handleOpenCodingTerminal(id: string) {
+    this.codingTerminalOpen = id;
+    void this.fetchCodingLog(id);
+  }
+
+  handleCloseCodingTerminal() {
+    this.codingTerminalOpen = null;
   }
 
   handleArtifactToggleRaw(tabId: string) {
