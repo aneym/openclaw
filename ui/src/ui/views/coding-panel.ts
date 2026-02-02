@@ -340,6 +340,8 @@ function renderTerminal(session: CodingSession, events: StreamEvent[], props: Co
   const phase = props.sessionPhases.get(session.id) || "idle";
   const pm = PHASE_META[phase];
 
+  const isActive = session.status === "running" || session.status === "starting";
+
   return html`
     <div class="cs-terminal">
       <div class="cs-terminal__head">
@@ -349,7 +351,12 @@ function renderTerminal(session: CodingSession, events: StreamEvent[], props: Co
           <span>${session.taskId}: ${session.title}</span>
           <span style="color:var(--text-secondary)">· ${elapsed(session.startedAt, session.finishedAt)}</span>
         </div>
-        <button class="cs-btn" @click=${props.onCloseTerminal} title="Close terminal">✕</button>
+        <div class="cs-terminal__btns">
+          ${isActive ? html`
+            <button class="cs-btn cs-btn--kill" @click=${() => { props.onKill(session.id); props.onCloseTerminal(); }} title="Kill session">⏹ Kill</button>
+          ` : nothing}
+          <button class="cs-btn" @click=${props.onCloseTerminal} title="Close terminal view">✕ Close</button>
+        </div>
       </div>
       <div class="cs-terminal__body">
         ${events.length === 0

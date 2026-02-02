@@ -89,6 +89,7 @@
 .cs-terminal { display:flex; flex-direction:column; height:100%; background:var(--bg); }
 .cs-terminal__head { display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border-bottom:1px solid var(--border); gap:8px; }
 .cs-terminal__title { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:600; flex:1; min-width:0; overflow:hidden; }
+.cs-terminal__btns { display:flex; gap:6px; flex-shrink:0; }
 
 .cs-terminal__body {
   flex:1; overflow-y:auto; padding:8px 12px;
