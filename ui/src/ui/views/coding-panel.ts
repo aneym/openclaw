@@ -62,7 +62,7 @@ function detectPhase(event: any): Phase {
   if (event.type === "assistant" && event.message?.content) {
     for (const block of event.message.content) {
       if (block.type === "tool_use") {
-        if (block.name === "Task") return "planning"; // sub-agent dispatch = planning
+        if (block.name === "Task") return "planning";
         if (BUILD_TOOLS.has(block.name)) return "building";
         if (block.name === "Bash" || block.name === "bash") {
           const cmd = block.input?.command || "";
@@ -82,7 +82,7 @@ function summarizeEvent(event: any): StreamEvent | null {
   if (event.type === "system" && event.subtype === "init") {
     return { type: "system", subtype: "init", phase: "init", icon: "⚙️", summary: "Session started" };
   }
-  if (event.type === "system") return null; // skip hooks etc
+  if (event.type === "system") return null;
 
   if (event.type === "result") {
     const cost = event.total_cost_usd ? `$${event.total_cost_usd.toFixed(2)}` : "";
@@ -128,7 +128,6 @@ function summarizeEvent(event: any): StreamEvent | null {
         } else if (name === "Skill") {
           icon = "📚"; summary = `Skill: ${input.name || input.skill || ""}`;
         }
-
         events.push({ type: "tool", phase, icon, summary, toolName: name });
       } else if (block.type === "text" && block.text) {
         const text = block.text.trim();
@@ -142,8 +141,6 @@ function summarizeEvent(event: any): StreamEvent | null {
     }
     return events.length > 0 ? events[events.length - 1]! : null;
   }
-
-  // Skip user messages (tool results) — they're noisy
   return null;
 }
 
@@ -152,7 +149,6 @@ function shortPath(p: string): string {
   return parts.length > 3 ? "…/" + parts.slice(-3).join("/") : p;
 }
 
-// Strip ANSI/terminal escape sequences (from tmux PTY output)
 function stripAnsi(s: string): string {
   return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
     .replace(/\x1b\][^\x07]*\x07/g, "")
@@ -160,12 +156,9 @@ function stripAnsi(s: string): string {
     .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
 }
 
-// Extract JSON objects from a potentially messy line (tmux wraps JSON in control sequences)
 function extractJson(line: string): any | null {
   const clean = stripAnsi(line);
-  // Try the whole cleaned line first
   try { return JSON.parse(clean); } catch {}
-  // Try to find a JSON object in the line
   const match = clean.match(/(\{"type":.+)/);
   if (match) {
     try { return JSON.parse(match[1]); } catch {}
@@ -181,7 +174,6 @@ export function parseStreamEvents(rawLines: string): StreamEvent[] {
     const raw = extractJson(line);
     if (!raw) continue;
     try {
-      // For assistant messages, extract ALL tool uses (not just last)
       if (raw.type === "assistant" && raw.message?.content) {
         for (const block of raw.message.content) {
           if (block.type === "tool_use" || (block.type === "text" && block.text?.trim())) {
@@ -193,14 +185,13 @@ export function parseStreamEvents(rawLines: string): StreamEvent[] {
         const ev = summarizeEvent(raw);
         if (ev) events.push(ev);
       }
-    } catch { /* skip non-JSON */ }
+    } catch {}
   }
   return events;
 }
 
 export function detectCurrentPhase(events: StreamEvent[]): Phase {
   if (events.length === 0) return "idle";
-  // Walk backward to find last meaningful phase
   for (let i = events.length - 1; i >= 0; i--) {
     if (events[i].phase !== "idle") return events[i].phase;
   }
@@ -235,7 +226,7 @@ function elapsed(start: string, end?: string): string {
 
 function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
   const isExpanded = props.expanded.has(session.id);
-  const isActive = session.status === "running" || session.status === "starting";
+  const isActive = session.status === "running" || session.status === "starting" || session.status === "waiting";
   const events = props.sessionEvents.get(session.id) || [];
   const phase = props.sessionPhases.get(session.id) || "idle";
   const pm = PHASE_META[phase];
@@ -244,7 +235,7 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
 
   return html`
     <div class="cs-card ${isActive ? "cs-card--active" : ""} cs-card--${session.status}">
-      <!-- Header (always visible) -->
+      <!-- Header -->
       <div class="cs-card__head" @click=${() => props.onToggleExpand(session.id)}>
         <div class="cs-card__phase" style="color:${pm.color}" title="${pm.label}">
           <span>${pm.icon}</span>
@@ -263,11 +254,6 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
             : nothing}
         </div>
         <div class="cs-card__actions">
-          ${isActive ? html`
-            <button class="cs-btn cs-btn--kill" @click=${(e: Event) => { e.stopPropagation(); props.onKill(session.id); }} title="Kill session">⏹</button>
-          ` : html`
-            <button class="cs-btn cs-btn--dismiss" @click=${(e: Event) => { e.stopPropagation(); props.onDismiss(session.id); }} title="Remove from list">✕</button>
-          `}
           <span class="cs-card__chevron ${isExpanded ? "cs-card__chevron--open" : ""}">${icons.chevronDown}</span>
         </div>
       </div>
@@ -275,18 +261,20 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
       <!-- Expanded body -->
       ${isExpanded ? html`
         <div class="cs-card__body">
-          <!-- Action buttons -->
+          <!-- Toolbar: always visible, clear actions -->
           <div class="cs-card__toolbar">
-            ${(session as any).tmuxSession ? html`
-              <button class="cs-btn cs-btn--terminal" @click=${() => props.onAttachTerminal(session.id)} title="Open in Terminal.app">
-                🖥️ Open Terminal
+            <button class="cs-btn cs-btn--terminal" @click=${() => props.onOpenTerminal(session.id)} title="View full output">
+              🖥️ Terminal
+            </button>
+            ${isActive ? html`
+              <button class="cs-btn cs-btn--kill" @click=${() => props.onKill(session.id)} title="Kill this session">
+                ⏹ Kill
               </button>
-            ` : nothing}
-            ${session.execSessionId ? html`
-              <button class="cs-btn" @click=${() => props.onOpenTerminal(session.id)} title="View output in panel">
-                📋 Output
+            ` : html`
+              <button class="cs-btn cs-btn--dismiss" @click=${() => props.onDismiss(session.id)} title="Remove from list">
+                🗑 Remove
               </button>
-            ` : nothing}
+            `}
             <span class="cs-card__branch">${icons.gitBranch} ${session.branch}</span>
           </div>
 
@@ -342,8 +330,7 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
 function renderTerminal(session: CodingSession, events: StreamEvent[], props: CodingPanelProps) {
   const phase = props.sessionPhases.get(session.id) || "idle";
   const pm = PHASE_META[phase];
-
-  const isActive = session.status === "running" || session.status === "starting";
+  const isActive = session.status === "running" || session.status === "starting" || session.status === "waiting";
 
   return html`
     <div class="cs-terminal">
@@ -358,7 +345,7 @@ function renderTerminal(session: CodingSession, events: StreamEvent[], props: Co
           ${isActive ? html`
             <button class="cs-btn cs-btn--kill" @click=${() => { props.onKill(session.id); props.onCloseTerminal(); }} title="Kill session">⏹ Kill</button>
           ` : nothing}
-          <button class="cs-btn" @click=${props.onCloseTerminal} title="Close terminal view">✕ Close</button>
+          <button class="cs-btn" @click=${props.onCloseTerminal} title="Back to sessions">← Back</button>
         </div>
       </div>
       <div class="cs-terminal__body">
@@ -377,7 +364,6 @@ function renderTerminal(session: CodingSession, events: StreamEvent[], props: Co
 /* ── Render: Main Panel ── */
 
 export function renderCodingPanel(props: CodingPanelProps) {
-  // If terminal view is open, render fullscreen
   if (props.terminalOpen) {
     const session = props.sessions.find(s => s.id === props.terminalOpen);
     if (session) {
@@ -386,8 +372,8 @@ export function renderCodingPanel(props: CodingPanelProps) {
     }
   }
 
-  const active = props.sessions.filter(s => s.status === "running" || s.status === "starting");
-  const done = props.sessions.filter(s => s.status !== "running" && s.status !== "starting");
+  const active = props.sessions.filter(s => s.status === "running" || s.status === "starting" || s.status === "waiting");
+  const done = props.sessions.filter(s => s.status !== "running" && s.status !== "starting" && s.status !== "waiting");
 
   return html`
     <div class="cs-panel">
@@ -398,7 +384,7 @@ export function renderCodingPanel(props: CodingPanelProps) {
         </div>
         <div class="cs-panel__btns">
           <button class="cs-btn" @click=${props.onRefresh} title="Refresh">${icons.refreshCw}</button>
-          <button class="cs-btn" @click=${props.onClose} title="Close">✕</button>
+          <button class="cs-btn" @click=${props.onClose} title="Close panel">✕</button>
         </div>
       </div>
       <div class="cs-panel__body">

@@ -14,14 +14,14 @@
 
 /* ── Buttons ── */
 
-.cs-btn { background:none; border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; padding:3px 8px; border-radius:4px; font-size:11px; display:inline-flex; align-items:center; gap:4px; }
+.cs-btn { background:none; border:1px solid var(--border); color:var(--text-secondary); cursor:pointer; padding:3px 8px; border-radius:4px; font-size:11px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
 .cs-btn:hover { background:var(--hover); color:var(--text); }
 .cs-btn--kill { border-color:var(--error, #ef4444); color:var(--error, #ef4444); }
 .cs-btn--kill:hover { background:var(--error, #ef4444); color:white; }
 .cs-btn--terminal { border-color:var(--accent); color:var(--accent); }
 .cs-btn--terminal:hover { background:var(--accent); color:white; }
-.cs-btn--dismiss { border-color:transparent; color:var(--text-secondary); opacity:0.5; }
-.cs-btn--dismiss:hover { opacity:1; background:rgba(239,68,68,0.1); color:var(--error, #ef4444); border-color:var(--error, #ef4444); }
+.cs-btn--dismiss { border-color:var(--border); color:var(--text-secondary); }
+.cs-btn--dismiss:hover { background:rgba(239,68,68,0.1); color:var(--error, #ef4444); border-color:var(--error, #ef4444); }
 .cs-btn svg { width:12px; height:12px; }
 
 /* ── Session Card ── */
@@ -56,7 +56,7 @@
 
 .cs-card__body { border-top:1px solid var(--border); padding:8px 10px; }
 
-.cs-card__toolbar { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.cs-card__toolbar { display:flex; align-items:center; gap:6px; margin-bottom:8px; flex-wrap:wrap; }
 .cs-card__branch { font-size:10px; color:var(--text-secondary); display:flex; align-items:center; gap:3px; margin-left:auto; }
 .cs-card__branch svg { width:11px; height:11px; }
 
