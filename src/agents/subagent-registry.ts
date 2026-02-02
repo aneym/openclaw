@@ -34,6 +34,29 @@ let listenerStop: (() => void) | null = null;
 // Use var to avoid TDZ when init runs across circular imports during bootstrap.
 var restoreAttempted = false;
 
+type SubagentBroadcastFn = (event: string, payload: unknown) => void;
+let broadcastFn: SubagentBroadcastFn | null = null;
+
+/** Inject the gateway broadcast function so the registry can emit events. */
+export function setSubagentBroadcast(fn: SubagentBroadcastFn) {
+  broadcastFn = fn;
+}
+
+function broadcastSubagentEvent(phase: "start" | "end" | "error", entry: SubagentRunRecord) {
+  if (!broadcastFn) return;
+  broadcastFn("subagent", {
+    phase,
+    runId: entry.runId,
+    requesterSessionKey: entry.requesterSessionKey,
+    childSessionKey: entry.childSessionKey,
+    task: entry.task,
+    label: entry.label,
+    startedAt: entry.startedAt,
+    endedAt: entry.endedAt,
+    outcome: entry.outcome,
+  });
+}
+
 function persistSubagentRuns() {
   try {
     saveSubagentRegistryToDisk(subagentRuns);
@@ -203,6 +226,7 @@ function ensureListener() {
         entry.startedAt = startedAt;
         persistSubagentRuns();
       }
+      broadcastSubagentEvent("start", entry);
       return;
     }
     if (phase !== "end" && phase !== "error") {
@@ -217,6 +241,7 @@ function ensureListener() {
       entry.outcome = { status: "ok" };
     }
     persistSubagentRuns();
+    broadcastSubagentEvent(phase as "end" | "error", entry);
 
     if (!beginSubagentCleanup(evt.runId)) {
       return;
@@ -311,6 +336,7 @@ export function registerSubagentRun(params: {
   });
   ensureListener();
   persistSubagentRuns();
+  broadcastSubagentEvent("start", subagentRuns.get(params.runId)!);
   if (archiveAfterMs) {
     startSweeper();
   }
@@ -422,6 +448,11 @@ export function listSubagentRunsForRequester(requesterSessionKey: string): Subag
     return [];
   }
   return [...subagentRuns.values()].filter((entry) => entry.requesterSessionKey === key);
+}
+
+/** Return all active (not yet ended or recently ended) subagent runs. */
+export function listAllActiveSubagentRuns(): SubagentRunRecord[] {
+  return [...subagentRuns.values()].filter((entry) => !entry.cleanupCompletedAt);
 }
 
 export function initSubagentRegistry() {

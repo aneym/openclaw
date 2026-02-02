@@ -18,6 +18,7 @@ import { nodeHandlers } from "./server-methods/nodes.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
+import { subagentsHandlers } from "./server-methods/subagents.js";
 import { systemHandlers } from "./server-methods/system.js";
 import { talkHandlers } from "./server-methods/talk.js";
 import { ttsHandlers } from "./server-methods/tts.js";
@@ -79,6 +80,8 @@ const READ_METHODS = new Set([
   "node.describe",
   "chat.history",
   "chat.status",
+  "subagents.list",
+  "git.repos",
   "git.status",
   "git.diff",
   "git.log",
@@ -200,6 +203,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...agentHandlers,
   ...agentsHandlers,
   ...browserHandlers,
+  ...subagentsHandlers,
 };
 
 export async function handleGatewayRequest(
