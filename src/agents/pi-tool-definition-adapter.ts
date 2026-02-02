@@ -13,37 +13,19 @@ import { jsonResult } from "./tools/common.js";
 // oxlint-disable-next-line typescript/no-explicit-any
 type AnyAgentTool = AgentTool<any, unknown>;
 
-type ToolExecuteArgsCurrent = [
-  string,
-  unknown,
-  AgentToolUpdateCallback<unknown> | undefined,
-  unknown,
-  AbortSignal | undefined,
-];
-type ToolExecuteArgsLegacy = [
-  string,
-  unknown,
-  AbortSignal | undefined,
-  AgentToolUpdateCallback<unknown> | undefined,
-  unknown,
-];
+// pi-coding-agent ToolDefinition.execute arg order varies across versions:
+//   0.50.x: (toolCallId, params, onUpdate, ctx, signal)
+//   0.51.0: (toolCallId, params, signal, onUpdate, ctx)
+// Rather than guessing convention via heuristics, detect args by type:
+//   - AbortSignal (instanceof) → signal
+//   - function → onUpdate
+// This handles both orderings and avoids misidentifying context objects.
 type ToolExecuteArgs = ToolDefinition["execute"] extends (...args: infer P) => unknown
   ? P
-  : ToolExecuteArgsCurrent;
-type ToolExecuteArgsAny = ToolExecuteArgs | ToolExecuteArgsLegacy | ToolExecuteArgsCurrent;
+  : [string, unknown, ...unknown[]];
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isAbortSignal(value: unknown): value is AbortSignal {
-  return typeof value === "object" && value !== null && "aborted" in value;
-}
-
-function isLegacyToolExecuteArgs(args: ToolExecuteArgsAny): args is ToolExecuteArgsLegacy {
-  const third = args[2];
-  const fourth = args[3];
-  return isAbortSignal(third) || typeof fourth === "function";
 }
 
 function describeToolExecutionError(err: unknown): {
@@ -57,28 +39,26 @@ function describeToolExecutionError(err: unknown): {
   return { message: String(err) };
 }
 
-function splitToolExecuteArgs(args: ToolExecuteArgsAny): {
+function splitToolExecuteArgs(args: ToolExecuteArgs): {
   toolCallId: string;
   params: unknown;
   onUpdate: AgentToolUpdateCallback<unknown> | undefined;
   signal: AbortSignal | undefined;
 } {
-  if (isLegacyToolExecuteArgs(args)) {
-    const [toolCallId, params, signal, onUpdate] = args;
-    return {
-      toolCallId,
-      params,
-      onUpdate,
-      signal,
-    };
+  const toolCallId = args[0] as string;
+  const params = args[1];
+  let signal: AbortSignal | undefined;
+  let onUpdate: AgentToolUpdateCallback<unknown> | undefined;
+  // Scan positions 2–4 by type (order-independent).
+  for (let i = 2; i < args.length; i++) {
+    const arg = args[i];
+    if (!signal && arg instanceof AbortSignal) {
+      signal = arg;
+    } else if (!onUpdate && typeof arg === "function") {
+      onUpdate = arg as AgentToolUpdateCallback<unknown>;
+    }
   }
-  const [toolCallId, params, onUpdate, _ctx, signal] = args;
-  return {
-    toolCallId,
-    params,
-    onUpdate,
-    signal,
-  };
+  return { toolCallId, params, onUpdate, signal };
 }
 
 export function toToolDefinitions(tools: AnyAgentTool[]): ToolDefinition[] {

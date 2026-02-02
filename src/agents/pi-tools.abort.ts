@@ -6,39 +6,37 @@ function throwAbortError(): never {
   throw err;
 }
 
-/**
- * Checks if an object is a valid AbortSignal using structural typing.
- * This is more reliable than `instanceof` across different realms (VM, iframe, etc.)
- * where the AbortSignal constructor may differ.
- */
-function isAbortSignal(obj: unknown): obj is AbortSignal {
-  return obj instanceof AbortSignal;
+// Coerce to a real AbortSignal; drop plain objects that were misrouted
+// through the adapter (e.g. ExtensionContext with an `aborted` property).
+function asSignal(v: unknown): AbortSignal | undefined {
+  return v instanceof AbortSignal ? v : undefined;
 }
 
-function combineAbortSignals(a?: AbortSignal, b?: AbortSignal): AbortSignal | undefined {
-  if (!a && !b) {
+function combineAbortSignals(a?: unknown, b?: unknown): AbortSignal | undefined {
+  const sa = asSignal(a);
+  const sb = asSignal(b);
+  if (!sa && !sb) {
     return undefined;
   }
-  if (a && !b) {
-    return a;
+  if (sa && !sb) {
+    return sa;
   }
-  if (b && !a) {
-    return b;
+  if (sb && !sa) {
+    return sb;
   }
-  if (a?.aborted) {
-    return a;
+  if (sa?.aborted) {
+    return sa;
   }
-  if (b?.aborted) {
-    return b;
+  if (sb?.aborted) {
+    return sb;
   }
-  if (typeof AbortSignal.any === "function" && isAbortSignal(a) && isAbortSignal(b)) {
-    return AbortSignal.any([a, b]);
+  if (typeof AbortSignal.any === "function") {
+    return AbortSignal.any([sa as AbortSignal, sb as AbortSignal]);
   }
-
   const controller = new AbortController();
   const onAbort = () => controller.abort();
-  a?.addEventListener("abort", onAbort, { once: true });
-  b?.addEventListener("abort", onAbort, { once: true });
+  sa?.addEventListener("abort", onAbort, { once: true });
+  sb?.addEventListener("abort", onAbort, { once: true });
   return controller.signal;
 }
 
