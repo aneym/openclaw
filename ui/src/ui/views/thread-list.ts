@@ -41,6 +41,7 @@ export interface NavSessionEntry {
   updatedAt?: number | null;
   derivedTitle?: string;
   archivedAt?: number;
+  surface?: string;
 }
 
 export interface NavThreadListProps {
@@ -141,8 +142,114 @@ function isCronSession(entry: NavSessionEntry): boolean {
   return key.includes(":cron:") || key.includes(":cron-") || entry.kind === "global";
 }
 
+/**
+ * Clean up a raw title string — strip timestamps, Slack formatting,
+ * WhatsApp headers, system prefixes, and other noise.
+ */
+function cleanTitle(raw: string): string {
+  let t = raw.trim();
+  // Strip "System: [2026-02-02 04:00:10 EST] ..." → keep text after bracket
+  t = t.replace(/^System:\s*\[\d{4}-\d{2}-\d{2}\s+[\d:]+\s*\w*\]\s*/i, "");
+  // Strip "[WhatsApp +1234 2026-02-02 07:32 EST] ..." → keep text after bracket
+  t = t.replace(/^\[(?:WhatsApp|Signal|Telegram|iMessage)\s+\+?[\d\s()-]+\d{4}-\d{2}-\d{2}\s+[\d:]+\s*\w*\]\s*/i, "");
+  // Strip "Slack thread #CHANNELID: " prefix
+  t = t.replace(/^Slack\s+thread\s+#\S+:\s*/i, "");
+  // Replace Slack user mentions <@U0ABC123> with @user
+  t = t.replace(/<@[A-Z0-9]+>/g, "@user");
+  // Replace Slack channel mentions <#C0ABC123|name> or <#C0ABC123>
+  t = t.replace(/<#[A-Z0-9]+(?:\|([^>]+))?>/g, (_, name) => (name ? `#${name}` : "#channel"));
+  // Strip "Cron: " prefix (already have cron indicator from channel)
+  t = t.replace(/^Cron:\s*/i, "");
+  // Strip leading ** (markdown bold) leftover
+  t = t.replace(/^\*\*\s*/, "");
+  // Strip trailing ** 
+  t = t.replace(/\s*\*\*$/, "");
+  // Collapse whitespace
+  t = t.replace(/\s+/g, " ").trim();
+  // If it's just a UUID-like string or very short hex, not useful
+  if (/^[0-9a-f]{6,12}\s*\(\d{4}-\d{2}-\d{2}\)$/i.test(t)) {
+    return "";
+  }
+  // Truncate to reasonable length
+  if (t.length > 80) {
+    t = t.slice(0, 77) + "…";
+  }
+  return t;
+}
+
+/** Clean + validate a session title for external use. */
+export function cleanSessionTitle(raw: string | undefined): string {
+  return isTitleUsable(raw);
+}
+
+/** Check if a raw title is too noisy to be useful as a primary label. */
+function isTitleUsable(title: string | undefined): string {
+  if (!title) return "";
+  const cleaned = cleanTitle(title);
+  // Too short after cleaning = not useful
+  if (cleaned.length < 3) return "";
+  return cleaned;
+}
+
 function sessionDisplayLabel(entry: NavSessionEntry): string {
-  return entry.label || entry.displayName || humanizeSessionKey(entry.key);
+  // Manual label always wins
+  if (entry.label) return entry.label;
+  // Try derived title (AI-generated summary), cleaned up
+  const derived = isTitleUsable(entry.derivedTitle);
+  if (derived) return derived;
+  // Try display name, cleaned up
+  const display = isTitleUsable(entry.displayName);
+  if (display) return display;
+  return humanizeSessionKey(entry.key);
+}
+
+/** Return a compact subtitle for the session (channel + context). */
+function sessionSubtitle(entry: NavSessionEntry): string {
+  const channel = extractChannel(entry);
+  const channelLabel = channel ? channelDisplayName(channel) : "";
+
+  // If we have a label, show derived title as subtitle (if different)
+  if (entry.label) {
+    const derived = isTitleUsable(entry.derivedTitle);
+    if (derived && derived !== entry.label) return derived;
+    return channelLabel;
+  }
+  // Otherwise just show channel info
+  return channelLabel;
+}
+
+/** Extract channel name from session key, surface, or entry metadata. */
+function extractChannel(entry: NavSessionEntry): string | null {
+  if (entry.surface) return entry.surface;
+  // NavSessionEntry doesn't carry channel/origin directly, so parse from key
+  const parts = entry.key.split(":");
+  if (parts[0] === "agent" && parts.length >= 3) {
+    const ch = parts[2];
+    if (ch === "main" && parts[3] === "thread") return "thread";
+    if (ch === "cron") return "cron";
+    return ch;
+  }
+  if (parts.length >= 2) return parts[0];
+  return null;
+}
+
+const CHANNEL_ICONS: Record<string, string> = {
+  slack: "💬",
+  telegram: "✈️",
+  whatsapp: "📱",
+  discord: "🎮",
+  signal: "🔒",
+  imessage: "💬",
+  bluebubbles: "💬",
+  thread: "🧵",
+  cron: "⏰",
+  main: "💻",
+};
+
+function channelDisplayName(channel: string): string {
+  const icon = CHANNEL_ICONS[channel.toLowerCase()] ?? "";
+  const name = channel.charAt(0).toUpperCase() + channel.slice(1);
+  return icon ? `${icon} ${name}` : name;
 }
 
 /** Turn a raw session key into a human-readable short label. */
@@ -152,26 +259,37 @@ export function humanizeSessionKey(key: string): string {
   // "agent:<id>:<channel>:..." patterns
   if (parts[0] === "agent" && parts.length >= 3) {
     const channel = parts[2];
-    // Thread: "agent:main:main:thread:<uuid>" -> "Thread ab12"
+    // Thread: "agent:main:main:thread:<uuid>" -> "New thread"
     if (parts[3] === "thread" && parts[4]) {
-      return `Thread ${parts[4].slice(0, 6)}`;
+      return "New thread";
     }
-    // Cron: "agent:main:cron:<uuid>" -> "Cron ab12"
+    // Cron: "agent:main:cron:<uuid>" -> "Cron run"
     if (channel === "cron" && parts[3]) {
-      return `Cron ${parts[3].slice(0, 6)}`;
+      return "Cron run";
     }
-    // Channel DM: "agent:main:telegram:dm:123" -> "Telegram dm:123"
-    const rest = parts.slice(3).join(":");
+    // WhatsApp DM: "agent:main:whatsapp:dm:+1234" -> "WhatsApp chat"
+    if (parts[3] === "dm") {
+      const name = channel.charAt(0).toUpperCase() + channel.slice(1);
+      return `${name} chat`;
+    }
+    // Channel group: "agent:main:slack:g-C1234" -> "Slack group"
+    if (parts[3]?.startsWith("g-") || parts[3]?.startsWith("g:")) {
+      const name = channel.charAt(0).toUpperCase() + channel.slice(1);
+      return `${name} group`;
+    }
+    // Generic channel
     const name = channel.charAt(0).toUpperCase() + channel.slice(1);
-    return rest ? `${name} ${rest.slice(0, 24)}` : name;
+    const rest = parts.slice(3).join(":");
+    return rest ? `${name} session` : name;
   }
 
-  // Simple keys: "slack:U123" -> "Slack U123"
+  // Simple keys: "slack:g-D0AD0Q06Z32" -> "Slack group"
   if (parts.length >= 2) {
     const channel = parts[0];
-    const rest = parts.slice(1).join(":");
     const name = channel.charAt(0).toUpperCase() + channel.slice(1);
-    return `${name} ${rest.slice(0, 24)}`;
+    const rest = parts.slice(1).join(":");
+    if (rest.startsWith("g-") || rest.startsWith("g:")) return `${name} group`;
+    return `${name} session`;
   }
 
   return key.slice(0, 30);
@@ -359,6 +477,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                         }}
                         title="${label}\n${s.key}"
                       >
+                        <div class="nav-thread-item__content">
                         ${
                           isRenaming
                             ? html`<input
@@ -389,6 +508,13 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                               }}
                             >${label}</span>`
                         }
+                        ${(() => {
+                          const sub = sessionSubtitle(s);
+                          return sub
+                            ? html`<span class="nav-thread-item__subtitle">${sub}</span>`
+                            : nothing;
+                        })()}
+                        </div>
                         ${
                           unread > 0
                             ? html`<span class="nav-thread-item__unread" aria-label="${unread} unread">${unread}</span>`

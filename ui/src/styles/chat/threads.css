@@ -111,7 +111,7 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 4px 12px 4px 28px;
+  padding: 5px 12px 5px 28px;
   border: none;
   background: none;
   text-align: left;
@@ -167,12 +167,32 @@
   font-size: 0.75rem;
 }
 
-.nav-thread-item__label {
+/* Two-line content container */
+.nav-thread-item__content {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.nav-thread-item__label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  line-height: 1.3;
+}
+
+.nav-thread-item__subtitle {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  line-height: 1.2;
 }
 
 .nav-thread-item__unread {

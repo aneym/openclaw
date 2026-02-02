@@ -384,9 +384,11 @@ export type GatewaySessionRow = {
   icon?: string;
   displayName?: string;
   surface?: string;
+  channel?: string;
   subject?: string;
   room?: string;
   space?: string;
+  origin?: { surface?: string; provider?: string; label?: string };
   updatedAt: number | null;
   sessionId?: string;
   systemSent?: boolean;

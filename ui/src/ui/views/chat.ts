@@ -3,7 +3,7 @@ import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
-import type { ChatAttachment, ChatQueueItem, SlashCommandEntry } from "../ui-types";
+import type { ChatAttachment, ChatQueueItem } from "../ui-types";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
@@ -17,8 +17,7 @@ import {
 import { extractToolCards } from "../chat/tool-cards";
 import { icons } from "../icons";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
-import { humanizeSessionKey } from "./thread-list";
-import { renderSlashAutocomplete, getFilteredCommands } from "./slash-autocomplete";
+import { humanizeSessionKey, cleanSessionTitle } from "./thread-list";
 import "../components/resizable-divider";
 
 export type CompactionIndicatorStatus = {
@@ -69,9 +68,6 @@ export type ChatProps = {
   onSend: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
-  onQueueSendNow: (id: string) => void;
-  onQueueClearAll: () => void;
-  onSendImmediately: () => void;
   onNewSession: () => void;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
@@ -79,35 +75,9 @@ export type ChatProps = {
   onChatScroll?: (event: Event) => void;
   // File preview callback (opens global artifact panel)
   onOpenFilePreview?: (filePath: string) => void;
-  // Slash command autocomplete
-  slashCommands?: SlashCommandEntry[];
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
-
-// ── Slash autocomplete state (module-scoped, keyed by session) ──
-type AutocompleteState = {
-  visible: boolean;
-  selectedIndex: number;
-};
-
-const autocompleteStates = new Map<string, AutocompleteState>();
-
-function getAutocompleteState(sessionKey: string): AutocompleteState {
-  let state = autocompleteStates.get(sessionKey);
-  if (!state) {
-    state = { visible: false, selectedIndex: 0 };
-    autocompleteStates.set(sessionKey, state);
-  }
-  return state;
-}
-
-function getSlashFilter(draft: string): string | null {
-  if (!draft.startsWith("/")) return null;
-  const spaceIdx = draft.indexOf(" ");
-  if (spaceIdx !== -1) return null;
-  return draft.slice(1);
-}
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
@@ -298,24 +268,6 @@ function renderAttachmentPreview(props: ChatProps) {
   `;
 }
 
-/** Friendly relative time for queue items (e.g. "just now", "2m ago") */
-function relativeQueueTime(createdAt: number): string {
-  const diff = Date.now() - createdAt;
-  if (diff < 0 || diff < 10_000) {
-    return "just now";
-  }
-  const sec = Math.round(diff / 1000);
-  if (sec < 60) {
-    return `${sec}s ago`;
-  }
-  const min = Math.round(sec / 60);
-  if (min < 60) {
-    return `${min}m ago`;
-  }
-  const hr = Math.round(min / 60);
-  return `${hr}h ago`;
-}
-
 /** Compact relative time (e.g. "3m", "2h", "5d") */
 function compactAgo(ms?: number | null): string {
   if (!ms) {
@@ -395,54 +347,44 @@ function renderSessionPicker(
     <div class="session-picker">
       <div class="session-picker__header">Open a recent session</div>
       <div class="session-picker__list">
-        ${visible.map(
-          (s) => html`
+        ${visible.map((s) => {
+          // Smart label: prefer label > cleaned derivedTitle > cleaned displayName > humanized key
+          const derived = cleanSessionTitle(s.derivedTitle);
+          const display = cleanSessionTitle(s.displayName);
+          const title = s.label || derived || display || humanizeSessionKey(s.key);
+          // Subtitle: show derived title if label is primary, or display name
+          const subtitle =
+            s.label && derived && s.label !== derived
+              ? derived
+              : !s.label && !derived && display
+                ? display
+                : "";
+          return html`
             <button
               class="session-picker__item"
               @click=${() => onSelect(s.key)}
               title=${s.key}
             >
-              <span class="session-picker__item-label">
-                ${s.displayName || s.label || humanizeSessionKey(s.key)}
-              </span>
-              ${
-                s.derivedTitle
-                  ? html`<span class="session-picker__item-title">${s.derivedTitle}</span>`
-                  : nothing
-              }
+              <div class="session-picker__item-text">
+                <span class="session-picker__item-label">${title}</span>
+                ${
+                  subtitle
+                    ? html`<span class="session-picker__item-title">${subtitle}</span>`
+                    : nothing
+                }
+              </div>
               ${
                 s.updatedAt
                   ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
                   : nothing
               }
             </button>
-          `,
-        )}
+          `;
+        })}
       </div>
       <div class="session-picker__hint">Or start a new conversation below</div>
     </div>
   `;
-}
-
-function renderAutocompleteOverlay(props: ChatProps) {
-  const commands = props.slashCommands ?? [];
-  if (commands.length === 0) return nothing;
-  const filter = getSlashFilter(props.draft);
-  if (filter === null) return nothing;
-  const acState = getAutocompleteState(props.sessionKey);
-  if (!acState.visible) return nothing;
-
-  return renderSlashAutocomplete({
-    visible: true,
-    commands,
-    filter,
-    selectedIndex: acState.selectedIndex,
-    onSelect: (cmd) => {
-      acState.visible = false;
-      acState.selectedIndex = 0;
-      props.onDraftChange(`/${cmd.name} `);
-    },
-  });
 }
 
 export function renderChat(props: ChatProps) {
@@ -644,57 +586,26 @@ export function renderChat(props: ChatProps) {
         props.queue.length
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__header">
-                <span class="chat-queue__count">
-                  ${icons.listPlus} Queued · ${props.queue.length}
-                </span>
-                <button
-                  class="chat-queue__clear-all"
-                  type="button"
-                  title="Clear all queued messages"
-                  @click=${() => props.onQueueClearAll()}
-                >Clear</button>
-              </div>
+              <div class="chat-queue__title">Queued (${props.queue.length})</div>
               <div class="chat-queue__list">
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
-                      <div class="chat-queue__item-body">
-                        <div class="chat-queue__text">
-                          ${
-                            item.text ||
-                            (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                          }
-                        </div>
-                        <div class="chat-queue__meta">
-                          ${
-                            item.attachments?.length
-                              ? html`<span class="chat-queue__attachment-indicator" title="${item.attachments.length} attachment${item.attachments.length > 1 ? "s" : ""}">${icons.paperclip}</span>`
-                              : nothing
-                          }
-                          <span class="chat-queue__time">${relativeQueueTime(item.createdAt)}</span>
-                        </div>
+                      <div class="chat-queue__text">
+                        ${
+                          item.text ||
+                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
+                        }
                       </div>
-                      <div class="chat-queue__actions">
-                        <button
-                          class="chat-queue__send-now"
-                          type="button"
-                          aria-label="Send this message now"
-                          title="Stop current run and send now"
-                          @click=${() => props.onQueueSendNow(item.id)}
-                        >
-                          ${icons.arrowUp}
-                        </button>
-                        <button
-                          class="chat-queue__remove"
-                          type="button"
-                          aria-label="Remove queued message"
-                          title="Remove from queue"
-                          @click=${() => props.onQueueRemove(item.id)}
-                        >
-                          ${icons.x}
-                        </button>
-                      </div>
+                      <button
+                        class="chat-queue__remove"
+                        type="button"
+                        aria-label="Remove queued message"
+                        title="Remove from queue"
+                        @click=${() => props.onQueueRemove(item.id)}
+                      >
+                        ${icons.x}
+                      </button>
                     </div>
                   `,
                 )}
@@ -704,14 +615,8 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div class="chat-compose" style="position:relative;"
-        @slash-hover=${(e: CustomEvent) => {
-          const acState = getAutocompleteState(props.sessionKey);
-          acState.selectedIndex = e.detail.index;
-        }}
-      >
+      <div class="chat-compose">
         ${renderAttachmentPreview(props)}
-        ${renderAutocompleteOverlay(props)}
         <div class="chat-compose__row">
           <label class="field chat-compose__field">
             <span>Message</span>
@@ -720,62 +625,10 @@ export function renderChat(props: ChatProps) {
               .value=${props.draft}
               rows="1"
               @keydown=${(e: KeyboardEvent) => {
-                if (e.isComposing || e.keyCode === 229) {
-                  return;
-                }
-
-                // Slash autocomplete keyboard handling
-                const acState = getAutocompleteState(props.sessionKey);
-                const commands = props.slashCommands ?? [];
-                const filter = getSlashFilter(props.draft);
-
-                if (acState.visible && filter !== null && commands.length > 0) {
-                  const filtered = getFilteredCommands(commands, filter);
-                  if (filtered.length > 0) {
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      acState.selectedIndex = (acState.selectedIndex + 1) % filtered.length;
-                      // Force re-render by touching draft
-                      props.onDraftChange(props.draft);
-                      return;
-                    }
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      acState.selectedIndex =
-                        (acState.selectedIndex - 1 + filtered.length) % filtered.length;
-                      props.onDraftChange(props.draft);
-                      return;
-                    }
-                    if (e.key === "Enter" || e.key === "Tab") {
-                      e.preventDefault();
-                      const selected = filtered[Math.min(acState.selectedIndex, filtered.length - 1)];
-                      if (selected) {
-                        acState.visible = false;
-                        acState.selectedIndex = 0;
-                        props.onDraftChange(`/${selected.name} `);
-                      }
-                      return;
-                    }
-                  }
-                }
-
-                if (e.key === "Escape" && acState.visible) {
-                  e.preventDefault();
-                  acState.visible = false;
-                  acState.selectedIndex = 0;
-                  props.onDraftChange(props.draft);
-                  return;
-                }
-
                 if (e.key !== "Enter") {
                   return;
                 }
-                // Cmd+Shift+Enter (Mac) or Ctrl+Shift+Enter = send immediately when busy
-                if (e.shiftKey && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  if (props.connected && isBusy) {
-                    props.onSendImmediately();
-                  }
+                if (e.isComposing || e.keyCode === 229) {
                   return;
                 }
                 if (e.shiftKey) {
@@ -792,24 +645,7 @@ export function renderChat(props: ChatProps) {
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
                 adjustTextareaHeight(target);
-                const value = target.value;
-                props.onDraftChange(value);
-
-                // Update autocomplete visibility
-                const acState = getAutocompleteState(props.sessionKey);
-                const filter = getSlashFilter(value);
-                const commands = props.slashCommands ?? [];
-                if (filter !== null && commands.length > 0) {
-                  const filtered = getFilteredCommands(commands, filter);
-                  acState.visible = filtered.length > 0;
-                  // Reset index when filter changes
-                  if (acState.selectedIndex >= filtered.length) {
-                    acState.selectedIndex = 0;
-                  }
-                } else {
-                  acState.visible = false;
-                  acState.selectedIndex = 0;
-                }
+                props.onDraftChange(target.value);
               }}
               @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
               placeholder=${composePlaceholder}
@@ -830,17 +666,7 @@ export function renderChat(props: ChatProps) {
               ?disabled=${!props.connected}
               title="${isBusy ? "Queue" : "Send"}"
               @click=${props.onSend}
-            >${isBusy ? icons.listPlus : icons.arrowUp}</button>
-            ${
-              isBusy
-                ? html`<button
-                  class="btn chat-compose__icon-btn chat-compose__icon-btn--send-now"
-                  ?disabled=${!props.connected}
-                  title="Stop current run and send now (⇧⌘↩)"
-                  @click=${props.onSendImmediately}
-                >${icons.arrowUp}</button>`
-                : nothing
-            }
+            >${icons.arrowUp}</button>
           </div>
         </div>
       </div>
