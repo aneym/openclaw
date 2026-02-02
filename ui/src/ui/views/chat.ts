@@ -86,6 +86,8 @@ export type ChatProps = {
   onOpenCodingSession?: () => void;
   // Slash command autocomplete
   slashCommands?: SlashCommandEntry[];
+  // Sub-agent status
+  subagentRuns?: import("../types").SubagentRunInfo[];
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -146,6 +148,75 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   }
 
   return nothing;
+}
+
+// Module-scoped: track whether the sub-agent banner is collapsed
+let subagentBannerCollapsed = false;
+
+function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undefined) {
+  if (!runs || runs.length === 0) return nothing;
+
+  const active = runs.filter((r) => !r.endedAt);
+  const justFinished = runs.filter(
+    (r) => r.endedAt && Date.now() - r.endedAt < 4000,
+  );
+
+  // Nothing to show
+  if (active.length === 0 && justFinished.length === 0) return nothing;
+
+  // "Done" flash for recently finished runs
+  if (active.length === 0 && justFinished.length > 0) {
+    const allOk = justFinished.every((r) => r.outcome?.status === "ok");
+    return html`
+      <div class="subagent-banner subagent-banner--done ${allOk ? "" : "subagent-banner--error"}">
+        <span class="subagent-banner__icon">${allOk ? "\u2713" : "\u2717"}</span>
+        <span class="subagent-banner__text">
+          ${allOk ? "Sub-agent done" : "Sub-agent failed"}
+        </span>
+      </div>
+    `;
+  }
+
+  // Elapsed time from the earliest active run
+  const earliest = Math.min(...active.map((r) => r.startedAt ?? r.createdAt));
+  const elapsedSec = Math.max(0, Math.round((Date.now() - earliest) / 1000));
+  const elapsedStr =
+    elapsedSec < 60
+      ? `${elapsedSec}s`
+      : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+
+  const summary =
+    active.length === 1
+      ? `Sub-agent: ${active[0].task.slice(0, 60)}${active[0].task.length > 60 ? "\u2026" : ""}`
+      : `${active.length} sub-agents working`;
+
+  return html`
+    <div
+      class="subagent-banner subagent-banner--active"
+      @click=${() => {
+        subagentBannerCollapsed = !subagentBannerCollapsed;
+      }}
+      title="Click to ${subagentBannerCollapsed ? "expand" : "collapse"}"
+    >
+      <span class="subagent-banner__icon subagent-banner__icon--pulse">\u26A1</span>
+      <span class="subagent-banner__text">${summary}</span>
+      <span class="subagent-banner__time">${elapsedStr}</span>
+    </div>
+    ${!subagentBannerCollapsed && active.length > 1
+      ? html`
+        <div class="subagent-banner__list">
+          ${active.map(
+            (r) => html`
+              <div class="subagent-banner__item">
+                <span class="subagent-banner__item-dot"></span>
+                <span class="subagent-banner__item-task">${r.label ?? r.task.slice(0, 50)}</span>
+              </div>
+            `,
+          )}
+        </div>
+      `
+      : nothing}
+  `;
 }
 
 function generateAttachmentId(): string {
@@ -625,6 +696,8 @@ export function renderChat(props: ChatProps) {
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
       ${renderCompactionIndicator(props.compactionStatus)}
+
+      ${renderSubagentBanner(props.subagentRuns)}
 
       ${
         props.focusMode

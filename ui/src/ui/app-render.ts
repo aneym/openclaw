@@ -164,6 +164,18 @@ function computeRunningSessions(state: AppViewState): Set<string> {
   return state.runningSessions;
 }
 
+/** Return the count of active sub-agents per requester session key. */
+function computeSubagentCounts(state: AppViewState): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [key, runs] of state.subagentRuns) {
+    const active = runs.filter((r) => !r.endedAt);
+    if (active.length > 0) {
+      counts.set(key, active.length);
+    }
+  }
+  return counts;
+}
+
 /** Return session keys currently visible in any split pane. */
 function computeOpenPaneKeys(state: AppViewState): Set<string> {
   if (!state.splitLayout) {
@@ -311,6 +323,7 @@ export function renderApp(state: AppViewState) {
                         activeSessionKey: state.sessionKey,
                         unreadCounts: new Map(),
                         runningSessions: computeRunningSessions(state),
+                        subagentCounts: computeSubagentCounts(state),
                         openPaneKeys: computeOpenPaneKeys(state),
                         onSelect: (sessionKey) => {
                           // In split mode, also update the focused pane's leaf

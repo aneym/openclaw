@@ -64,6 +64,7 @@ export function renderChatPane(props: ChatPaneProps) {
     loading: isActiveSession ? state.chatLoading : (thread?.chatLoading ?? false),
     sending: isActiveSession ? state.chatSending : (thread?.chatSending ?? false),
     compactionStatus: isActiveSession ? state.compactionStatus : null,
+    subagentRuns: state.subagentRuns.get(sessionKey),
     assistantAvatarUrl: state.chatAvatarUrl,
     messages: isActiveSession ? state.chatMessages : (thread?.chatMessages ?? []),
     toolMessages: isActiveSession ? state.chatToolMessages : (thread?.chatToolMessages ?? []),

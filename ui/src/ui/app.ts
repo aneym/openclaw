@@ -45,6 +45,7 @@ import {
 } from "./app-channels";
 import {
   clearAllQueuedMessages as clearAllQueuedMessagesInternal,
+  flushChatQueueForEvent,
   handleAbortChat as handleAbortChatInternal,
   handleSendChat as handleSendChatInternal,
   removeQueuedMessage as removeQueuedMessageInternal,
@@ -176,6 +177,8 @@ export class OpenClawApp extends LitElement {
   @state() slashCommands: SlashCommandEntry[] = [];
   /** Session keys that currently have an active agent run (global, across all sessions). */
   @state() runningSessions: Set<string> = new Set();
+  /** Active sub-agent runs keyed by requester session key. */
+  @state() subagentRuns: Map<string, import("./types").SubagentRunInfo[]> = new Map();
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -1046,7 +1049,14 @@ export class OpenClawApp extends LitElement {
     // Reset tool stream and reload history
     resetToolStreamFn(this as unknown as Parameters<typeof resetToolStreamFn>[0]);
     this.resetChatScroll();
-    void loadChatHistory(this as unknown as Parameters<typeof loadChatHistory>[0]);
+    void loadChatHistory(this as unknown as Parameters<typeof loadChatHistory>[0]).then(() => {
+      // Flush queued messages — if this thread's run completed while it was
+      // in the background, its queue was never flushed (the background handler
+      // clears chatRunId but doesn't trigger a flush).
+      void flushChatQueueForEvent(
+        this as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+      );
+    });
 
     // Persist active thread
     this.applySettings({

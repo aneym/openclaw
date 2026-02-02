@@ -605,6 +605,85 @@
   50%      { opacity: 1; }
 }
 
+/* Sub-agent banner — compact status above compose bar */
+.subagent-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  animation: compaction-fade-in 0.25s var(--ease-out);
+}
+
+.subagent-banner--active {
+  color: var(--accent, #7c3aed);
+  background: color-mix(in srgb, var(--accent, #7c3aed) 5%, transparent);
+}
+
+.subagent-banner--done {
+  color: var(--ok);
+}
+
+.subagent-banner--error {
+  color: var(--error);
+}
+
+.subagent-banner__icon {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.subagent-banner__icon--pulse {
+  animation: subagent-pulse 1.5s ease-in-out infinite;
+}
+
+.subagent-banner__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subagent-banner__time {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+.subagent-banner__list {
+  padding: 2px 12px 4px 30px;
+  font-size: 11px;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  animation: compaction-fade-in 0.2s var(--ease-out);
+}
+
+.subagent-banner__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 1px 0;
+}
+
+.subagent-banner__item-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent, #7c3aed);
+  flex-shrink: 0;
+}
+
+.subagent-banner__item-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ===========================================
    Code Blocks
    =========================================== */

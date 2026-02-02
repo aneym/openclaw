@@ -8,7 +8,14 @@ import type { PaneState } from "./pane-state";
 import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
 import type { ThreadState } from "./thread-state";
-import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types";
+import type {
+  AgentsListResult,
+  PresenceEntry,
+  HealthSnapshot,
+  StatusSummary,
+  SubagentRunInfo,
+  SubagentEventPayload,
+} from "./types";
 import type { SlashCommandEntry } from "./ui-types";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat";
 import { applySettings, loadCron, refreshActiveTab, setLastActiveSessionKey } from "./app-settings";
@@ -78,6 +85,7 @@ type GatewayHost = {
   sessionKeyToThreadId: Map<string, string>;
   chatMessages: unknown[];
   runningSessions: Set<string>;
+  subagentRuns: Map<string, SubagentRunInfo[]>;
   initDefaultThread: () => void;
   renameThread: (threadId: string, label: string) => void;
   slashCommands: SlashCommandEntry[];
@@ -176,14 +184,24 @@ export function connectGateway(host: GatewayHost) {
       //    chatSending=true forever. This unblocks isChatBusy() → queue flush.
       (host as unknown as { chatSending: boolean }).chatSending = false;
 
-      // 3. Clear per-thread chatSending for the same reason.
+      // 3. Clear chatRunId — if a run was active when the WS dropped, the
+      //    "final" lifecycle event was lost, leaving chatRunId stale forever.
+      //    queryChatStatus below will re-set it if the run is still active.
+      //    Without this, isChatBusy() stays true and queued messages freeze.
+      host.chatRunId = null;
+
+      // 4. Clear per-thread chatSending and chatRunId for the same reasons.
       for (const thread of host.threads.values()) {
         thread.chatSending = false;
+        thread.chatRunId = null;
       }
 
-      // 4. Clear compaction toast — the "end" event will never arrive from
+      // 5. Clear compaction toast — the "end" event will never arrive from
       //    the old process.
       (host as unknown as { compactionStatus: unknown }).compactionStatus = null;
+
+      // 6. Clear subagent runs — will be re-fetched below.
+      host.subagentRuns = new Map();
       // ──────────────────────────────────────────────────────────────
 
       // ── Restore active runs IMMEDIATELY ────────────────────────────
@@ -219,6 +237,7 @@ export function connectGateway(host: GatewayHost) {
       void loadAgents(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
+      void fetchSubagentRuns(host);
       // Initialize default thread if none exist yet
       host.initDefaultThread();
       // Mark all threads (and host) as loading before async history fetch
@@ -505,6 +524,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       host.toolApprovalQueue = removeToolApproval(host.toolApprovalQueue, resolved.id);
     }
   }
+
+  if (evt.event === "subagent") {
+    applySubagentEvent(host, evt.payload as SubagentEventPayload | undefined);
+    return;
+  }
 }
 
 /**
@@ -630,4 +654,80 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   if (snapshot?.slashCommands && Array.isArray(snapshot.slashCommands)) {
     host.slashCommands = snapshot.slashCommands;
   }
+}
+
+// ── Sub-agent status ──────────────────────────────────────────────
+
+/** Stale run removal delay (ms) — keep completed runs briefly for the "done" flash. */
+const SUBAGENT_DONE_LINGER_MS = 5_000;
+
+async function fetchSubagentRuns(host: GatewayHost) {
+  if (!host.connected || !host.client) return;
+  try {
+    const res = await host.client.request("subagents.list", {});
+    const runs = (res as { runs?: SubagentRunInfo[] }).runs;
+    if (!Array.isArray(runs)) return;
+    const map = new Map<string, SubagentRunInfo[]>();
+    for (const r of runs) {
+      const key = r.requesterSessionKey;
+      const list = map.get(key) ?? [];
+      list.push(r);
+      map.set(key, list);
+    }
+    host.subagentRuns = map;
+  } catch {
+    // Graceful degradation: older gateways may not support subagents.list
+  }
+}
+
+function applySubagentEvent(host: GatewayHost, payload: SubagentEventPayload | undefined) {
+  if (!payload?.runId || !payload.requesterSessionKey) return;
+
+  const map = new Map(host.subagentRuns);
+  const key = payload.requesterSessionKey;
+  const existing = (map.get(key) ?? []).slice();
+
+  if (payload.phase === "start") {
+    // Add or update
+    const idx = existing.findIndex((r) => r.runId === payload.runId);
+    const info: SubagentRunInfo = {
+      runId: payload.runId,
+      childSessionKey: payload.childSessionKey,
+      requesterSessionKey: payload.requesterSessionKey,
+      task: payload.task,
+      label: payload.label,
+      createdAt: payload.startedAt ?? Date.now(),
+      startedAt: payload.startedAt,
+    };
+    if (idx >= 0) {
+      existing[idx] = info;
+    } else {
+      existing.push(info);
+    }
+    map.set(key, existing);
+  } else {
+    // end or error — update with outcome, then schedule removal
+    const idx = existing.findIndex((r) => r.runId === payload.runId);
+    if (idx >= 0) {
+      existing[idx] = {
+        ...existing[idx],
+        endedAt: payload.endedAt ?? Date.now(),
+        outcome: payload.outcome,
+      };
+      map.set(key, existing);
+    }
+    // Schedule removal after linger
+    window.setTimeout(() => {
+      const current = new Map(host.subagentRuns);
+      const list = (current.get(key) ?? []).filter((r) => r.runId !== payload.runId);
+      if (list.length > 0) {
+        current.set(key, list);
+      } else {
+        current.delete(key);
+      }
+      host.subagentRuns = current;
+    }, SUBAGENT_DONE_LINGER_MS);
+  }
+
+  host.subagentRuns = map;
 }

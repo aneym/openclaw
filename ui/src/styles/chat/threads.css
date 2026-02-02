@@ -160,6 +160,33 @@
   /* no animation */
 }
 
+/* Sub-agent indicator — pulsing dot + count badge */
+.nav-thread-item__subagent {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent, #7c3aed);
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent, #7c3aed) 12%, transparent);
+}
+
+.nav-thread-item__subagent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent, #7c3aed);
+  animation: subagent-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes subagent-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
 .nav-thread-item__icon {
   flex-shrink: 0;
   width: 16px;

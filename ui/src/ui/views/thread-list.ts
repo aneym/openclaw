@@ -49,6 +49,8 @@ export interface NavThreadListProps {
   activeSessionKey: string;
   unreadCounts: Map<string, number>;
   runningSessions: Set<string>;
+  /** Number of active sub-agents per requester session key. */
+  subagentCounts: Map<string, number>;
   openPaneKeys: Set<string>;
   onSelect: (sessionKey: string) => void;
   onRename: (sessionKey: string, label: string) => void;
@@ -361,6 +363,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     activeSessionKey,
     unreadCounts,
     runningSessions,
+    subagentCounts,
     openPaneKeys,
     onSelect,
     onRename,
@@ -462,6 +465,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                     const isActive = s.key === activeSessionKey;
                     const isOpenInPane = openPaneKeys.has(s.key);
                     const isRunning = runningSessions.has(s.key);
+                    const subagentCount = subagentCounts.get(s.key) ?? 0;
                     const unread = unreadCounts.get(s.key) ?? 0;
                     const label = sessionDisplayLabel(s);
                     const isRenaming = renamingSessionKey === s.key;
@@ -520,6 +524,12 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                             ? html`<span class="nav-thread-item__unread" aria-label="${unread} unread">${unread}</span>`
                             : nothing
                         }
+                        ${subagentCount > 0 ? html`
+                          <span class="nav-thread-item__subagent" title="${subagentCount} sub-agent${subagentCount > 1 ? "s" : ""} working">
+                            <span class="nav-thread-item__subagent-dot"></span>
+                            ${subagentCount}
+                          </span>
+                        ` : nothing}
                         ${s.updatedAt ? html`<span class="nav-thread-item__time">${compactAgo(s.updatedAt)}</span>` : nothing}
                         ${
                           isArchivedGroup

@@ -72,6 +72,7 @@ export type AppViewState = {
   compactionStatus: import("./app-tool-stream").CompactionStatus | null;
   slashCommands: SlashCommandEntry[];
   runningSessions: Set<string>;
+  subagentRuns: Map<string, import("./types").SubagentRunInfo[]>;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   devicesLoading: boolean;
