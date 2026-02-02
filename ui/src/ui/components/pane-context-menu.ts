@@ -175,6 +175,7 @@ export class PaneContextMenu extends LitElement {
           this.showClosePane
             ? html`<button class="menu-item" @click=${() => this.select(this.callbacks!.onClosePane)}>
               Close Pane
+              <kbd>\u2303W</kbd>
             </button>`
             : nothing
         }

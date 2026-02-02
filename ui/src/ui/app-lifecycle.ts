@@ -54,6 +54,7 @@ type LifecycleHost = {
   focusNextPane: () => void;
   toggleNav: () => void;
   archiveCurrentSession: () => void;
+  toggleGitPanel: () => void;
   syncPaneStatesFromLayout: () => void;
   // URL pane restoration (set by applySettingsFromUrl)
   urlPanes?: { paneKeys: string[]; focusIndex: number } | null;

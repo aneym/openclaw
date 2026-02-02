@@ -303,6 +303,25 @@ export class OpenClawApp extends LitElement {
   @state() logsMaxBytes = 250_000;
   @state() logsAtBottom = true;
 
+  @state() gitLoading = false;
+  @state() gitError: string | null = null;
+  @state() gitBranch = "";
+  @state() gitFiles: import("./types").GitFileStatus[] = [];
+  @state() gitAhead = 0;
+  @state() gitBehind = 0;
+  @state() gitLogEntries: import("./types").GitLogEntry[] = [];
+  @state() gitLogLoading = false;
+  @state() gitDiff: string | null = null;
+  @state() gitDiffLoading = false;
+  @state() gitCommitMessage = "";
+  @state() gitCommitting = false;
+  @state() gitSelectedPath: string | null = null;
+  @state() gitDiffStaged = false;
+  @state() gitStagedCollapsed = false;
+  @state() gitChangesCollapsed = false;
+  @state() gitLogCollapsed = true;
+  @state() gitPanelOpen = false;
+
   client: GatewayBrowserClient | null = null;
   private chatScrollFrame: number | null = null;
   private chatScrollTimeout: number | null = null;
@@ -1384,6 +1403,10 @@ export class OpenClawApp extends LitElement {
       navCollapsed: !this.settings.navCollapsed,
     });
     scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+  }
+
+  toggleGitPanel() {
+    this.gitPanelOpen = !this.gitPanelOpen;
   }
 
   archiveCurrentSession() {

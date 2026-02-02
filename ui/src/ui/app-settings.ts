@@ -220,6 +220,7 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadLogs(host as unknown as OpenClawApp, { reset: true });
     scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
   }
+  // Git panel loads via side panel, not tab
 }
 
 export function inferBasePath() {

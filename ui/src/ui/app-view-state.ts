@@ -19,6 +19,8 @@ import type {
   CronJob,
   CronRunLogEntry,
   CronStatus,
+  GitFileStatus,
+  GitLogEntry,
   HealthSnapshot,
   LogEntry,
   LogLevel,
@@ -161,6 +163,24 @@ export type AppViewState = {
   logsLevelFilters: Record<LogLevel, boolean>;
   logsAutoFollow: boolean;
   logsTruncated: boolean;
+  gitLoading: boolean;
+  gitError: string | null;
+  gitBranch: string;
+  gitFiles: GitFileStatus[];
+  gitAhead: number;
+  gitBehind: number;
+  gitLogEntries: GitLogEntry[];
+  gitLogLoading: boolean;
+  gitDiff: string | null;
+  gitDiffLoading: boolean;
+  gitCommitMessage: string;
+  gitCommitting: boolean;
+  gitSelectedPath: string | null;
+  gitDiffStaged: boolean;
+  gitStagedCollapsed: boolean;
+  gitChangesCollapsed: boolean;
+  gitLogCollapsed: boolean;
+  gitPanelOpen: boolean;
   client: GatewayBrowserClient | null;
   connect: () => void;
   setTab: (tab: Tab) => void;
@@ -207,6 +227,7 @@ export type AppViewState = {
   handleLoadPresence: () => Promise<void>;
   handleLoadSkills: () => Promise<void>;
   handleLoadDebug: () => Promise<void>;
+  handleLoadGit: () => Promise<void>;
   handleLoadLogs: () => Promise<void>;
   handleDebugCall: () => Promise<void>;
   handleRunUpdate: () => Promise<void>;

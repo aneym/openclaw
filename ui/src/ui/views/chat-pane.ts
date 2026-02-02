@@ -353,7 +353,7 @@ export function renderChatPane(props: ChatPaneProps) {
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8a6 6 0 0110.472-4"/><path d="M14 8a6 6 0 01-10.472 4"/><path d="M12.5 1v3.5H9"/><path d="M3.5 15v-3.5H7"/></svg></button>
         <button
           class="split-pane__titlebar-archive"
-          data-tooltip="Archive session"
+          data-tooltip="Archive session (⌘E)"
           @click=${(e: Event) => {
             e.stopPropagation();
             void patchSession(state, sessionKey, { archived: true });
@@ -362,7 +362,7 @@ export function renderChatPane(props: ChatPaneProps) {
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>
         <button
           class="split-pane__titlebar-close"
-          data-tooltip="Close pane"
+          data-tooltip="Close pane (⌃W)"
           @click=${(e: Event) => {
             e.stopPropagation();
             state.closePane(leaf.id);

@@ -564,3 +564,26 @@ export type LogEntry = {
   message?: string | null;
   meta?: Record<string, unknown> | null;
 };
+
+// ── Git ──
+
+export type GitFileStatus = {
+  path: string;
+  index: string;
+  working: string;
+};
+
+export type GitStatusResult = {
+  branch: string;
+  files: GitFileStatus[];
+  ahead: number;
+  behind: number;
+};
+
+export type GitLogEntry = {
+  hash: string;
+  hashShort: string;
+  author: string;
+  date: string;
+  message: string;
+};

@@ -36,6 +36,15 @@ import {
   saveExecApprovals,
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals";
+import {
+  loadGitStatus,
+  loadGitLog,
+  loadGitDiff,
+  stageFiles,
+  unstageFiles,
+  commitChanges,
+  discardFiles,
+} from "./controllers/git";
 import { loadLogs } from "./controllers/logs";
 import { loadNodes } from "./controllers/nodes";
 import { loadPresence } from "./controllers/presence";
@@ -62,6 +71,7 @@ import { renderCron } from "./views/cron";
 import { renderDebug } from "./views/debug";
 import { renderExecApprovalPrompt } from "./views/exec-approval";
 import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation";
+import { renderGit } from "./views/git";
 import { renderInstances } from "./views/instances";
 import { renderLogs } from "./views/logs";
 import { renderNodes } from "./views/nodes";
@@ -221,7 +231,7 @@ export function renderApp(state: AppViewState) {
                 ...state.settings,
                 navCollapsed: !state.settings.navCollapsed,
               })}
-            title="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
+            title="${state.settings.navCollapsed ? "Expand sidebar (⌘\\)" : "Collapse sidebar (⌘\\)"}"
             aria-label="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
@@ -256,6 +266,23 @@ export function renderApp(state: AppViewState) {
             <span>Health</span>
             <span class="mono">${state.connected ? "OK" : "Offline"}</span>
           </div>
+          ${
+            isChat
+              ? html`
+            <button
+              class="pill ${state.gitPanelOpen ? "active" : ""}"
+              style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;${state.gitPanelOpen ? "background:var(--accent,#007acc);color:#fff;" : ""}"
+              @click=${() => {
+                state.gitPanelOpen = !state.gitPanelOpen;
+              }}
+              title=${state.gitPanelOpen ? "Close source control (⇧⌘G)" : "Source control (⇧⌘G)"}
+            >
+              <span style="display:inline-flex;width:14px;height:14px;">${icons.gitBranch}</span>
+              <span>Git</span>
+            </button>
+          `
+              : nothing
+          }
           ${renderThemeToggle(state)}
         </div>
       </header>
@@ -861,7 +888,15 @@ function renderChatWithArtifactPanel(
         assistantAvatar: state.assistantAvatar,
       });
 
-  if (!artifactOpen) {
+  const gitOpen = state.gitPanelOpen;
+
+  // Auto-load git status when panel opens
+  if (gitOpen && state.gitFiles.length === 0 && !state.gitLoading && !state.gitError) {
+    void loadGitStatus(state);
+  }
+
+  // No side panels open — just chat
+  if (!artifactOpen && !gitOpen) {
     return chatContent;
   }
 
@@ -870,20 +905,84 @@ function renderChatWithArtifactPanel(
       <div class="chat-artifact-wrapper__chat" style="flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;">
         ${chatContent}
       </div>
-      <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;border-left:1px solid var(--border);">
-        ${renderArtifactPanel({
-          tabs: state.artifactTabs,
-          activeTabId: state.artifactActiveTabId,
-          onTabSelect: (tabId) => state.handleArtifactTabSelect(tabId),
-          onTabClose: (tabId) => state.handleArtifactTabClose(tabId),
-          onRefresh: (tabId) => state.handleArtifactRefresh(tabId),
-          onToggleRaw: (tabId) => state.handleArtifactToggleRaw(tabId),
-          onCopy: (tabId) => state.handleArtifactCopy(tabId),
-          onSave: (tabId, content) => state.handleArtifactSave(tabId, content),
-          onAutoSave: (tabId, content) => state.handleArtifactAutoSave(tabId, content),
-          onClose: () => state.handleArtifactClose(),
-        })}
-      </div>
+      ${
+        artifactOpen
+          ? html`
+            <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;border-left:1px solid var(--border);">
+              ${renderArtifactPanel({
+                tabs: state.artifactTabs,
+                activeTabId: state.artifactActiveTabId,
+                onTabSelect: (tabId) => state.handleArtifactTabSelect(tabId),
+                onTabClose: (tabId) => state.handleArtifactTabClose(tabId),
+                onRefresh: (tabId) => state.handleArtifactRefresh(tabId),
+                onToggleRaw: (tabId) => state.handleArtifactToggleRaw(tabId),
+                onCopy: (tabId) => state.handleArtifactCopy(tabId),
+                onSave: (tabId, content) => state.handleArtifactSave(tabId, content),
+                onAutoSave: (tabId, content) => state.handleArtifactAutoSave(tabId, content),
+                onClose: () => state.handleArtifactClose(),
+              })}
+            </div>
+          `
+          : nothing
+      }
+      ${
+        gitOpen
+          ? html`
+            <div class="chat-git-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:40%;min-width:300px;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);padding:8px 12px;">
+              ${renderGit({
+                loading: state.gitLoading,
+                error: state.gitError,
+                branch: state.gitBranch,
+                files: state.gitFiles,
+                ahead: state.gitAhead,
+                behind: state.gitBehind,
+                logEntries: state.gitLogEntries,
+                logLoading: state.gitLogLoading,
+                diff: state.gitDiff,
+                diffLoading: state.gitDiffLoading,
+                diffStaged: state.gitDiffStaged,
+                commitMessage: state.gitCommitMessage,
+                committing: state.gitCommitting,
+                selectedPath: state.gitSelectedPath,
+                stagedCollapsed: state.gitStagedCollapsed,
+                changesCollapsed: state.gitChangesCollapsed,
+                logCollapsed: state.gitLogCollapsed,
+                onRefresh: () => loadGitStatus(state),
+                onLoadLog: () => loadGitLog(state),
+                onStage: (paths) => stageFiles(state, paths),
+                onUnstage: (paths) => unstageFiles(state, paths),
+                onDiscard: (paths) => discardFiles(state, paths),
+                onCommit: () => commitChanges(state),
+                onStageAllAndCommit: async () => {
+                  const unstaged = state.gitFiles.filter(
+                    (f) => f.working !== " " || (f.index === "?" && f.working === "?"),
+                  );
+                  if (unstaged.length > 0) {
+                    await stageFiles(
+                      state,
+                      unstaged.map((f) => f.path),
+                    );
+                  }
+                  await commitChanges(state);
+                },
+                onCommitMessageChange: (next) => {
+                  state.gitCommitMessage = next;
+                },
+                onViewDiff: (staged, path) => loadGitDiff(state, staged, path),
+                onToggleStagedCollapsed: () => {
+                  state.gitStagedCollapsed = !state.gitStagedCollapsed;
+                },
+                onToggleChangesCollapsed: () => {
+                  state.gitChangesCollapsed = !state.gitChangesCollapsed;
+                },
+                onToggleLogCollapsed: () => {
+                  state.gitLogCollapsed = !state.gitLogCollapsed;
+                },
+              })}
+            </div>
+          `
+          : nothing
+      }
     </div>
   `;
 }

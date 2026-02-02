@@ -5,6 +5,7 @@
  * Cmd+E       -> Archive current session
  * Cmd+D       -> Split horizontal (side-by-side)
  * Shift+Cmd+D -> Split vertical (top/bottom)
+ * Shift+Cmd+G -> Toggle git source control panel
  * Cmd+]       -> Focus next pane
  * Ctrl+W      -> Close focused pane (Ctrl, not Cmd — Cmd+W closes the browser tab)
  */
@@ -17,6 +18,7 @@ type ShortcutHost = {
   focusNextPane: () => void;
   toggleNav: () => void;
   archiveCurrentSession: () => void;
+  toggleGitPanel: () => void;
 };
 
 let handler: ((e: KeyboardEvent) => void) | null = null;
@@ -61,6 +63,14 @@ export function installKeyboardShortcuts(host: ShortcutHost) {
       e.preventDefault();
       e.stopPropagation();
       host.splitPane("vertical");
+      return;
+    }
+
+    // Shift+Cmd+G -> toggle git panel
+    if (isMeta && e.shiftKey && (e.key === "G" || e.key === "g")) {
+      e.preventDefault();
+      e.stopPropagation();
+      host.toggleGitPanel();
       return;
     }
 
