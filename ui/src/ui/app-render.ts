@@ -74,7 +74,6 @@ import { renderInstances } from "./views/instances";
 import { renderLogs } from "./views/logs";
 import { renderNodes } from "./views/nodes";
 import { renderOverview } from "./views/overview";
-import { renderServices } from "./views/services";
 import { renderSessions } from "./views/sessions";
 import { renderSkills } from "./views/skills";
 import { renderSplitPaneContainer } from "./views/split-pane-container";
@@ -520,17 +519,6 @@ export function renderApp(state: AppViewState) {
                 onNostrProfileSave: () => state.handleNostrProfileSave(),
                 onNostrProfileImport: () => state.handleNostrProfileImport(),
                 onNostrProfileToggleAdvanced: () => state.handleNostrProfileToggleAdvanced(),
-              })
-            : nothing
-        }
-
-        ${
-          state.tab === "services"
-            ? renderServices({
-                connected: state.connected,
-                config: state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null),
-                channelsSnapshot: state.channelsSnapshot,
-                skillsReport: state.skillsReport,
               })
             : nothing
         }
