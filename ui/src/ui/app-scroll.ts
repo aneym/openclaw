@@ -114,6 +114,20 @@ export function schedulePaneChatScroll(
   scheduleChatScroll(host, force, paneId);
 }
 
+export function scrollAllVisibleChats(host: ScrollHost) {
+  void host.updateComplete.then(() => {
+    requestAnimationFrame(() => {
+      const threads = (host as unknown as ParentNode).querySelectorAll('.chat-thread') as NodeListOf<HTMLElement>;
+      for (const thread of threads) {
+        const distanceFromBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
+        if (distanceFromBottom < 200) {
+          thread.scrollTop = thread.scrollHeight;
+        }
+      }
+    });
+  });
+}
+
 export function exportLogs(lines: string[], label: string) {
   if (lines.length === 0) return;
   const blob = new Blob([`${lines.join("\n")}\n`], { type: "text/plain" });

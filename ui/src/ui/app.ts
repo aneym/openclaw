@@ -89,6 +89,7 @@ import {
   handleChatScroll as handleChatScrollInternal,
   handleLogsScroll as handleLogsScrollInternal,
   resetChatScroll as resetChatScrollInternal,
+  scrollAllVisibleChats,
 } from "./app-scroll";
 import {
   applySettings as applySettingsInternal,
@@ -543,10 +544,12 @@ export class OpenClawApp extends LitElement {
     this.sidebarContent = content;
     this.sidebarError = null;
     this.sidebarOpen = true;
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
   }
 
   handleCloseSidebar() {
     this.sidebarOpen = false;
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
     // Clear content after transition
     if (this.sidebarCloseTimer != null) {
       window.clearTimeout(this.sidebarCloseTimer);
@@ -575,6 +578,7 @@ export class OpenClawApp extends LitElement {
     if (existing) {
       this.artifactActiveTabId = existing.id;
       this.artifactOpen = true;
+      scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
       this.refreshArtifactTab(existing.id);
       return;
     }
@@ -593,6 +597,7 @@ export class OpenClawApp extends LitElement {
     this.artifactTabs = [...this.artifactTabs, newTab];
     this.artifactActiveTabId = tabId;
     this.artifactOpen = true;
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
     this.refreshArtifactTab(tabId);
   }
 
@@ -609,6 +614,7 @@ export class OpenClawApp extends LitElement {
     }
     if (this.artifactTabs.length === 0) {
       this.artifactOpen = false;
+      scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
     }
   }
 
@@ -618,6 +624,7 @@ export class OpenClawApp extends LitElement {
 
   handleArtifactClose() {
     this.artifactOpen = false;
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
   }
 
   handleArtifactToggleRaw(tabId: string) {
@@ -978,6 +985,7 @@ export class OpenClawApp extends LitElement {
     this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
     // Focus the new pane — this snapshots current thread & restores the new one.
     // focusPane already schedules a managed textarea.focus() timer, so no
     // duplicate setTimeout here (that was the second source of stale timers).
@@ -1024,6 +1032,7 @@ export class OpenClawApp extends LitElement {
       this.paneStates = new Map();
       this.persistSplitLayout();
       this.syncUrlWithPanes(false);
+      scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
       return;
     }
 
@@ -1071,6 +1080,7 @@ export class OpenClawApp extends LitElement {
     this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
   }
 
   focusPane(paneId: string) {
@@ -1259,6 +1269,7 @@ export class OpenClawApp extends LitElement {
     const newRoot = updateBranchRatio(this.splitLayout.root, branchId, ratio);
     this.splitLayout = { ...this.splitLayout, root: newRoot };
     this.persistSplitLayout();
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
   }
 
   focusNextPane() {
@@ -1272,6 +1283,7 @@ export class OpenClawApp extends LitElement {
       ...this.settings,
       navCollapsed: !this.settings.navCollapsed,
     });
+    scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
   }
 
   archiveCurrentSession() {
