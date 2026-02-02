@@ -1,10 +1,13 @@
 /**
  * coding-sessions-http.ts — HTTP API for coding session state + live output
  *
- * GET  /api/coding-sessions              → list all sessions
- * GET  /api/coding-sessions/:id/log      → raw output from exec session registry
- * POST /api/coding-sessions/:id/kill     → kill a session
- * POST /api/coding-sessions/:id          → update session state (upsert)
+ * GET    /api/coding-sessions              → list all sessions
+ * GET    /api/coding-sessions/:id/log      → raw output from exec session registry
+ * POST   /api/coding-sessions/:id/kill     → kill a running session
+ * POST   /api/coding-sessions/:id/respond  → pipe answer back to Claude Code stdin
+ * POST   /api/coding-sessions/:id/terminal → open tmux session in Terminal.app
+ * POST   /api/coding-sessions/:id          → update session state (upsert)
+ * DELETE /api/coding-sessions/:id          → remove session from state
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -65,6 +68,20 @@ export function handleCodingSessionsRequest(
       (a: any, b: any) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
     );
     json(res, { sessions });
+    return true;
+  }
+
+  /* ── Delete / dismiss a session from state ── */
+  if (req.method === "DELETE" && /^\/api\/coding-sessions\/[^/]+$/.test(pathname)) {
+    const id = pathname.split("/")[3]!;
+    const state = readState();
+    if (!state.sessions[id]) {
+      json(res, { error: "Session not found" }, 404);
+      return true;
+    }
+    delete state.sessions[id];
+    writeState(state);
+    json(res, { ok: true, deleted: id });
     return true;
   }
 

@@ -864,6 +864,7 @@ function renderChatWithArtifactPanel(state: AppViewState) {
             onKill: (id: string) => state.handleCodingKill(id),
             onClose: () => state.toggleCodingPanel(),
             onRefresh: () => state.fetchCodingSessions(),
+            onDismiss: (id: string) => state.handleCodingDismiss(id),
             onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
             onCloseTerminal: () => state.handleCloseCodingTerminal(),
             onAttachTerminal: (id: string) => state.handleAttachCodingTerminal(id),

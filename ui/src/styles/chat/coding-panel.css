@@ -20,6 +20,8 @@
 .cs-btn--kill:hover { background:var(--error, #ef4444); color:white; }
 .cs-btn--terminal { border-color:var(--accent); color:var(--accent); }
 .cs-btn--terminal:hover { background:var(--accent); color:white; }
+.cs-btn--dismiss { border-color:transparent; color:var(--text-secondary); opacity:0.5; }
+.cs-btn--dismiss:hover { opacity:1; background:rgba(239,68,68,0.1); color:var(--error, #ef4444); border-color:var(--error, #ef4444); }
 .cs-btn svg { width:12px; height:12px; }
 
 /* ── Session Card ── */

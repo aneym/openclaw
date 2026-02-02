@@ -46,6 +46,7 @@ export interface CodingPanelProps {
   onCloseTerminal: () => void;
   onAttachTerminal: (id: string) => void;
   onRespond: (id: string, text: string, toolUseId?: string) => void;
+  onDismiss: (id: string) => void;
   pendingQuestions: Map<string, { question: string; toolUseId: string }>;
 }
 
@@ -263,8 +264,10 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
         </div>
         <div class="cs-card__actions">
           ${isActive ? html`
-            <button class="cs-btn cs-btn--kill" @click=${(e: Event) => { e.stopPropagation(); props.onKill(session.id); }} title="Kill">✕</button>
-          ` : nothing}
+            <button class="cs-btn cs-btn--kill" @click=${(e: Event) => { e.stopPropagation(); props.onKill(session.id); }} title="Kill session">⏹</button>
+          ` : html`
+            <button class="cs-btn cs-btn--dismiss" @click=${(e: Event) => { e.stopPropagation(); props.onDismiss(session.id); }} title="Remove from list">✕</button>
+          `}
           <span class="cs-card__chevron ${isExpanded ? "cs-card__chevron--open" : ""}">${icons.chevronDown}</span>
         </div>
       </div>
