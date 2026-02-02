@@ -22,6 +22,7 @@ const createHost = (tab: Tab): SettingsHost => ({
     navCollapsed: false,
     navWidth: 0,
     navGroupsCollapsed: {},
+    selectedModel: "",
   },
   theme: "system",
   themeResolved: "dark",

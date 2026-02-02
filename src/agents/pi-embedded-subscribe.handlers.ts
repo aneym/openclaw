@@ -54,7 +54,7 @@ export function createEmbeddedPiSessionEventHandler(ctx: EmbeddedPiSubscribeCont
         handleAutoCompactionEnd(ctx, evt as never);
         return;
       case "agent_end":
-        handleAgentEnd(ctx);
+        handleAgentEnd(ctx, (evt as { error?: unknown }).error);
         return;
       default:
         return;

@@ -210,6 +210,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
+    console.log('[UI-CHAT] Received error state:', payload.errorMessage);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;

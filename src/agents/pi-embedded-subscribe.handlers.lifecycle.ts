@@ -2,6 +2,7 @@ import type { AgentEvent } from "@mariozechner/pi-agent-core";
 import type { EmbeddedPiSubscribeContext } from "./pi-embedded-subscribe.handlers.types.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { createInlineCodeState } from "../markdown/code-spans.js";
+import { describeUnknownError } from "./pi-embedded-runner/utils.js";
 
 export function handleAgentStart(ctx: EmbeddedPiSubscribeContext) {
   ctx.log.debug(`embedded run agent start: runId=${ctx.params.runId}`);
@@ -58,19 +59,22 @@ export function handleAutoCompactionEnd(
   });
 }
 
-export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext) {
+export function handleAgentEnd(ctx: EmbeddedPiSubscribeContext, error?: unknown) {
   ctx.log.debug(`embedded run agent end: runId=${ctx.params.runId}`);
+  const hasError = error != null;
+  const errorMessage = hasError ? describeUnknownError(error) : undefined;
   emitAgentEvent({
     runId: ctx.params.runId,
     stream: "lifecycle",
     data: {
-      phase: "end",
+      phase: hasError ? "error" : "end",
       endedAt: Date.now(),
+      error: errorMessage,
     },
   });
   void ctx.params.onAgentEvent?.({
     stream: "lifecycle",
-    data: { phase: "end" },
+    data: { phase: hasError ? "error" : "end", error: errorMessage },
   });
 
   if (ctx.params.onBlockReply) {

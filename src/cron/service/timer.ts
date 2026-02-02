@@ -1,18 +1,43 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob } from "../types.js";
+import type { CronEvent, CronServiceState } from "./state.js";
+import { classifyFailoverReason } from "../../agents/pi-embedded-helpers.js";
 import { computeJobNextRunAtMs, nextWakeAtMs, resolveJobPayloadTextForMain } from "./jobs.js";
 import { locked } from "./locked.js";
-import type { CronEvent, CronServiceState } from "./state.js";
 import { ensureLoaded, persist } from "./store.js";
+
+/** Exponential backoff configuration for cron job retries on rate limits. */
+const BACKOFF_CONFIG = {
+  initialMs: 5000,
+  maxMs: 300_000,
+  factor: 2,
+  jitter: 0.1,
+} as const;
+
+/** Error reasons that should trigger exponential backoff. */
+const BACKOFF_REASONS = new Set(["rate_limit", "overloaded"]);
+
+function computeBackoffDelay(consecutiveFailures: number): number {
+  const { initialMs, maxMs, factor, jitter } = BACKOFF_CONFIG;
+  const base = initialMs * factor ** Math.max(consecutiveFailures - 1, 0);
+  const jitterAmount = base * jitter * (Math.random() * 2 - 1);
+  return Math.min(maxMs, Math.round(base + jitterAmount));
+}
 
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
 export function armTimer(state: CronServiceState) {
-  if (state.timer) clearTimeout(state.timer);
+  if (state.timer) {
+    clearTimeout(state.timer);
+  }
   state.timer = null;
-  if (!state.deps.cronEnabled) return;
+  if (!state.deps.cronEnabled) {
+    return;
+  }
   const nextAt = nextWakeAtMs(state);
-  if (!nextAt) return;
+  if (!nextAt) {
+    return;
+  }
   const delay = Math.max(nextAt - state.deps.nowMs(), 0);
   // Avoid TimeoutOverflowWarning when a job is far in the future.
   const clampedDelay = Math.min(delay, MAX_TIMEOUT_MS);
@@ -25,7 +50,9 @@ export function armTimer(state: CronServiceState) {
 }
 
 export async function onTimer(state: CronServiceState) {
-  if (state.running) return;
+  if (state.running) {
+    return;
+  }
   state.running = true;
   try {
     await locked(state, async () => {
@@ -40,11 +67,17 @@ export async function onTimer(state: CronServiceState) {
 }
 
 export async function runDueJobs(state: CronServiceState) {
-  if (!state.store) return;
+  if (!state.store) {
+    return;
+  }
   const now = state.deps.nowMs();
   const due = state.store.jobs.filter((j) => {
-    if (!j.enabled) return false;
-    if (typeof j.state.runningAtMs === "number") return false;
+    if (!j.enabled) {
+      return false;
+    }
+    if (typeof j.state.runningAtMs === "number") {
+      return false;
+    }
     const next = j.state.nextRunAtMs;
     return typeof next === "number" && now >= next;
   });
@@ -79,6 +112,35 @@ export async function executeJob(
     job.state.lastDurationMs = Math.max(0, endedAt - startedAt);
     job.state.lastError = err;
 
+    // Track consecutive failures and apply exponential backoff on rate limits/overloaded
+    if (status === "error" && err) {
+      const reason = classifyFailoverReason(err);
+      job.state.lastFailureReason = reason ?? undefined;
+      if (reason && BACKOFF_REASONS.has(reason)) {
+        const failures = (job.state.consecutiveFailures ?? 0) + 1;
+        job.state.consecutiveFailures = failures;
+        const backoffMs = computeBackoffDelay(failures);
+        const nextScheduledAt = computeJobNextRunAtMs(job, endedAt);
+        const backoffUntil = endedAt + backoffMs;
+        // Use the later of scheduled time or backoff
+        job.state.nextRunAtMs = Math.max(nextScheduledAt ?? endedAt, backoffUntil);
+        state.deps.log.info(
+          { jobId: job.id, failures, backoffMs, nextRunAtMs: job.state.nextRunAtMs },
+          "cron: applying exponential backoff for rate limit/overloaded error",
+        );
+      } else {
+        // Other errors don't reset consecutive failures (they accumulate)
+        job.state.consecutiveFailures = (job.state.consecutiveFailures ?? 0) + 1;
+        job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
+      }
+    } else if (status === "ok") {
+      // Reset consecutive failures on success
+      if (job.state.consecutiveFailures) {
+        job.state.consecutiveFailures = 0;
+        job.state.lastFailureReason = undefined;
+      }
+    }
+
     const shouldDelete =
       job.schedule.kind === "at" && status === "ok" && job.deleteAfterRun === true;
 
@@ -88,7 +150,10 @@ export async function executeJob(
         job.enabled = false;
         job.state.nextRunAtMs = undefined;
       } else if (job.enabled) {
-        job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
+        // nextRunAtMs already computed above for error cases; compute for non-error cases
+        if (status !== "error") {
+          job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
+        }
       } else {
         job.state.nextRunAtMs = undefined;
       }
@@ -103,6 +168,7 @@ export async function executeJob(
       runAtMs: startedAt,
       durationMs: job.state.lastDurationMs,
       nextRunAtMs: job.state.nextRunAtMs,
+      consecutiveFailures: job.state.consecutiveFailures,
     });
 
     if (shouldDelete && state.store) {
@@ -200,16 +266,20 @@ export async function executeJob(
       job,
       message: job.payload.message,
     });
-    if (res.status === "ok") await finish("ok", undefined, res.summary, res.outputText);
-    else if (res.status === "skipped")
+    if (res.status === "ok") {
+      await finish("ok", undefined, res.summary, res.outputText);
+    } else if (res.status === "skipped") {
       await finish("skipped", undefined, res.summary, res.outputText);
-    else await finish("error", res.error ?? "cron job failed", res.summary, res.outputText);
+    } else {
+      await finish("error", res.error ?? "cron job failed", res.summary, res.outputText);
+    }
   } catch (err) {
     await finish("error", String(err));
   } finally {
     job.updatedAtMs = nowMs;
-    if (!opts.forced && job.enabled && !deleted) {
-      // Keep nextRunAtMs in sync in case the schedule advanced during a long run.
+    // nextRunAtMs is already set in finish() with backoff applied for rate limit errors.
+    // Only recompute here for forced runs or when nextRunAtMs wasn't set.
+    if (!opts.forced && job.enabled && !deleted && job.state.nextRunAtMs === undefined) {
       job.state.nextRunAtMs = computeJobNextRunAtMs(job, state.deps.nowMs());
     }
   }
@@ -220,7 +290,9 @@ export function wake(
   opts: { mode: "now" | "next-heartbeat"; text: string; sessionKey?: string },
 ) {
   const text = opts.text.trim();
-  if (!text) return { ok: false } as const;
+  if (!text) {
+    return { ok: false } as const;
+  }
   state.deps.enqueueSystemEvent(
     text,
     opts.sessionKey ? { sessionKey: opts.sessionKey } : undefined,
@@ -232,7 +304,9 @@ export function wake(
 }
 
 export function stopTimer(state: CronServiceState) {
-  if (state.timer) clearTimeout(state.timer);
+  if (state.timer) {
+    clearTimeout(state.timer);
+  }
   state.timer = null;
 }
 

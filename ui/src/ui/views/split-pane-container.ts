@@ -4,16 +4,13 @@
  * SplitBranch -> flex container (row or column) with two children + resizable divider
  * SplitLeaf   -> renderChatPane() with the leaf's session
  */
-import { html, nothing } from "lit";
+import { html } from "lit";
 import type { AppViewState } from "../app-view-state";
 import type { SplitNode, SplitBranch, SplitLeaf } from "../split-tree";
 import { renderChatPane } from "./chat-pane";
 import "../components/resizable-divider";
 
 export function renderSplitPaneContainer(state: AppViewState) {
-  if (!state.splitLayout) {
-    return nothing;
-  }
   return html`
     <div class="split-pane-root">
       ${renderNode(state.splitLayout.root, state)}

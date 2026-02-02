@@ -219,18 +219,6 @@ function groupSessions(sessions: NavSessionEntry[], openPaneKeys?: Set<string>):
     }
   }
 
-  // DEBUG: remove after investigating archive visibility
-  console.warn("[thread-list] groupSessions:", {
-    total: sessions.length,
-    active: active.length,
-    older: older.length,
-    automated: automated.length,
-    archived: archived.length,
-    sampleArchivedAt: sessions
-      .slice(0, 3)
-      .map((s) => ({ key: s.key.slice(0, 40), archivedAt: s.archivedAt })),
-  });
-
   const groups: SessionGroup[] = [];
 
   if (active.length > 0) {

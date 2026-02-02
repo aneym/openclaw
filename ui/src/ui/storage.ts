@@ -16,6 +16,7 @@ export type UiSettings = {
   navCollapsed: boolean; // Collapsible sidebar state
   navWidth: number; // Sidebar width in px (0 = use CSS default)
   navGroupsCollapsed: Record<string, boolean>; // Which nav groups are collapsed
+  selectedModel: string; // Selected model ref (provider/modelId)
 };
 
 export function loadSettings(): UiSettings {
@@ -43,6 +44,7 @@ export function loadSettings(): UiSettings {
     navCollapsed: false,
     navWidth: 0,
     navGroupsCollapsed: {},
+    selectedModel: "",
   };
 
   try {
@@ -105,6 +107,7 @@ export function loadSettings(): UiSettings {
         parsed.navGroupsCollapsed !== null
           ? parsed.navGroupsCollapsed
           : defaults.navGroupsCollapsed,
+      selectedModel: typeof parsed.selectedModel === "string" ? parsed.selectedModel : defaults.selectedModel,
     };
   } catch {
     return defaults;

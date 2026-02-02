@@ -60,6 +60,10 @@ export type CronJobState = {
   lastStatus?: "ok" | "error" | "skipped";
   lastError?: string;
   lastDurationMs?: number;
+  /** Number of consecutive failures for exponential backoff calculation. */
+  consecutiveFailures?: number;
+  /** The reason for the last failure (rate_limit, overloaded, etc.). */
+  lastFailureReason?: string;
 };
 
 export type CronJob = {

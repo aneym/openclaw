@@ -3,10 +3,13 @@ import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
 import { refreshChat } from "./app-chat";
 import { connectGateway } from "./app-gateway";
+import { loadModels } from "./controllers/models";
 import {
   startLogsPolling,
+  startModelsPolling,
   startNodesPolling,
   stopLogsPolling,
+  stopModelsPolling,
   stopNodesPolling,
   startDebugPolling,
   stopDebugPolling,
@@ -61,9 +64,14 @@ type LifecycleHost = {
   // Visibility change handler for staleness detection
   connected: boolean;
   visibilityHandler: (() => void) | null;
+  // Polling intervals
+  nodesPollInterval: number | null;
+  logsPollInterval: number | null;
+  debugPollInterval: number | null;
+  modelsPollInterval: number | null;
 };
 
-export function handleConnected(host: LifecycleHost) {
+export async function handleConnected(host: LifecycleHost) {
   // Dev mode: update tab title + favicon background
   const isDev =
     import.meta.env.DEV || (window as unknown as Record<string, unknown>).__OPENCLAW_DEV__;
@@ -116,6 +124,29 @@ export function handleConnected(host: LifecycleHost) {
     // Fall back to localStorage split layout
     host.restoreSplitLayout();
   }
+  // Ensure we always have a split layout (single-leaf for non-split mode).
+  // During HMR, prefer restoring from settings if a layout was saved, to preserve
+  // the user's multi-pane arrangement (e.g., grid) instead of collapsing to a
+  // single column.
+  if (!host.splitLayout) {
+    const { createLeaf, deserializeLayout } = await import("./split-tree.js");
+    const savedLayout = host.settings.splitLayout
+      ? deserializeLayout(host.settings.splitLayout)
+      : null;
+    if (savedLayout) {
+      host.splitLayout = savedLayout;
+      host.focusedPaneId = savedLayout.focusedPaneId;
+    } else {
+      const leaf = createLeaf(host.sessionKey, "pane-initial");
+      host.splitLayout = {
+        root: leaf,
+        focusedPaneId: leaf.id,
+      };
+      host.focusedPaneId = leaf.id;
+    }
+    host.syncPaneStatesFromLayout();
+  }
+
   // Sync sessionKey to the focused pane so live state targets the right pane
   // after HMR / reload. Both URL and localStorage paths set focusedPaneId but
   // don't switch the active session.
@@ -126,6 +157,9 @@ export function handleConnected(host: LifecycleHost) {
     }
   }
   startNodesPolling(host as unknown as Parameters<typeof startNodesPolling>[0]);
+  startModelsPolling(host as unknown as Parameters<typeof startModelsPolling>[0]);
+  // Load models immediately on connect
+  void loadModels(host as unknown as Parameters<typeof loadModels>[0]);
   if (host.tab === "logs") {
     startLogsPolling(host as unknown as Parameters<typeof startLogsPolling>[0]);
   }
@@ -155,6 +189,7 @@ export function handleDisconnected(host: LifecycleHost) {
   removeKeyboardShortcuts();
   stopNodesPolling(host as unknown as Parameters<typeof stopNodesPolling>[0]);
   stopLogsPolling(host as unknown as Parameters<typeof stopLogsPolling>[0]);
+  stopModelsPolling(host as unknown as Parameters<typeof stopModelsPolling>[0]);
   stopDebugPolling(host as unknown as Parameters<typeof stopDebugPolling>[0]);
   detachThemeListener(host as unknown as Parameters<typeof detachThemeListener>[0]);
   host.topbarObserver?.disconnect();

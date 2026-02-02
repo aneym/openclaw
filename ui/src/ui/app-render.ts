@@ -1,9 +1,7 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "./app-view-state";
 import type { NavSessionEntry } from "./views/thread-list";
-import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { refreshChatAvatar } from "./app-chat";
-import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers";
+import { renderTab, renderThemeToggle } from "./app-render.helpers";
 import { syncUrlWithSessionKey } from "./app-settings";
 import { loadChannels } from "./controllers/channels";
 import { loadChatHistory } from "./controllers/chat";
@@ -56,7 +54,6 @@ import {
   updateSkillEdit,
   updateSkillEnabled,
 } from "./controllers/skills";
-import { clearQueue } from "./draft-storage";
 import { icons } from "./icons";
 import { TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation";
 import { allLeaves } from "./split-tree";
@@ -65,8 +62,8 @@ import { createThreadDescriptor, createThreadState } from "./thread-state";
 import { saveThreadDescriptors } from "./thread-storage";
 import { renderArtifactPanel } from "./views/artifact-panel";
 import { renderChannels } from "./views/channels";
-import { renderChat } from "./views/chat";
 import { renderConfig } from "./views/config";
+import { renderModels } from "./views/models";
 import { renderCron } from "./views/cron";
 import { renderDebug } from "./views/debug";
 import { renderExecApprovalPrompt } from "./views/exec-approval";
@@ -82,8 +79,6 @@ import { renderSplitPaneContainer } from "./views/split-pane-container";
 import { renderNavThreadList } from "./views/thread-list";
 import { renderToolApprovalPrompt } from "./views/tool-approval";
 
-const AVATAR_DATA_RE = /^data:/i;
-const AVATAR_HTTP_RE = /^https?:\/\//i;
 
 /**
  * Focus the chat composer textarea.
@@ -163,22 +158,6 @@ function ensureOpenSessions(
   return [...missing, ...sessions];
 }
 
-function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
-  const list = state.agentsList?.agents ?? [];
-  const parsed = parseAgentSessionKey(state.sessionKey);
-  const agentId = parsed?.agentId ?? state.agentsList?.defaultId ?? "main";
-  const agent = list.find((entry) => entry.id === agentId);
-  const identity = agent?.identity;
-  const candidate = identity?.avatarUrl ?? identity?.avatar;
-  if (!candidate) {
-    return undefined;
-  }
-  if (AVATAR_DATA_RE.test(candidate) || AVATAR_HTTP_RE.test(candidate)) {
-    return candidate;
-  }
-  return identity?.avatarUrl;
-}
-
 /** Return the set of session keys that currently have an active agent run. */
 function computeRunningSessions(state: AppViewState): Set<string> {
   return state.runningSessions;
@@ -211,12 +190,8 @@ export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
   const isChat = state.tab === "chat";
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
-  const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
-  const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
-  const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
   const devFlags = getDevFlags();
   const isDev = devFlags.length > 0;
 
@@ -459,7 +434,6 @@ export function renderApp(state: AppViewState) {
           </div>
           <div class="page-meta">
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
-            ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
 
@@ -699,13 +673,7 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "chat"
-            ? renderChatWithArtifactPanel(
-                state,
-                showThinking,
-                chatFocus,
-                chatDisabledReason,
-                chatAvatarUrl,
-              )
+            ? renderChatWithArtifactPanel(state)
             : nothing
         }
 
@@ -792,6 +760,48 @@ export function renderApp(state: AppViewState) {
               })
             : nothing
         }
+
+        ${
+          state.tab === "models"
+            ? renderModels({
+                providers: state.modelsConfig?.providers ?? [],
+                loading: state.modelsConfigLoading,
+                saving: state.modelsConfigSaving,
+                error: state.modelsConfigError,
+                connected: state.connected,
+                visibleModels: state.visibleModels,
+                onToggleModelVisibility: (modelRef, visible) => {
+                  state.handleToggleModelVisibility(modelRef, visible);
+                },
+                onAddProvider: (provider) => {
+                  // Sort the new provider's models by capability
+                  const sortedProvider = {
+                    ...provider,
+                    models: [...provider.models].sort((a, b) => {
+                      const score = (m: typeof a) => {
+                        let s = 0;
+                        if (m.reasoning) s += 1000;
+                        if (m.input?.includes("image")) s += 100;
+                        s += (m.contextWindow ?? 0) / 10000;
+                        return s;
+                      };
+                      return score(b) - score(a);
+                    }),
+                  };
+                  const providers = [...(state.modelsConfig?.providers ?? []), sortedProvider];
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onRemoveProvider: (name) => {
+                  const providers = (state.modelsConfig?.providers ?? []).filter(
+                    (p) => p.name !== name
+                  );
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onSave: () => state.handleModelsConfigSave(),
+                onReload: () => state.handleModelsConfigLoad(),
+              })
+            : nothing
+        }
       </main>
       ${renderExecApprovalPrompt(state)}
       ${renderToolApprovalPrompt(state)}
@@ -802,94 +812,12 @@ export function renderApp(state: AppViewState) {
 
 // ── Chat area + global artifact panel ──
 
-function renderChatWithArtifactPanel(
-  state: AppViewState,
-  showThinking: boolean,
-  chatFocus: boolean,
-  chatDisabledReason: string | null,
-  chatAvatarUrl: string | null,
-) {
+function renderChatWithArtifactPanel(state: AppViewState) {
   const hasArtifactTabs = state.artifactTabs.length > 0;
   const artifactOpen = state.artifactOpen && hasArtifactTabs;
 
-  const chatContent = state.splitLayout
-    ? renderSplitPaneContainer(state)
-    : renderChat({
-        sessionKey: state.sessionKey,
-        onSessionKeyChange: (next) => {
-          clearQueue(state.sessionKey);
-          state.sessionKey = next;
-          state.chatMessage = "";
-          state.chatAttachments = [];
-          state.chatStream = null;
-          state.chatStreamStartedAt = null;
-          state.chatRunId = null;
-          state.chatQueue = [];
-          state.resetToolStream();
-          state.resetChatScroll();
-          state.applySettings({
-            ...state.settings,
-            sessionKey: next,
-            lastActiveSessionKey: next,
-          });
-          void state.loadAssistantIdentity();
-          void loadChatHistory(state);
-          void refreshChatAvatar(state);
-        },
-        thinkingLevel: state.chatThinkingLevel,
-        showThinking,
-        loading: state.chatLoading,
-        sending: state.chatSending,
-        compactionStatus: state.compactionStatus,
-        assistantAvatarUrl: chatAvatarUrl,
-        messages: state.chatMessages,
-        toolMessages: state.chatToolMessages,
-        stream: state.chatStream,
-        streamStartedAt: state.chatStreamStartedAt,
-        draft: state.chatMessage,
-        queue: state.chatQueue,
-        connected: state.connected,
-        canSend: state.connected,
-        disabledReason: chatDisabledReason,
-        error: state.lastError,
-        sessions: state.sessionsResult,
-        focusMode: chatFocus,
-        onRefresh: () => {
-          state.resetToolStream();
-          return Promise.all([loadChatHistory(state), refreshChatAvatar(state)]);
-        },
-        onToggleFocusMode: () => {
-          if (state.onboarding) {
-            return;
-          }
-          state.applySettings({
-            ...state.settings,
-            chatFocusMode: !state.settings.chatFocusMode,
-          });
-        },
-        onChatScroll: (event) => state.handleChatScroll(event),
-        onDraftChange: (next) => (state.chatMessage = next),
-        attachments: state.chatAttachments,
-        onAttachmentsChange: (next) => (state.chatAttachments = next),
-        onSend: () => state.handleSendChat(),
-        canAbort: Boolean(state.chatRunId),
-        onAbort: () => void state.handleAbortChat(),
-        onQueueRemove: (id) => state.removeQueuedMessage(id),
-        onQueueSendNow: (id) => void state.handleQueueSendNow(id),
-        onQueueClearAll: () => state.clearAllQueuedMessages(),
-        onSendImmediately: () => void state.handleSendChatImmediately(),
-        onNewSession: () => startNewSession(state),
-        sidebarOpen: state.sidebarOpen,
-        sidebarContent: state.sidebarContent,
-        sidebarError: state.sidebarError,
-        splitRatio: state.splitRatio,
-        onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
-        onOpenFilePreview: (filePath: string) => state.handleOpenFilePreview(filePath),
-        onCloseSidebar: () => state.handleCloseSidebar(),
-        onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
-        assistantName: state.assistantName,
-        assistantAvatar: state.assistantAvatar,
-      });
+  // Always use split pane container - single pane is just a single-leaf layout
+  const chatContent = renderSplitPaneContainer(state);
 
   const gitOpen = state.gitPanelOpen;
 

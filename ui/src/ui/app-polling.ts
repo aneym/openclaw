@@ -1,12 +1,14 @@
 import type { OpenClawApp } from "./app";
 import { loadDebug } from "./controllers/debug";
 import { loadLogs } from "./controllers/logs";
+import { loadModels } from "./controllers/models";
 import { loadNodes } from "./controllers/nodes";
 
 type PollingHost = {
   nodesPollInterval: number | null;
   logsPollInterval: number | null;
   debugPollInterval: number | null;
+  modelsPollInterval: number | null;
   tab: string;
 };
 
@@ -66,4 +68,21 @@ export function stopDebugPolling(host: PollingHost) {
   }
   clearInterval(host.debugPollInterval);
   host.debugPollInterval = null;
+}
+
+export function startModelsPolling(host: PollingHost) {
+  if (host.modelsPollInterval != null) {
+    return;
+  }
+  host.modelsPollInterval = window.setInterval(() => {
+    void loadModels(host as unknown as OpenClawApp);
+  }, 30000);
+}
+
+export function stopModelsPolling(host: PollingHost) {
+  if (host.modelsPollInterval == null) {
+    return;
+  }
+  clearInterval(host.modelsPollInterval);
+  host.modelsPollInterval = null;
 }

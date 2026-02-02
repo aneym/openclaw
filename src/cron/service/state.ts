@@ -10,6 +10,7 @@ export type CronEvent = {
   error?: string;
   summary?: string;
   nextRunAtMs?: number;
+  consecutiveFailures?: number;
 };
 
 export type Logger = {

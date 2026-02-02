@@ -174,7 +174,13 @@ function broadcastChatError(params: {
   runId: string;
   sessionKey: string;
   errorMessage?: string;
+  sessionId?: string;
+  storePath?: string;
+  sessionFile?: string;
 }) {
+  console.log(
+    `[BROADCAST_CHAT_ERROR] Called for runId=${params.runId}, sessionKey=${params.sessionKey}, errorMessage=${params.errorMessage?.substring(0, 100)}`,
+  );
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
   const payload = {
     runId: params.runId,
@@ -183,8 +189,32 @@ function broadcastChatError(params: {
     state: "error" as const,
     errorMessage: params.errorMessage,
   };
+  console.log(`[BROADCAST_CHAT_ERROR] Broadcasting payload:`, JSON.stringify(payload));
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
+  console.log(`[BROADCAST_CHAT_ERROR] Broadcast completed`);
+
+  // Append error message to transcript so it appears in chat history
+  if (params.errorMessage && params.sessionId) {
+    console.log(`[BROADCAST_CHAT_ERROR] Appending to transcript for sessionId=${params.sessionId}`);
+    const label = "System";
+    const result = appendAssistantTranscriptMessage({
+      message: params.errorMessage,
+      label,
+      sessionId: params.sessionId,
+      storePath: params.storePath,
+      sessionFile: params.sessionFile,
+      createIfMissing: true,
+    });
+    console.log(
+      `[BROADCAST_CHAT_ERROR] Transcript append result:`,
+      result.ok ? "success" : `failed: ${result.error}`,
+    );
+  } else {
+    console.log(
+      `[BROADCAST_CHAT_ERROR] Skipping transcript append: errorMessage=${!!params.errorMessage}, sessionId=${!!params.sessionId}`,
+    );
+  }
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
@@ -369,7 +399,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    const { cfg, entry } = loadSessionEntry(p.sessionKey);
+    const { cfg, entry, storePath } = loadSessionEntry(p.sessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -438,6 +468,12 @@ export const chatHandlers: GatewayRequestHandlers = {
         expiresAtMs: resolveChatRunExpiresAtMs({ now, timeoutMs }),
       });
 
+      // Register the chat run so lifecycle events (including errors) are properly routed
+      context.addChatRun(clientRunId, {
+        sessionKey: p.sessionKey,
+        clientRunId,
+      });
+
       const ackPayload = {
         runId: clientRunId,
         status: "started" as const,
@@ -488,6 +524,9 @@ export const chatHandlers: GatewayRequestHandlers = {
           context.logGateway.warn(`webchat dispatch failed: ${formatForLog(err)}`);
         },
         deliver: async (payload, info) => {
+          console.log(
+            `[CHAT.SEND] dispatcher.deliver called: kind=${info.kind}, text=${payload.text?.substring(0, 50)}`,
+          );
           if (info.kind !== "final") {
             return;
           }
@@ -500,6 +539,7 @@ export const chatHandlers: GatewayRequestHandlers = {
       });
 
       let agentRunStarted = false;
+      console.log(`[CHAT.SEND] Starting dispatchInboundMessage for runId=${clientRunId}`);
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -521,6 +561,9 @@ export const chatHandlers: GatewayRequestHandlers = {
         },
       })
         .then(() => {
+          console.log(
+            `[CHAT.SEND] .then() called: agentRunStarted=${agentRunStarted}, finalReplyParts.length=${finalReplyParts.length}`,
+          );
           if (!agentRunStarted) {
             const combinedReply = finalReplyParts
               .map((part) => part.trim())
@@ -570,6 +613,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
+          console.log(`[CHAT.SEND] Error caught for runId=${clientRunId}:`, String(err));
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
           context.dedupe.set(`chat:${clientRunId}`, {
             ts: Date.now(),
@@ -581,12 +625,17 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             error,
           });
+          console.log(`[CHAT.SEND] Calling broadcastChatError for runId=${clientRunId}`);
           broadcastChatError({
             context,
             runId: clientRunId,
             sessionKey: p.sessionKey,
             errorMessage: String(err),
+            sessionId: entry?.sessionId ?? clientRunId,
+            storePath,
+            sessionFile: entry?.sessionFile,
           });
+          console.log(`[CHAT.SEND] broadcastChatError completed for runId=${clientRunId}`);
         })
         .finally(() => {
           context.chatAbortControllers.delete(clientRunId);

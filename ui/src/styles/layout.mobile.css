@@ -2,45 +2,19 @@
    Mobile Layout
    =========================================== */
 
-/* Tablet: Horizontal nav */
+/* Tablet: Narrower left sidebar (never horizontal) */
 @media (max-width: 1100px) {
-  .nav {
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: 4px;
-    padding: 10px 14px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .nav-group {
-    display: contents;
-  }
-
-  .nav-group__items {
-    display: contents;
-  }
-
-  .nav-label {
-    display: none;
-  }
-
-  .nav-group--collapsed .nav-group__items {
-    display: contents;
+  .shell {
+    --shell-nav-width: 180px;
   }
 
   .nav-item {
-    padding: 8px 14px;
+    padding: 6px 10px;
     font-size: 13px;
-    border-radius: var(--radius-md);
-    white-space: nowrap;
-    flex-shrink: 0;
+  }
+
+  .nav-label {
+    font-size: 10px;
   }
 }
 
@@ -94,32 +68,23 @@
     display: none;
   }
 
-  /* Nav */
+  /* Nav - auto-collapse sidebar on small screens */
+  .shell {
+    --shell-nav-width: 160px;
+  }
+
   .nav {
     padding: 8px 10px;
-    gap: 4px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .nav-group {
-    display: contents;
+    gap: 2px;
   }
 
   .nav-label {
-    display: none;
+    font-size: 9px;
   }
 
   .nav-item {
-    padding: 6px 10px;
+    padding: 5px 8px;
     font-size: 12px;
-    border-radius: var(--radius-md);
-    white-space: nowrap;
-    flex-shrink: 0;
   }
 
   /* Content */
@@ -370,5 +335,30 @@
   .theme-icon {
     width: 11px;
     height: 11px;
+  }
+
+  /* Models page mobile */
+  .models-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .models-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .provider-header {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .model-item {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .model-badge {
+    margin-left: 0;
   }
 }

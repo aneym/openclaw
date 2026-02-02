@@ -4,6 +4,7 @@ import type { AppViewState } from "./app-view-state";
 import type { ThemeMode } from "./theme";
 import type { ThemeTransitionContext } from "./theme-transition";
 import type { SessionsListResult } from "./types";
+import type { ModelCatalogEntry } from "./ui-types";
 import { refreshChat } from "./app-chat";
 import { syncUrlWithSessionKey } from "./app-settings";
 import { loadChatHistory } from "./controllers/chat";
@@ -84,7 +85,8 @@ export function renderChatControls(state: AppViewState) {
       <circle cx="12" cy="12" r="3"></circle>
     </svg>
   `;
-  const splitActive = Boolean(state.splitLayout);
+  // Split is "active" when we have multiple panes (root is a branch, not a leaf)
+  const splitActive = state.splitLayout?.root?.kind === "branch";
   const disableSplitToggle = state.onboarding;
   // Split pane icon (columns)
   const splitIcon = html`
@@ -137,6 +139,7 @@ export function renderChatControls(state: AppViewState) {
           )}
         </select>
       </label>
+      ${renderModelPicker(state)}
       <button
         class="btn btn--sm btn--icon"
         ?disabled=${state.chatLoading || !state.connected}
@@ -194,12 +197,12 @@ export function renderChatControls(state: AppViewState) {
       <button
         class="btn btn--sm btn--icon ${splitActive ? "active" : ""}"
         ?disabled=${disableSplitToggle}
-        @click=${() => {
+        @click=${async () => {
           if (disableSplitToggle) {
             return;
           }
           if (splitActive) {
-            state.exitSplitMode();
+            await state.exitSplitMode();
           } else {
             state.splitPane("horizontal");
           }
@@ -225,6 +228,70 @@ export function renderChatControls(state: AppViewState) {
       >
         ${icons.gitBranch}
       </button>
+    </div>
+  `;
+}
+
+export function renderModelPicker(state: AppViewState) {
+  const models = state.modelsList;
+  const selected = state.settings.selectedModel;
+
+  // Get default models from config snapshot (agents.defaults.models)
+  const snapshot = state.hello?.snapshot as
+    | { agentDefaults?: { models?: Record<string, unknown> } }
+    | undefined;
+  const defaultModels = snapshot?.agentDefaults?.models;
+  const defaultModelIds = defaultModels ? Object.keys(defaultModels) : [];
+
+  // Filter to only show models that are in the user's default models config
+  const availableModels = defaultModelIds.length
+    ? models.filter((entry) => {
+        const modelRef = `${entry.provider}/${entry.id}`;
+        return defaultModelIds.some((id) => {
+          // Match by exact ref or by alias value
+          if (id === modelRef) return true;
+          const config = defaultModels?.[id] as
+            | { alias?: string; provider?: string; model?: string }
+            | undefined;
+          if (!config) return false;
+          // Check if the alias points to this model
+          const aliasRef = config.alias;
+          if (aliasRef === modelRef) return true;
+          // Check if provider/model matches
+          if (config.provider === entry.provider && config.model === entry.id)
+            return true;
+          return false;
+        });
+      })
+    : models; // Fallback to all models if no defaults configured
+
+  // Format model ref for display
+  const formatModelRef = (entry: ModelCatalogEntry) => {
+    return `${entry.provider}/${entry.id}`;
+  };
+
+  return html`
+    <div class="model-picker">
+      <label class="field model-picker__field">
+        <select
+          .value=${selected}
+          ?disabled=${!state.connected || state.modelsLoading}
+          @change=${(e: Event) => {
+            const next = (e.target as HTMLSelectElement).value;
+            void state.handleModelSelect(next);
+          }}
+        >
+          <option value="">Default Model</option>
+          ${repeat(
+            availableModels,
+            (entry) => formatModelRef(entry),
+            (entry) =>
+              html`<option value=${formatModelRef(entry)}>
+                ${entry.name} (${entry.provider})
+              </option>`,
+          )}
+        </select>
+      </label>
     </div>
   `;
 }

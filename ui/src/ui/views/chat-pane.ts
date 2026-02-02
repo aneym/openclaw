@@ -293,9 +293,21 @@ export function renderChatPane(props: ChatPaneProps) {
     <div
       class="split-pane ${isFocused ? "split-pane--focused" : ""}"
       data-pane-id=${leaf.id}
-      @click=${() => {
+      @click=${(e: MouseEvent) => {
         if (leaf.id !== state.focusedPaneId) {
           state.focusPane(leaf.id);
+        } else {
+          // Already focused — still focus the textarea on click
+          // (unless the user clicked an interactive element)
+          const target = e.target as HTMLElement;
+          const isInteractive = target.closest('button, a, input, textarea, select, [contenteditable], .chat-compose');
+          if (!isInteractive) {
+            const paneEl = (e.currentTarget as HTMLElement);
+            const textarea = paneEl.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+            if (textarea && !textarea.disabled) {
+              textarea.focus();
+            }
+          }
         }
       }}
       @focusin=${() => {
