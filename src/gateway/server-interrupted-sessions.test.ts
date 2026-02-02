@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import type { InterruptedSession } from "../infra/running-sessions.js";
 
 vi.mock("../infra/running-sessions.js", () => ({

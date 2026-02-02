@@ -6,7 +6,7 @@ import { colors, statusColors } from '@/lib/colors'
 export function ConnectionStatus() {
   const { state } = useGateway()
 
-  if (state === 'connected') return null
+  if (state === 'connected') {return null}
 
   const color =
     state === 'connecting' ? statusColors.connecting : statusColors.disconnected

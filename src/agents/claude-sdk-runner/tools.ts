@@ -17,8 +17,8 @@ export async function createMcpServerFromTools(tools: AnyAgentTool[]) {
     // MCP layer. This preserves the original schema description for the LLM while letting the
     // handler receive the raw parsed object.
     // biome-ignore lint/suspicious/noExplicitAny: TypeBox schema → Zod passthrough
-    const props = ((t.parameters as any)?.properties ?? {}) as Record<string, unknown>;
-    // biome-ignore lint/suspicious/noExplicitAny: Zod shape for SDK tool registration
+    const props = (t.parameters?.properties ?? {}) as Record<string, unknown>;
+    // eslint-disable-next-line typescript-eslint/no-explicit-any -- Zod shape for SDK tool registration
     const zodShape: Record<string, any> = {};
     for (const key of Object.keys(props)) {
       zodShape[key] = z.any();
@@ -28,7 +28,7 @@ export async function createMcpServerFromTools(tools: AnyAgentTool[]) {
       t.name,
       t.description,
       zodShape,
-      // biome-ignore lint/suspicious/noExplicitAny: args come from SDK tool dispatch
+      // eslint-disable-next-line typescript-eslint/no-explicit-any -- args come from SDK tool dispatch
       async (args: any) => {
         try {
           const result = await t.execute(`sdk-${Date.now()}`, args as Record<string, unknown>);

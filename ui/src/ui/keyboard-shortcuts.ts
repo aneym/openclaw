@@ -10,85 +10,87 @@
  */
 
 type ShortcutHost = {
-  tab: string
-  splitLayout: unknown | null
-  splitPane: (direction: 'horizontal' | 'vertical') => void
-  closePane: (paneId?: string) => void
-  focusNextPane: () => void
-  toggleNav: () => void
-  archiveCurrentSession: () => void
-}
+  tab: string;
+  splitLayout: unknown | null;
+  splitPane: (direction: "horizontal" | "vertical") => void;
+  closePane: (paneId?: string) => void;
+  focusNextPane: () => void;
+  toggleNav: () => void;
+  archiveCurrentSession: () => void;
+};
 
-let handler: ((e: KeyboardEvent) => void) | null = null
+let handler: ((e: KeyboardEvent) => void) | null = null;
 
 export function installKeyboardShortcuts(host: ShortcutHost) {
-  removeKeyboardShortcuts()
+  removeKeyboardShortcuts();
 
   handler = (e: KeyboardEvent) => {
-    const isMeta = e.metaKey || e.ctrlKey
+    const isMeta = e.metaKey || e.ctrlKey;
 
     // Cmd+\ -> toggle sidebar (global, works on all tabs)
-    if (isMeta && e.key === '\\') {
-      e.preventDefault()
-      e.stopPropagation()
-      host.toggleNav()
-      return
+    if (isMeta && e.key === "\\") {
+      e.preventDefault();
+      e.stopPropagation();
+      host.toggleNav();
+      return;
     }
 
     // Cmd+E -> archive current session (global, works on all tabs)
-    if (isMeta && !e.shiftKey && e.key === 'e') {
-      e.preventDefault()
-      e.stopPropagation()
-      host.archiveCurrentSession()
-      return
+    if (isMeta && !e.shiftKey && e.key === "e") {
+      e.preventDefault();
+      e.stopPropagation();
+      host.archiveCurrentSession();
+      return;
     }
 
     // Only active on the chat tab
-    if (host.tab !== 'chat') return
+    if (host.tab !== "chat") {
+      return;
+    }
 
     // Cmd+D -> split horizontal
-    if (isMeta && !e.shiftKey && e.key === 'd') {
-      e.preventDefault()
-      e.stopPropagation()
-      host.splitPane('horizontal')
-      return
+    if (isMeta && !e.shiftKey && e.key === "d") {
+      e.preventDefault();
+      e.stopPropagation();
+      host.splitPane("horizontal");
+      return;
     }
 
     // Shift+Cmd+D -> split vertical
-    if (isMeta && e.shiftKey && (e.key === 'D' || e.key === 'd')) {
-      e.preventDefault()
-      e.stopPropagation()
-      host.splitPane('vertical')
-      return
+    if (isMeta && e.shiftKey && (e.key === "D" || e.key === "d")) {
+      e.preventDefault();
+      e.stopPropagation();
+      host.splitPane("vertical");
+      return;
     }
 
     // Cmd+] -> focus next pane
-    if (isMeta && e.key === ']') {
+    if (isMeta && e.key === "]") {
       if (host.splitLayout) {
-        e.preventDefault()
-        e.stopPropagation()
-        host.focusNextPane()
+        e.preventDefault();
+        e.stopPropagation();
+        host.focusNextPane();
       }
-      return
+      return;
     }
 
     // Ctrl+W -> close focused pane (only Ctrl, not Cmd which closes browser tab)
-    if (e.ctrlKey && !e.metaKey && e.key === 'w') {
+    if (e.ctrlKey && !e.metaKey && e.key === "w") {
       if (host.splitLayout) {
-        e.preventDefault()
-        e.stopPropagation()
-        host.closePane()
+        e.preventDefault();
+        e.stopPropagation();
+        host.closePane();
       }
-      return
+      return;
     }
-  }
+  };
 
-  document.addEventListener('keydown', handler, true)
+  document.addEventListener("keydown", handler, true);
 }
 
 export function removeKeyboardShortcuts() {
   if (handler) {
-    document.removeEventListener('keydown', handler, true)
-    handler = null
+    document.removeEventListener("keydown", handler, true);
+    handler = null;
   }
 }

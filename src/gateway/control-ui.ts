@@ -373,8 +373,12 @@ const WEB_UI_BASE = "/app";
  */
 export function handleWebUiHttpRequest(req: IncomingMessage, res: ServerResponse): boolean {
   const urlRaw = req.url;
-  if (!urlRaw) return false;
-  if (req.method !== "GET" && req.method !== "HEAD") return false;
+  if (!urlRaw) {
+    return false;
+  }
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    return false;
+  }
 
   const url = new URL(urlRaw, "http://localhost");
   const pathname = url.pathname;
@@ -387,7 +391,9 @@ export function handleWebUiHttpRequest(req: IncomingMessage, res: ServerResponse
     return true;
   }
 
-  if (!pathname.startsWith(`${WEB_UI_BASE}/`)) return false;
+  if (!pathname.startsWith(`${WEB_UI_BASE}/`)) {
+    return false;
+  }
 
   const root = resolveWebUiRoot();
   if (!root) {
@@ -401,9 +407,13 @@ export function handleWebUiHttpRequest(req: IncomingMessage, res: ServerResponse
 
   const subPath = pathname.slice(WEB_UI_BASE.length);
   const rel = (() => {
-    if (subPath === "/") return "";
+    if (subPath === "/") {
+      return "";
+    }
     const assetsIndex = subPath.indexOf("/assets/");
-    if (assetsIndex >= 0) return subPath.slice(assetsIndex + 1);
+    if (assetsIndex >= 0) {
+      return subPath.slice(assetsIndex + 1);
+    }
     return subPath.slice(1);
   })();
   const requested = rel && !rel.endsWith("/") ? rel : `${rel}index.html`;

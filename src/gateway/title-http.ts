@@ -46,7 +46,9 @@ export async function handleTitleHttpRequest(
   opts: { auth: ResolvedGatewayAuth; trustedProxies?: string[] },
 ): Promise<boolean> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
-  if (url.pathname !== "/api/utils/generate-title") return false;
+  if (url.pathname !== "/api/utils/generate-title") {
+    return false;
+  }
 
   if (req.method !== "POST") {
     sendMethodNotAllowed(res);
@@ -67,7 +69,9 @@ export async function handleTitleHttpRequest(
   }
 
   const body = await readJsonBodyOrError(req, res, 64 * 1024);
-  if (body === undefined) return true;
+  if (body === undefined) {
+    return true;
+  }
 
   const payload = body as TitleRequest;
   const messages = payload.messages;

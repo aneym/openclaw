@@ -17,7 +17,10 @@
   cursor: pointer;
   user-select: none;
   list-style: none;
-  transition: border-color 120ms ease-out, background 120ms ease-out, color 120ms ease-out;
+  transition:
+    border-color 120ms ease-out,
+    background 120ms ease-out,
+    color 120ms ease-out;
 }
 
 .chat-tool-collapse__summary::-webkit-details-marker {
@@ -72,7 +75,9 @@
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
-  transition: border-color 120ms ease-out, background 120ms ease-out;
+  transition:
+    border-color 120ms ease-out,
+    background 120ms ease-out;
 }
 
 .chat-tool-chip--clickable {

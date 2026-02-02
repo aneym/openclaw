@@ -20,8 +20,8 @@ export interface UseChat {
 }
 
 function extractText(content: string | ContentBlock[] | undefined): string {
-  if (!content) return ''
-  if (typeof content === 'string') return content
+  if (!content) {return ''}
+  if (typeof content === 'string') {return content}
   const textBlock = content.find(
     (b): b is { type: 'text'; text: string } => b.type === 'text',
   )
@@ -45,12 +45,12 @@ export function useChat(sessionKey: string): UseChat {
   runIdRef.current = runId
 
   const refresh = useCallback(() => {
-    if (!client || state !== 'connected' || !sessionKey) return
+    if (!client || state !== 'connected' || !sessionKey) {return}
     setLoading(true)
     client
       .request<ChatHistoryResult>('chat.history', { sessionKey, limit: 200 })
       .then((res) => {
-        if (sessionKeyRef.current !== sessionKey) return
+        if (sessionKeyRef.current !== sessionKey) {return}
         setMessages(Array.isArray(res.messages) ? res.messages : [])
       })
       .catch(() => {})
@@ -59,9 +59,9 @@ export function useChat(sessionKey: string): UseChat {
 
   const send = useCallback(
     (text: string) => {
-      if (!client || state !== 'connected' || !sessionKey) return
+      if (!client || state !== 'connected' || !sessionKey) {return}
       const trimmed = text.trim()
-      if (!trimmed) return
+      if (!trimmed) {return}
 
       const userMsg: ChatMessage = {
         role: 'user',
@@ -86,7 +86,7 @@ export function useChat(sessionKey: string): UseChat {
   )
 
   const abort = useCallback(() => {
-    if (!client || state !== 'connected' || !sessionKey) return
+    if (!client || state !== 'connected' || !sessionKey) {return}
     client
       .request('chat.abort', {
         sessionKey,
@@ -97,15 +97,15 @@ export function useChat(sessionKey: string): UseChat {
 
   // Subscribe to chat events filtered by sessionKey
   useEffect(() => {
-    if (!client) return
+    if (!client) {return}
 
     const refreshRef = { current: refresh }
     refreshRef.current = refresh
 
     return client.onEvent((evt) => {
-      if (evt.event !== 'chat') return
+      if (evt.event !== 'chat') {return}
       const payload = evt.payload as ChatEventPayload | undefined
-      if (!payload || payload.sessionKey !== sessionKeyRef.current) return
+      if (!payload || payload.sessionKey !== sessionKeyRef.current) {return}
 
       if (payload.state === 'delta') {
         if (payload.runId && !runIdRef.current) {
@@ -113,7 +113,7 @@ export function useChat(sessionKey: string): UseChat {
           runIdRef.current = payload.runId
         }
         const text = payload.message ? extractText(payload.message.content) : null
-        if (text) setStreamText(text)
+        if (text) {setStreamText(text)}
       } else if (
         payload.state === 'final' ||
         payload.state === 'error' ||
@@ -136,15 +136,15 @@ export function useChat(sessionKey: string): UseChat {
     setRunId(null)
     runIdRef.current = null
 
-    if (state !== 'connected' || !sessionKey || !client) return
+    if (state !== 'connected' || !sessionKey || !client) {return}
     refresh()
     client
       .request<ChatStatusResult>('chat.status', { sessionKey })
       .then((res) => {
-        if (sessionKeyRef.current !== sessionKey) return
+        if (sessionKeyRef.current !== sessionKey) {return}
         if (res?.activeRun?.runId) {
           setRunId(res.activeRun.runId)
-          if (res.activeRun.streamText) setStreamText(res.activeRun.streamText)
+          if (res.activeRun.streamText) {setStreamText(res.activeRun.streamText)}
         }
       })
       .catch(() => {})

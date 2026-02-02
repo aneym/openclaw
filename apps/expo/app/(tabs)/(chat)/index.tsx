@@ -31,7 +31,7 @@ export default function ThreadListScreen() {
       threads.length > 0 ||
       didAutoCreate
     )
-      return
+      {return}
     setDidAutoCreate(true)
     const thread = createThread('New thread')
     router.push(`/thread/${thread.id}`)
@@ -56,7 +56,7 @@ export default function ThreadListScreen() {
         undefined,
         (text) => {
           const trimmed = text?.trim()
-          if (trimmed) renameThread(thread.id, trimmed)
+          if (trimmed) {renameThread(thread.id, trimmed)}
         },
         'plain-text',
         thread.label,
@@ -82,8 +82,8 @@ export default function ThreadListScreen() {
   const toggleSection = useCallback((title: string) => {
     setCollapsed((prev) => {
       const next = new Set(prev)
-      if (next.has(title)) next.delete(title)
-      else next.add(title)
+      if (next.has(title)) {next.delete(title)}
+      else {next.add(title)}
       return next
     })
   }, [])

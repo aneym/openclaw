@@ -43,13 +43,13 @@ export default function SettingsScreen() {
     }
 
     let wsUrl = trimmedUrl
-    if (wsUrl.startsWith('http://')) wsUrl = wsUrl.replace('http://', 'ws://')
-    else if (wsUrl.startsWith('https://')) wsUrl = wsUrl.replace('https://', 'wss://')
-    else if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) wsUrl = `ws://${wsUrl}`
+    if (wsUrl.startsWith('http://')) {wsUrl = wsUrl.replace('http://', 'ws://')}
+    else if (wsUrl.startsWith('https://')) {wsUrl = wsUrl.replace('https://', 'wss://')}
+    else if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {wsUrl = `ws://${wsUrl}`}
 
     saveSettings({ gatewayUrl: wsUrl, sessionKey: '', thinkingLevel })
-    if (token.trim()) setSecureValue('token', token.trim())
-    if (password.trim()) setSecureValue('password', password.trim())
+    if (token.trim()) {setSecureValue('token', token.trim())}
+    if (password.trim()) {setSecureValue('password', password.trim())}
 
     gateway.connect(wsUrl, token.trim() || undefined, password.trim() || undefined)
   }, [url, token, password, thinkingLevel, gateway])

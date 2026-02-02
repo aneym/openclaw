@@ -367,8 +367,8 @@ export const configHandlers: GatewayRequestHandlers = {
     const allowDestructive = (params as { allowDestructive?: unknown }).allowDestructive === true;
     if (snapshot.exists && snapshot.config && !allowDestructive) {
       const existingKeys = Object.keys(snapshot.config).filter((k) => k !== "meta");
-      const newKeys = Object.keys(validated.config).filter((k) => k !== "meta");
-      const droppedKeys = existingKeys.filter((k) => !newKeys.includes(k));
+      const newKeys = new Set(Object.keys(validated.config).filter((k) => k !== "meta"));
+      const droppedKeys = existingKeys.filter((k) => !newKeys.has(k));
       if (droppedKeys.length > 0 && droppedKeys.length >= existingKeys.length * 0.5) {
         respond(
           false,

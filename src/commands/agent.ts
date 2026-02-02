@@ -521,7 +521,9 @@ export async function agentCommand(
       payloads,
     });
   } finally {
-    if (sessionKey) clearSessionRunning(sessionKey);
+    if (sessionKey) {
+      clearSessionRunning(sessionKey);
+    }
     clearAgentRunContext(runId);
   }
 }

@@ -7,8 +7,8 @@
  * and automatically removes them. Reports what was fixed.
  */
 
-const fs = require('fs')
-const path = require('path')
+const fs = require("fs");
+const path = require("path");
 
 const LLM_NOISE_PATTERNS = [
   /^\/\/\s*(?:This|Here we|Now let['']s|Now we|Let['']s|We)\s/i,
@@ -20,7 +20,7 @@ const LLM_NOISE_PATTERNS = [
   /^\/\/\s*(?:Done|End|Start|Begin|Continue|Next|Proceed|Execute|Run|Finish|Complete)\s*$/i,
   /^\/\/\s*$/,
   /^\/\/\s*end\s+(?:of\s+)?(?:function|method|class|if|else|for|while|switch|try|catch)\s*$/i,
-]
+];
 
 const ALLOWLIST_PATTERNS = [
   /because|since|due to|in order to|so that|otherwise/i,
@@ -36,132 +36,148 @@ const ALLOWLIST_PATTERNS = [
   /business|requirement|spec|design|decision/i,
   /intentionally|deliberately|explicitly|purposely/i,
   /see\s+(?:also|:|file|related)/i,
-]
+];
 
-const CODE_EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.vue', '.svelte'])
+const CODE_EXTENSIONS = new Set([".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte"]);
 
 function isCodeFile(filePath) {
-  if (!filePath) return false
-  return CODE_EXTENSIONS.has(path.extname(filePath).toLowerCase())
+  if (!filePath) {
+    return false;
+  }
+  return CODE_EXTENSIONS.has(path.extname(filePath).toLowerCase());
 }
 
 function isNoiseComment(line) {
   for (const pattern of ALLOWLIST_PATTERNS) {
-    if (pattern.test(line)) return false
+    if (pattern.test(line)) {
+      return false;
+    }
   }
   for (const pattern of LLM_NOISE_PATTERNS) {
-    if (pattern.test(line)) return true
+    if (pattern.test(line)) {
+      return true;
+    }
   }
-  return false
+  return false;
 }
 
 function findAndRemoveNoiseComments(content) {
-  const lines = content.split('\n')
-  const cleanedLines = []
-  const removed = []
-  let inBlockComment = false
+  const lines = content.split("\n");
+  const cleanedLines = [];
+  const removed = [];
+  let inBlockComment = false;
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]
-    const trimmed = line.trim()
+    const line = lines[i];
+    const trimmed = line.trim();
 
     if (inBlockComment) {
-      if (trimmed.includes('*/')) inBlockComment = false
-      if (trimmed.startsWith('*') && !trimmed.startsWith('*/') && isNoiseComment(trimmed)) {
-        removed.push(trimmed)
-        continue
+      if (trimmed.includes("*/")) {
+        inBlockComment = false;
       }
-      cleanedLines.push(line)
-      continue
+      if (trimmed.startsWith("*") && !trimmed.startsWith("*/") && isNoiseComment(trimmed)) {
+        removed.push(trimmed);
+        continue;
+      }
+      cleanedLines.push(line);
+      continue;
     }
 
-    if (trimmed.startsWith('/*')) {
-      inBlockComment = !trimmed.includes('*/')
+    if (trimmed.startsWith("/*")) {
+      inBlockComment = !trimmed.includes("*/");
       if (isNoiseComment(trimmed)) {
-        removed.push(trimmed)
-        continue
+        removed.push(trimmed);
+        continue;
       }
-      cleanedLines.push(line)
-      continue
+      cleanedLines.push(line);
+      continue;
     }
 
-    if (trimmed.startsWith('//') && isNoiseComment(trimmed)) {
-      removed.push(trimmed)
-      continue
+    if (trimmed.startsWith("//") && isNoiseComment(trimmed)) {
+      removed.push(trimmed);
+      continue;
     }
 
-    cleanedLines.push(line)
+    cleanedLines.push(line);
   }
 
-  return { cleaned: cleanedLines.join('\n'), removed }
+  return { cleaned: cleanedLines.join("\n"), removed };
 }
 
 function extractFilePath(toolInput) {
-  if (!toolInput) return null
-  if (toolInput.file_path) return toolInput.file_path
-  if (toolInput.edits && Array.isArray(toolInput.edits)) {
-    const paths = toolInput.edits.map(e => e.file_path).filter(Boolean)
-    return paths[0] || null
+  if (!toolInput) {
+    return null;
   }
-  return null
+  if (toolInput.file_path) {
+    return toolInput.file_path;
+  }
+  if (toolInput.edits && Array.isArray(toolInput.edits)) {
+    const paths = toolInput.edits.map((e) => e.file_path).filter(Boolean);
+    return paths[0] || null;
+  }
+  return null;
 }
 
 function main() {
-  let inputData = ''
+  let inputData = "";
 
-  process.stdin.setEncoding('utf8')
-  process.stdin.on('data', chunk => { inputData += chunk })
+  process.stdin.setEncoding("utf8");
+  process.stdin.on("data", (chunk) => {
+    inputData += chunk;
+  });
 
-  process.stdin.on('end', () => {
+  process.stdin.on("end", () => {
     try {
-      const hookData = JSON.parse(inputData)
-      const toolInput = hookData.tool_input || {}
-      const filePath = extractFilePath(toolInput)
+      const hookData = JSON.parse(inputData);
+      const toolInput = hookData.tool_input || {};
+      const filePath = extractFilePath(toolInput);
 
       if (!filePath || !isCodeFile(filePath)) {
-        process.exit(0)
-        return
+        process.exit(0);
+        return;
       }
 
-      let content
+      let content;
       try {
-        content = fs.readFileSync(filePath, 'utf8')
+        content = fs.readFileSync(filePath, "utf8");
       } catch {
-        process.exit(0)
-        return
+        process.exit(0);
+        return;
       }
 
-      const { cleaned, removed } = findAndRemoveNoiseComments(content)
+      const { cleaned, removed } = findAndRemoveNoiseComments(content);
 
       if (removed.length === 0) {
-        process.exit(0)
-        return
+        process.exit(0);
+        return;
       }
 
-      fs.writeFileSync(filePath, cleaned, 'utf8')
+      fs.writeFileSync(filePath, cleaned, "utf8");
 
-      const filename = path.basename(filePath)
-      let message = `🧹 AUTO-FIXED: Removed ${removed.length} noise comment${removed.length > 1 ? 's' : ''} from ${filename}:\n`
+      const filename = path.basename(filePath);
+      let message = `🧹 AUTO-FIXED: Removed ${removed.length} noise comment${removed.length > 1 ? "s" : ""} from ${filename}:\n`;
       for (const r of removed.slice(0, 5)) {
-        const display = r.length > 50 ? r.slice(0, 47) + '...' : r
-        message += `  - ${display}\n`
+        const display = r.length > 50 ? r.slice(0, 47) + "..." : r;
+        message += `  - ${display}\n`;
       }
       if (removed.length > 5) {
-        message += `  ... and ${removed.length - 5} more\n`
+        message += `  ... and ${removed.length - 5} more\n`;
       }
 
-      console.log(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PostToolUse',
-          additionalContext: message,
-        },
-      }))
+      console.log(
+        JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PostToolUse",
+            additionalContext: message,
+          },
+        }),
+      );
 
-      process.exit(0)
+      process.exit(0);
     } catch {
-      process.exit(0)
+      process.exit(0);
     }
-  })
+  });
 }
 
-main()
+main();

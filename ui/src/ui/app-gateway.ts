@@ -1,9 +1,13 @@
 import type { OpenClawApp } from "./app";
 import type { EventLogEntry } from "./app-events";
 import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import type { GatewayEventFrame, GatewayHelloOk } from "./gateway";
 import type { Tab } from "./navigation";
+import type { PaneState } from "./pane-state";
+import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
+import type { ThreadState } from "./thread-state";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat";
 import { applySettings, loadCron, refreshActiveTab, setLastActiveSessionKey } from "./app-settings";
@@ -17,7 +21,11 @@ import {
 import { loadAgents } from "./controllers/agents";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
 import { loadChatHistory } from "./controllers/chat";
-import { handleChatEvent, handleChatEventForThread, type ChatEventPayload } from "./controllers/chat";
+import {
+  handleChatEvent,
+  handleChatEventForThread,
+  type ChatEventPayload,
+} from "./controllers/chat";
 import { loadDevices } from "./controllers/devices";
 import {
   addExecApproval,
@@ -25,20 +33,16 @@ import {
   parseExecApprovalResolved,
   removeExecApproval,
 } from "./controllers/exec-approval";
+import { loadNodes } from "./controllers/nodes";
+import { loadSessions } from "./controllers/sessions";
 import {
   addToolApproval,
   parseToolApprovalRequested,
   parseToolApprovalResolved,
   removeToolApproval,
 } from "./controllers/tool-approval";
-import { loadNodes } from "./controllers/nodes";
-import { loadSessions } from "./controllers/sessions";
 import { GatewayBrowserClient } from "./gateway";
-import type { ToolApprovalRequest } from "./controllers/tool-approval";
-import type { ThreadState } from "./thread-state";
-import type { SplitPaneLayout } from "./split-tree";
 import { allLeaves } from "./split-tree";
-import type { PaneState } from "./pane-state";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -270,13 +274,13 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
     // In split-pane mode, check if any visible pane matches the session key
     if (host.splitLayout && agentSessionKey) {
-      const visibleKeys = new Set(
-        allLeaves(host.splitLayout.root).map((l) => l.threadId),
-      );
+      const visibleKeys = new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId));
       if (!visibleKeys.has(agentSessionKey)) {
         // Route to background thread: skip tool stream processing
         const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
-        if (bgThreadId && bgThreadId !== host.activeThreadId) return;
+        if (bgThreadId && bgThreadId !== host.activeThreadId) {
+          return;
+        }
       } else if (agentSessionKey !== host.sessionKey) {
         // Visible-but-not-focused pane: route to per-thread tool stream
         const paneThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
@@ -290,14 +294,13 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     } else if (agentSessionKey && agentSessionKey !== host.sessionKey) {
       // Single pane mode: existing background thread logic
       const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
-      if (bgThreadId && bgThreadId !== host.activeThreadId) return;
+      if (bgThreadId && bgThreadId !== host.activeThreadId) {
+        return;
+      }
     }
 
     // Focused session: use host-level tool stream
-    handleAgentEvent(
-      host as unknown as Parameters<typeof handleAgentEvent>[0],
-      agentPayload,
-    );
+    handleAgentEvent(host as unknown as Parameters<typeof handleAgentEvent>[0], agentPayload);
     return;
   }
 
@@ -311,7 +314,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         if (!host.runningSessions.has(eventSessionKey)) {
           host.runningSessions = new Set([...host.runningSessions, eventSessionKey]);
         }
-      } else if (payload.state === "final" || payload.state === "error" || payload.state === "aborted") {
+      } else if (
+        payload.state === "final" ||
+        payload.state === "error" ||
+        payload.state === "aborted"
+      ) {
         if (host.runningSessions.has(eventSessionKey)) {
           const next = new Set(host.runningSessions);
           next.delete(eventSessionKey);
@@ -326,7 +333,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       : null;
 
     // Check if this event is for a background thread
-    const isVisibleInPane = visibleSessionKeys?.has(eventSessionKey ?? '');
+    const isVisibleInPane = visibleSessionKeys?.has(eventSessionKey ?? "");
     if (eventSessionKey && eventSessionKey !== host.sessionKey && !isVisibleInPane) {
       const bgThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
       if (bgThreadId && bgThreadId !== host.activeThreadId) {
@@ -502,20 +509,20 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
  * Load chat history into a specific (non-active) thread state.
  * Used when a visible-but-not-focused pane's run completes.
  */
-async function loadChatHistoryForThread(
-  host: GatewayHost,
-  sessionKey: string,
-  threadId: string,
-) {
-  if (!host.connected || !host.client) return;
+async function loadChatHistoryForThread(host: GatewayHost, sessionKey: string, threadId: string) {
+  if (!host.connected || !host.client) {
+    return;
+  }
   const thread = host.threads.get(threadId);
-  if (!thread) return;
+  if (!thread) {
+    return;
+  }
   thread._historyLoading = true;
   try {
-    const res = (await host.client.request("chat.history", {
+    const res = await host.client.request("chat.history", {
       sessionKey,
       limit: 200,
-    })) as { messages?: unknown[]; thinkingLevel?: string | null };
+    });
     thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     thread.chatThinkingLevel = res.thinkingLevel ?? null;
     host.threads = new Map(host.threads);
@@ -531,15 +538,17 @@ async function loadChatHistoryForThread(
  * to restore the stop button after reconnect.
  */
 async function queryChatStatus(host: GatewayHost) {
-  if (!host.connected || !host.client) return;
+  if (!host.connected || !host.client) {
+    return;
+  }
 
   // Collect session keys that have an active run so we can rebuild runningSessions
   const activeSessionKeys: string[] = [];
 
   try {
-    const res = (await host.client.request("chat.status", {
+    const res = await host.client.request("chat.status", {
       sessionKey: host.sessionKey,
-    })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
+    });
     if (res?.activeRun?.runId) {
       host.chatRunId = res.activeRun.runId;
       activeSessionKeys.push(host.sessionKey);
@@ -547,10 +556,12 @@ async function queryChatStatus(host: GatewayHost) {
       // - If streamText has content → show the streamed text
       // - If streamText is empty/null → show the three-dot reading indicator
       // Either way, chatStream must be non-null to signal "active run".
-      const streamText = typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+      const streamText =
+        typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
       (host as unknown as { chatStream: string | null }).chatStream = streamText;
       if (!(host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt) {
-        (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = Date.now();
+        (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt =
+          Date.now();
       }
     }
   } catch {
@@ -560,11 +571,13 @@ async function queryChatStatus(host: GatewayHost) {
   if (host.splitLayout) {
     const leaves = allLeaves(host.splitLayout.root);
     for (const leaf of leaves) {
-      if (leaf.threadId === host.sessionKey) continue;
+      if (leaf.threadId === host.sessionKey) {
+        continue;
+      }
       try {
-        const res = (await host.client!.request("chat.status", {
+        const res = await host.client.request("chat.status", {
           sessionKey: leaf.threadId,
-        })) as { activeRun?: { runId: string; streamText?: string | null } | null } | undefined;
+        });
         if (res?.activeRun?.runId) {
           activeSessionKeys.push(leaf.threadId);
           const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
@@ -572,7 +585,8 @@ async function queryChatStatus(host: GatewayHost) {
           if (thread) {
             thread.chatRunId = res.activeRun.runId;
             // Restore stream state: non-null chatStream signals "active run"
-            const paneStreamText = typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+            const paneStreamText =
+              typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
             thread.chatStream = paneStreamText;
             if (!thread.chatStreamStartedAt) {
               thread.chatStreamStartedAt = Date.now();

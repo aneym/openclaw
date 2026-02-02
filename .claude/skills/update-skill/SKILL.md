@@ -8,9 +8,11 @@ allowed-tools: Read, Edit, Glob, AskUserQuestion
 ## Context
 
 ### Available Project Skills
+
 !`ls -la .claude/skills/*/SKILL.md 2>/dev/null | awk '{print $NF}' || echo "No project skills"`
 
 ### Available Personal Skills
+
 !`ls -la ~/.claude/skills/*/SKILL.md 2>/dev/null | awk '{print $NF}' || echo "No personal skills"`
 
 ## Instructions
@@ -18,6 +20,7 @@ allowed-tools: Read, Edit, Glob, AskUserQuestion
 ### Step 1: Find the Skill
 
 Parse `$ARGUMENTS` for the skill name. Search in:
+
 1. `.claude/skills/<name>/SKILL.md` (project)
 2. `~/.claude/skills/<name>/SKILL.md` (personal)
 
@@ -26,6 +29,7 @@ If not found, list available skills and ask user to clarify.
 ### Step 2: Read Current Skill
 
 Read the skill file and understand:
+
 - Current frontmatter (name, allowed-tools, description, etc.)
 - Current context/pre-computed values
 - Current instructions
@@ -33,6 +37,7 @@ Read the skill file and understand:
 ### Step 3: Understand Changes
 
 From `$ARGUMENTS` or by asking the user:
+
 - What should change?
 - What's not working?
 - What should be added/removed?
@@ -42,22 +47,27 @@ From `$ARGUMENTS` or by asking the user:
 Common updates:
 
 **Add Pre-computed Context:**
+
 ```markdown
 ## Context
+
 !`new-command-here`
 ```
 
 **Add/Update Allowed Tools:**
+
 ```yaml
 allowed-tools: ExistingTool, NewTool
 ```
 
 **Add Arguments:**
+
 ```yaml
 argument-hint: <arg1> [optional-arg]
 ```
 
 **Fix Instructions:**
+
 - Make steps clearer
 - Add missing steps
 - Remove unnecessary steps
@@ -65,6 +75,7 @@ argument-hint: <arg1> [optional-arg]
 ### Step 5: Validate
 
 Check the updated skill:
+
 - [ ] Frontmatter is valid YAML
 - [ ] `name` matches directory name
 - [ ] `allowed-tools` includes all needed tools

@@ -40,13 +40,13 @@ export default function ThreadScreen() {
   )
 
   const handleRename = useCallback(() => {
-    if (!thread) return
+    if (!thread) {return}
     Alert.prompt(
       'Rename Thread',
       undefined,
       (text) => {
         const trimmed = text?.trim()
-        if (trimmed) renameThread(thread.id, trimmed)
+        if (trimmed) {renameThread(thread.id, trimmed)}
       },
       'plain-text',
       thread.label,

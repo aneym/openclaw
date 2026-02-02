@@ -170,5 +170,7 @@
 }
 
 @keyframes ProseMirror-cursor-blink {
-  to { visibility: hidden; }
+  to {
+    visibility: hidden;
+  }
 }

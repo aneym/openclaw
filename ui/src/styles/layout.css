@@ -290,7 +290,7 @@
 }
 
 .nav-resize-handle::after {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   bottom: 0;
@@ -384,7 +384,9 @@
   gap: 1px;
   overflow: hidden;
   max-height: 500px;
-  transition: max-height var(--duration-normal, 0.2s) ease, opacity var(--duration-normal, 0.2s) ease;
+  transition:
+    max-height var(--duration-normal, 0.2s) ease,
+    opacity var(--duration-normal, 0.2s) ease;
   opacity: 1;
 }
 

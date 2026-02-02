@@ -1,6 +1,6 @@
-import { callGatewayTool } from "./tools/gateway.js";
-import { jsonResult } from "./tools/common.js";
 import type { AnyAgentTool } from "./pi-tools.types.js";
+import { jsonResult } from "./tools/common.js";
+import { callGatewayTool } from "./tools/gateway.js";
 
 const DEFAULT_APPROVAL_TIMEOUT_MS = 130_000;
 const DEFAULT_APPROVAL_REQUEST_TIMEOUT_MS = 140_000;
@@ -13,9 +13,13 @@ export function requiresToolApproval(toolName: string, askPatterns: string[]): b
   const lower = toolName.toLowerCase();
   for (const pattern of askPatterns) {
     const p = pattern.toLowerCase().trim();
-    if (!p) continue;
+    if (!p) {
+      continue;
+    }
     if (p.endsWith("*")) {
-      if (lower.startsWith(p.slice(0, -1))) return true;
+      if (lower.startsWith(p.slice(0, -1))) {
+        return true;
+      }
     } else if (lower === p) {
       return true;
     }
@@ -40,7 +44,9 @@ export function wrapToolWithApprovalGate(
   },
 ): AnyAgentTool {
   const originalExecute = tool.execute;
-  if (!originalExecute) return tool;
+  if (!originalExecute) {
+    return tool;
+  }
 
   return {
     ...tool,
@@ -54,7 +60,7 @@ export function wrapToolWithApprovalGate(
 
       let decision: string | null = null;
       try {
-        const result = (await callGatewayTool(
+        const result = await callGatewayTool<{ decision?: string }>(
           "tool.approval.request",
           { timeoutMs: DEFAULT_APPROVAL_REQUEST_TIMEOUT_MS },
           {
@@ -64,7 +70,7 @@ export function wrapToolWithApprovalGate(
             sessionKey: opts.sessionKey ?? undefined,
             timeoutMs: DEFAULT_APPROVAL_TIMEOUT_MS,
           },
-        )) as { decision?: string } | null;
+        );
         decision = result?.decision ?? null;
       } catch {
         // Gateway unreachable or request failed — treat as denied.

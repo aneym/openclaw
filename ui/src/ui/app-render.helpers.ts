@@ -1,4 +1,4 @@
-import { html, nothing } from "lit";
+import { html } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 
 import type { AppViewState } from "./app-view-state";
@@ -143,19 +143,23 @@ export function renderChatControls(state: AppViewState) {
         class="btn btn--sm btn--icon ${splitActive ? "active" : ""}"
         ?disabled=${disableSplitToggle}
         @click=${() => {
-          if (disableSplitToggle) return;
+          if (disableSplitToggle) {
+            return;
+          }
           if (splitActive) {
             state.exitSplitMode();
           } else {
-            state.splitPane('horizontal');
+            state.splitPane("horizontal");
           }
         }}
         aria-pressed=${splitActive}
-        title=${disableSplitToggle
-          ? "Disabled during onboarding"
-          : splitActive
-            ? "Exit split view"
-            : "Split view (Cmd+D)"}
+        title=${
+          disableSplitToggle
+            ? "Disabled during onboarding"
+            : splitActive
+              ? "Exit split view"
+              : "Split view (Cmd+D)"
+        }
       >
         ${splitIcon}
       </button>

@@ -9,15 +9,15 @@ import {
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render";
-import { extractToolCards } from "../chat/tool-cards";
 import {
   isToolResultMessage,
   normalizeMessage,
   normalizeRoleForGrouping,
 } from "../chat/message-normalizer";
+import { extractToolCards } from "../chat/tool-cards";
 import { icons } from "../icons";
-import { humanizeSessionKey } from "./thread-list";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
+import { humanizeSessionKey } from "./thread-list";
 import "../components/resizable-divider";
 
 export type CompactionIndicatorStatus = {
@@ -122,7 +122,9 @@ const MAX_DATA_URL_BYTES = 4 * 1024 * 1024; // 4 MB target
 function canvasHasAlpha(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
   const data = ctx.getImageData(0, 0, w, h).data;
   for (let i = 3; i < data.length; i += 4) {
-    if (data[i] < 255) return true;
+    if (data[i] < 255) {
+      return true;
+    }
   }
   return false;
 }
@@ -133,8 +135,8 @@ async function compressImage(
 ): Promise<{ dataUrl: string; mimeType: string }> {
   const img = new Image();
   await new Promise<void>((resolve, reject) => {
-    img.onload = () => resolve();
-    img.onerror = reject;
+    img.addEventListener("load", () => resolve());
+    img.addEventListener("error", reject);
     img.src = dataUrl;
   });
 
@@ -258,17 +260,29 @@ function renderAttachmentPreview(props: ChatProps) {
 
 /** Compact relative time (e.g. "3m", "2h", "5d") */
 function compactAgo(ms?: number | null): string {
-  if (!ms) return "";
+  if (!ms) {
+    return "";
+  }
   const diff = Date.now() - ms;
-  if (diff < 0) return "now";
+  if (diff < 0) {
+    return "now";
+  }
   const sec = Math.round(diff / 1000);
-  if (sec < 60) return `${sec}s`;
+  if (sec < 60) {
+    return `${sec}s`;
+  }
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m`;
+  if (min < 60) {
+    return `${min}m`;
+  }
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h`;
+  if (hr < 24) {
+    return `${hr}h`;
+  }
   const day = Math.round(hr / 24);
-  if (day < 30) return `${day}d`;
+  if (day < 30) {
+    return `${day}d`;
+  }
   const mo = Math.round(day / 30);
   return `${mo}mo`;
 }
@@ -285,12 +299,22 @@ function renderSessionPicker(
 ) {
   // Filter: exclude sessions already visible in a pane, archived, and cron/global
   const candidates = sessions.filter((s) => {
-    if (s.key === currentKey) return false;
-    if (openKeys.has(s.key)) return false;
-    if (s.archivedAt) return false;
-    if (s.kind === "global") return false;
+    if (s.key === currentKey) {
+      return false;
+    }
+    if (openKeys.has(s.key)) {
+      return false;
+    }
+    if (s.archivedAt) {
+      return false;
+    }
+    if (s.kind === "global") {
+      return false;
+    }
     const k = s.key.toLowerCase();
-    if (k.includes(":cron:") || k.includes(":cron-")) return false;
+    if (k.includes(":cron:") || k.includes(":cron-")) {
+      return false;
+    }
     return true;
   });
 
@@ -323,12 +347,16 @@ function renderSessionPicker(
               <span class="session-picker__item-label">
                 ${s.displayName || s.label || humanizeSessionKey(s.key)}
               </span>
-              ${s.derivedTitle
-                ? html`<span class="session-picker__item-title">${s.derivedTitle}</span>`
-                : nothing}
-              ${s.updatedAt
-                ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
-                : nothing}
+              ${
+                s.derivedTitle
+                  ? html`<span class="session-picker__item-title">${s.derivedTitle}</span>`
+                  : nothing
+              }
+              ${
+                s.updatedAt
+                  ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
+                  : nothing
+              }
             </button>
           `,
         )}
@@ -388,18 +416,29 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${handleThreadScroll}
     >
-      ${showPicker
-        ? renderSessionPicker(
-            props.sessions!.sessions,
-            props.openSessionKeys!,
-            props.sessionKey,
-            props.onSessionKeyChange,
-          )
-        : nothing}
-      ${props.loading ? html`<div class="muted">Loading chat…</div>` : nothing}
-      ${repeat(buildChatItems(props), (item) => item.key, (item) => {
-        if (item.kind === "load-more") {
-          return html`<div class="chat-load-more">
+      ${
+        showPicker
+          ? renderSessionPicker(
+              props.sessions!.sessions,
+              props.openSessionKeys!,
+              props.sessionKey,
+              props.onSessionKeyChange,
+            )
+          : nothing
+      }
+      ${
+        props.loading
+          ? html`
+              <div class="muted">Loading chat…</div>
+            `
+          : nothing
+      }
+      ${repeat(
+        buildChatItems(props),
+        (item) => item.key,
+        (item) => {
+          if (item.kind === "load-more") {
+            return html`<div class="chat-load-more">
             <button
               class="chat-load-more__btn"
               type="button"
@@ -409,7 +448,9 @@ export function renderChat(props: ChatProps) {
                 const prevHeight = thread?.scrollHeight ?? 0;
                 item.onLoadMore();
                 // Re-render by dispatching a custom event the app-render can pick up
-                btn.dispatchEvent(new CustomEvent("chat-load-more", { bubbles: true, composed: true }));
+                btn.dispatchEvent(
+                  new CustomEvent("chat-load-more", { bubbles: true, composed: true }),
+                );
                 // Preserve scroll position after new messages are prepended
                 requestAnimationFrame(() => {
                   if (thread) {
@@ -420,11 +461,11 @@ export function renderChat(props: ChatProps) {
               }}
             >Load ${Math.min(LOAD_MORE_BATCH, item.remaining)} older messages${item.remaining > LOAD_MORE_BATCH ? ` (${item.remaining} remaining)` : ""}</button>
           </div>`;
-        }
+          }
 
-        if (item.kind === "reading-indicator") {
-          return renderReadingIndicatorGroup(assistantIdentity);
-        }
+          if (item.kind === "reading-indicator") {
+            return renderReadingIndicatorGroup(assistantIdentity);
+          }
 
           if (item.kind === "stream") {
             return renderStreamingGroup(
@@ -469,8 +510,9 @@ export function renderChat(props: ChatProps) {
 
       ${renderCompactionIndicator(props.compactionStatus)}
 
-      ${props.focusMode
-        ? html`
+      ${
+        props.focusMode
+          ? html`
             <button
               class="chat-focus-exit"
               type="button"
@@ -577,13 +619,15 @@ export function renderChat(props: ChatProps) {
             ></textarea>
           </label>
           <div class="chat-compose__actions">
-            ${canAbort
-              ? html`<button
+            ${
+              canAbort
+                ? html`<button
                   class="btn chat-compose__icon-btn chat-compose__icon-btn--stop"
                   title="Stop"
                   @click=${props.onAbort}
                 >${icons.square}</button>`
-              : nothing}
+                : nothing
+            }
             <button
               class="btn primary chat-compose__icon-btn"
               ?disabled=${!props.connected}
@@ -633,9 +677,7 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     // Fold chip-only tool results into the preceding assistant group
     // so consecutive tool calls render inline instead of as separate groups.
     const isChipOnly =
-      role === "tool" &&
-      currentGroup?.role === "assistant" &&
-      isChipOnlyMessage(item.message);
+      role === "tool" && currentGroup?.role === "assistant" && isChipOnlyMessage(item.message);
 
     if (isChipOnly) {
       currentGroup!.messages.push({ message: item.message, key: item.key });
@@ -663,10 +705,15 @@ function isInternalSystemMessage(message: unknown): boolean {
   const m = message as Record<string, unknown>;
   const content = m.content;
   let text: string | null = null;
-  if (typeof content === "string") text = content;
-  else if (Array.isArray(content)) {
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
     for (const block of content) {
-      if (typeof block === "object" && block !== null && (block as Record<string, unknown>).type === "text") {
+      if (
+        typeof block === "object" &&
+        block !== null &&
+        (block as Record<string, unknown>).type === "text"
+      ) {
         text = (block as Record<string, unknown>).text as string;
         break;
       }
@@ -674,7 +721,9 @@ function isInternalSystemMessage(message: unknown): boolean {
   } else if (typeof m.text === "string") {
     text = m.text;
   }
-  if (!text) return false;
+  if (!text) {
+    return false;
+  }
   return /^(System:\s*\[.*?\]\s*)?GatewayRestart[\s:]/.test(text.trimStart());
 }
 
@@ -696,7 +745,9 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
-    if (isInternalSystemMessage(msg)) continue;
+    if (isInternalSystemMessage(msg)) {
+      continue;
+    }
     items.push({
       kind: "message",
       key: messageKey(msg, i),
@@ -738,7 +789,9 @@ function isChipOnlyMessage(message: unknown): boolean {
   if (!isToolResultMessage(message)) {
     const m = message as Record<string, unknown>;
     const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
-    if (role !== "toolresult" && role !== "tool_result") return false;
+    if (role !== "toolresult" && role !== "tool_result") {
+      return false;
+    }
   }
   const cards = extractToolCards(message);
   return cards.length > 0;

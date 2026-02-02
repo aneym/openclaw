@@ -72,10 +72,18 @@
   border-radius: 6px;
   padding: 0;
   flex-shrink: 0;
-  transition: color 150ms, background 150ms;
+  transition:
+    color 150ms,
+    background 150ms;
 }
-.artifact-header__close svg { width: 16px; height: 16px; }
-.artifact-header__close:hover { color: var(--text); background: var(--surface-hover, rgba(255,255,255,0.08)); }
+.artifact-header__close svg {
+  width: 16px;
+  height: 16px;
+}
+.artifact-header__close:hover {
+  color: var(--text);
+  background: var(--surface-hover, rgba(255, 255, 255, 0.08));
+}
 
 .artifact-tabs__list {
   display: flex;
@@ -109,7 +117,10 @@
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
-  transition: color 150ms, border-color 150ms, background 150ms;
+  transition:
+    color 150ms,
+    border-color 150ms,
+    background 150ms;
   position: relative;
 }
 
@@ -136,7 +147,9 @@
   border-radius: 3px;
   padding: 0;
   opacity: 0;
-  transition: opacity 150ms, background 150ms;
+  transition:
+    opacity 150ms,
+    background 150ms;
   flex-shrink: 0;
   font-size: 14px;
   line-height: 1;
@@ -154,9 +167,15 @@
 
 /* Updated indicator flash */
 @keyframes artifact-tab-updated {
-  0% { color: var(--text); }
-  20% { color: #22c55e; }
-  100% { color: var(--text-muted); }
+  0% {
+    color: var(--text);
+  }
+  20% {
+    color: #22c55e;
+  }
+  100% {
+    color: var(--text-muted);
+  }
 }
 
 .artifact-tab--updated .artifact-tab__label {
@@ -177,7 +196,9 @@
   padding: 0;
   flex-shrink: 0;
   margin-right: 4px;
-  transition: color 150ms, background 150ms;
+  transition:
+    color 150ms,
+    background 150ms;
 }
 
 .artifact-tabs__close-all svg {
@@ -214,8 +235,12 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .artifact-content__error {
@@ -243,8 +268,12 @@
   line-height: 1.5;
 }
 
-.artifact-markdown > *:first-child { margin-top: 0; }
-.artifact-markdown > *:last-child { margin-bottom: 0; }
+.artifact-markdown > *:first-child {
+  margin-top: 0;
+}
+.artifact-markdown > *:last-child {
+  margin-bottom: 0;
+}
 
 .artifact-markdown pre {
   background: rgba(0, 0, 0, 0.12);
@@ -290,7 +319,9 @@
   border-radius: 4px;
   font-size: 12px;
   font-family: inherit;
-  transition: color 150ms, background 150ms;
+  transition:
+    color 150ms,
+    background 150ms;
   white-space: nowrap;
 }
 
@@ -344,7 +375,7 @@
 }
 
 .artifact-footer--editing {
-  background: var(--bg-secondary, var(--surface, rgba(255,255,255,0.04)));
+  background: var(--bg-secondary, var(--surface, rgba(255, 255, 255, 0.04)));
   border-top: 2px solid var(--accent, #6366f1);
 }
 

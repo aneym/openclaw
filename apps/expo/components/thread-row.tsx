@@ -7,15 +7,15 @@ import type { ThreadDescriptor } from '@/lib/use-threads'
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts
-  if (diff < 0) return 'now'
+  if (diff < 0) {return 'now'}
   const sec = Math.round(diff / 1000)
-  if (sec < 60) return `${sec}s`
+  if (sec < 60) {return `${sec}s`}
   const min = Math.round(sec / 60)
-  if (min < 60) return `${min}m`
+  if (min < 60) {return `${min}m`}
   const hr = Math.round(min / 60)
-  if (hr < 24) return `${hr}h`
+  if (hr < 24) {return `${hr}h`}
   const day = Math.round(hr / 24)
-  if (day < 30) return `${day}d`
+  if (day < 30) {return `${day}d`}
   const mo = Math.round(day / 30)
   return `${mo}mo`
 }
@@ -35,7 +35,7 @@ export const ThreadRow = memo(function ThreadRow({
 }: ThreadRowProps) {
   const handleLongPress = useCallback(() => {
     if (process.env.EXPO_OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)
     }
     if (Platform.OS === 'ios') {
       ActionSheetIOS.showActionSheetWithOptions(
@@ -45,8 +45,8 @@ export const ThreadRow = memo(function ThreadRow({
           cancelButtonIndex: 2,
         },
         (index) => {
-          if (index === 0) onRename(thread)
-          else if (index === 1) onDelete(thread)
+          if (index === 0) {onRename(thread)}
+          else if (index === 1) {onDelete(thread)}
         },
       )
     } else {

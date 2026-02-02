@@ -25,6 +25,7 @@ pnpm agent:start
 ```
 
 **Parse the output carefully.** Look for these three lines:
+
 ```
 AGENT_ID=abc12345
 PORT=18790
@@ -36,11 +37,13 @@ TOKEN=29a827...
 ### Step 2: Verify Gateway Is Running
 
 Using the actual PORT from step 1:
+
 ```bash
 lsof -i :18790
 ```
 
 If it's not running, check the logs:
+
 ```bash
 pnpm agent:logs -- abc12345
 ```
@@ -122,6 +125,7 @@ curl -s -N -X POST "http://localhost:18790/v1/chat/completions" \
 ### Step 4: ALWAYS Stop Your Server When Done
 
 Using the AGENT_ID from step 1:
+
 ```bash
 pnpm agent:stop -- abc12345
 ```
@@ -138,43 +142,50 @@ When you've made code changes and want to test them:
 The `agent:start` command always runs `pnpm build` first, so your latest code changes are included.
 
 For a faster restart cycle:
+
 ```bash
 pnpm agent:restart -- YOUR_AGENT_ID
 ```
 
 ## Commands Reference
 
-| Command | Purpose |
-|---------|---------|
-| `pnpm agent:start` | **ALWAYS RUN THIS FIRST** — Build + start YOUR gateway |
-| `pnpm agent:stop -- <id>` | Stop YOUR gateway when done |
-| `pnpm agent:restart -- <id>` | Rebuild + restart YOUR gateway |
-| `pnpm agent:status` | List all running agent gateways |
-| `pnpm agent:logs -- <id>` | View YOUR gateway logs |
-| `pnpm agent:kill-all` | Kill all orphan agent processes |
-| `pnpm agent:cleanup` | Remove stale temp files |
+| Command                      | Purpose                                                |
+| ---------------------------- | ------------------------------------------------------ |
+| `pnpm agent:start`           | **ALWAYS RUN THIS FIRST** — Build + start YOUR gateway |
+| `pnpm agent:stop -- <id>`    | Stop YOUR gateway when done                            |
+| `pnpm agent:restart -- <id>` | Rebuild + restart YOUR gateway                         |
+| `pnpm agent:status`          | List all running agent gateways                        |
+| `pnpm agent:logs -- <id>`    | View YOUR gateway logs                                 |
+| `pnpm agent:kill-all`        | Kill all orphan agent processes                        |
+| `pnpm agent:cleanup`         | Remove stale temp files                                |
 
 ## Troubleshooting
 
 ### Build fails
+
 ```bash
 # Check build output
 cat /tmp/openclaw-agent-YOUR_ID.log.build
 ```
+
 Common causes: TypeScript errors from recent code changes.
 
 ### Gateway fails to start within 30 seconds
+
 ```bash
 pnpm agent:logs -- YOUR_AGENT_ID
 ```
+
 Common causes: port conflict, missing env vars, config errors.
 
 ### Orphan processes from previous runs
+
 ```bash
 pnpm agent:kill-all
 ```
 
 ### Auth returns 401
+
 The gateway uses the real config token from `~/.clawdbot/openclaw.json`. Use the TOKEN value from `agent:start` output, or read it from the token file: `cat /tmp/openclaw-agent-YOUR_ID-token`
 
 ## Gotchas

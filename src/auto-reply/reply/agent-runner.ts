@@ -530,7 +530,9 @@ export async function runReplyAgent(params: {
       runFollowupTurn,
     );
   } finally {
-    if (sessionKey) clearSessionRunning(sessionKey);
+    if (sessionKey) {
+      clearSessionRunning(sessionKey);
+    }
     blockReplyPipeline?.stop();
     typing.markRunComplete();
 

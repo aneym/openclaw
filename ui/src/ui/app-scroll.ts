@@ -20,8 +20,8 @@ export function scheduleChatScroll(host: ScrollHost, force = false, paneId?: str
   // Capture paneId in closure so it survives async gaps
   const pickScrollTarget = () => {
     const scope = paneId
-      ? host.querySelector(`[data-pane-id="${paneId}"] .chat-thread`) as HTMLElement | null
-      : host.querySelector(".chat-thread") as HTMLElement | null;
+      ? (host.querySelector(`[data-pane-id="${paneId}"] .chat-thread`) as HTMLElement | null)
+      : (host.querySelector(".chat-thread") as HTMLElement | null);
     if (scope) {
       const overflowY = getComputedStyle(scope).overflowY;
       const canScroll =
@@ -44,7 +44,7 @@ export function scheduleChatScroll(host: ScrollHost, force = false, paneId?: str
       if (!shouldStick) return;
       if (force) host.chatHasAutoScrolled = true;
       // Smooth for small jumps, instant for large ones (initial load, history swap)
-      const behavior = distanceFromBottom > 800 ? 'instant' as const : 'smooth' as const;
+      const behavior = distanceFromBottom > 800 ? ("instant" as const) : ("smooth" as const);
       target.scrollTo({ top: target.scrollHeight, behavior });
       host.chatUserNearBottom = true;
       const retryDelay = force ? 150 : 120;
@@ -106,18 +106,14 @@ export function resetChatScroll(host: ScrollHost) {
  * Schedule a scroll for a specific pane in split-pane mode.
  * Scopes the scroll target to [data-pane-id="..."] .chat-thread.
  */
-export function schedulePaneChatScroll(
-  host: ScrollHost,
-  paneId: string,
-  force = false,
-) {
+export function schedulePaneChatScroll(host: ScrollHost, paneId: string, force = false) {
   scheduleChatScroll(host, force, paneId);
 }
 
 export function scrollAllVisibleChats(host: ScrollHost) {
   void host.updateComplete.then(() => {
     requestAnimationFrame(() => {
-      const threads = (host as unknown as ParentNode).querySelectorAll('.chat-thread') as NodeListOf<HTMLElement>;
+      const threads = (host as unknown as ParentNode).querySelectorAll(".chat-thread");
       for (const thread of threads) {
         const distanceFromBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
         if (distanceFromBottom < 200) {

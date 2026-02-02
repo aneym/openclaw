@@ -1,5 +1,5 @@
-import { truncateText } from "./format";
 import type { ThreadState } from "./thread-state";
+import { truncateText } from "./format";
 
 const TOOL_STREAM_LIMIT = 50;
 const TOOL_STREAM_THROTTLE_MS = 80;
@@ -208,9 +208,9 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   const args = phase === "start" ? data.args : undefined;
   const output =
     phase === "update"
-      ? formatToolOutput(data.partialResult) ?? undefined
+      ? (formatToolOutput(data.partialResult) ?? undefined)
       : phase === "result"
-        ? formatToolOutput(data.result) ?? undefined
+        ? (formatToolOutput(data.result) ?? undefined)
         : undefined;
 
   applyToolEvent(host, {
@@ -301,35 +301,47 @@ export function resetToolStreamForThread(thread: ThreadState) {
 }
 
 /** Handle an agent event for a non-focused thread's tool stream. */
-export function handleAgentEventForThread(
-  thread: ThreadState,
-  payload?: AgentEventPayload,
-) {
-  if (!payload) return;
+export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEventPayload) {
+  if (!payload) {
+    return;
+  }
 
   // Compaction events are host-level only (UI toast); skip for threads
-  if (payload.stream === "compaction") return;
+  if (payload.stream === "compaction") {
+    return;
+  }
 
-  if (payload.stream !== "tool") return;
-  const sessionKey =
-    typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+  if (payload.stream !== "tool") {
+    return;
+  }
+  const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
   // Only accept events for this thread's session (or session-less for active run)
-  if (sessionKey && sessionKey !== thread.descriptor.sessionKey) return;
-  if (!sessionKey && thread.chatRunId && payload.runId !== thread.chatRunId) return;
-  if (thread.chatRunId && payload.runId !== thread.chatRunId) return;
-  if (!thread.chatRunId) return;
+  if (sessionKey && sessionKey !== thread.descriptor.sessionKey) {
+    return;
+  }
+  if (!sessionKey && thread.chatRunId && payload.runId !== thread.chatRunId) {
+    return;
+  }
+  if (thread.chatRunId && payload.runId !== thread.chatRunId) {
+    return;
+  }
+  if (!thread.chatRunId) {
+    return;
+  }
 
   const data = payload.data ?? {};
   const toolCallId = typeof data.toolCallId === "string" ? data.toolCallId : "";
-  if (!toolCallId) return;
+  if (!toolCallId) {
+    return;
+  }
   const name = typeof data.name === "string" ? data.name : "tool";
   const phase = typeof data.phase === "string" ? data.phase : "";
   const args = phase === "start" ? data.args : undefined;
   const output =
     phase === "update"
-      ? formatToolOutput(data.partialResult) ?? undefined
+      ? (formatToolOutput(data.partialResult) ?? undefined)
       : phase === "result"
-        ? formatToolOutput(data.result) ?? undefined
+        ? (formatToolOutput(data.result) ?? undefined)
         : undefined;
 
   const host = threadAsToolStreamHost(thread);

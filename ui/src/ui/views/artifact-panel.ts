@@ -24,9 +24,7 @@ function isMarkdownFile(fileName: string): boolean {
 }
 
 function shortenPath(filePath: string): string {
-  return filePath
-    .replace(/\/Users\/[^/]+/g, "~")
-    .replace(/\/home\/[^/]+/g, "~");
+  return filePath.replace(/\/Users\/[^/]+/g, "~").replace(/\/home\/[^/]+/g, "~");
 }
 
 function renderTabContent(tab: ArtifactTab, props: ArtifactPanelProps) {
@@ -43,9 +41,11 @@ function renderTabContent(tab: ArtifactTab, props: ArtifactPanelProps) {
   }
 
   if (tab.content === null) {
-    return html`<div class="artifact-content">
-      <div class="artifact-content__empty">No content available</div>
-    </div>`;
+    return html`
+      <div class="artifact-content">
+        <div class="artifact-content__empty">No content available</div>
+      </div>
+    `;
   }
 
   // Legacy tool output tab
@@ -62,7 +62,7 @@ function renderTabContent(tab: ArtifactTab, props: ArtifactPanelProps) {
 
   // Editing mode: textarea with the raw markdown
   if (editing) {
-    const initValue = tab.editDraft ?? tab.content ?? '';
+    const initValue = tab.editDraft ?? tab.content ?? "";
     return html`<div class="artifact-content artifact-content--editing">
       <markdown-editor
         .content=${initValue}
@@ -87,9 +87,18 @@ function renderTabContent(tab: ArtifactTab, props: ArtifactPanelProps) {
   // Code/other files — raw in code fence
   const ext = tab.fileName.slice(tab.fileName.lastIndexOf(".")).toLowerCase();
   const langMap: Record<string, string> = {
-    ".md": "markdown", ".json": "json", ".ts": "typescript", ".js": "javascript",
-    ".py": "python", ".sh": "bash", ".yaml": "yaml", ".yml": "yaml",
-    ".html": "html", ".css": "css", ".rs": "rust", ".go": "go",
+    ".md": "markdown",
+    ".json": "json",
+    ".ts": "typescript",
+    ".js": "javascript",
+    ".py": "python",
+    ".sh": "bash",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".html": "html",
+    ".css": "css",
+    ".rs": "rust",
+    ".go": "go",
   };
   const lang = langMap[ext] ?? "";
   const fenced = lang ? `\`\`\`${lang}\n${tab.content}\n\`\`\`` : `\`\`\`\n${tab.content}\n\`\`\``;
@@ -103,7 +112,6 @@ function renderTabContent(tab: ArtifactTab, props: ArtifactPanelProps) {
 
 export function renderArtifactPanel(props: ArtifactPanelProps) {
   const activeTab = props.tabs.find((t) => t.id === props.activeTabId) ?? props.tabs[0] ?? null;
-  const editing = activeTab?.editing ?? false;
 
   return html`
     <div class="artifact-panel">
@@ -128,7 +136,10 @@ export function renderArtifactPanel(props: ArtifactPanelProps) {
                 <span class="artifact-tab__label">${tab.fileName}</span>
                 <span
                   class="artifact-tab__close"
-                  @click=${(e: Event) => { e.stopPropagation(); props.onTabClose(tab.id); }}
+                  @click=${(e: Event) => {
+                    e.stopPropagation();
+                    props.onTabClose(tab.id);
+                  }}
                   title="Close tab"
                 >×</span>
               </button>
@@ -137,34 +148,43 @@ export function renderArtifactPanel(props: ArtifactPanelProps) {
         </div>
       </div>
 
-      ${activeTab
-        ? html`
+      ${
+        activeTab
+          ? html`
             ${renderTabContent(activeTab, props)}
             ${renderFooter(activeTab, props)}
           `
-        : html`<div class="artifact-content">
-            <div class="artifact-content__empty">No file selected</div>
-          </div>`}
+          : html`
+              <div class="artifact-content">
+                <div class="artifact-content__empty">No file selected</div>
+              </div>
+            `
+      }
     </div>
   `;
 }
 
 function renderFooter(tab: ArtifactTab, props: ArtifactPanelProps) {
-  const isMd = isMarkdownFile(tab.fileName);
   const isLegacy = tab.isLegacy ?? false;
   const editing = tab.editing ?? false;
   const saving = tab.saving ?? false;
 
   return html`
-    <div class="artifact-footer ${editing ? 'artifact-footer--editing' : ''}">
-      ${saving
-        ? html`<span class="artifact-footer__status artifact-footer__status--saving">Saving…</span>`
-        : editing
-          ? html`<span class="artifact-footer__status artifact-footer__status--saved">${icons.check} Saved</span>`
-          : nothing}
-      ${!isLegacy
-        ? html`<button class="artifact-footer__btn" @click=${() => props.onRefresh(tab.id)} title="Refresh from disk">${icons.loader} Refresh</button>`
-        : nothing}
+    <div class="artifact-footer ${editing ? "artifact-footer--editing" : ""}">
+      ${
+        saving
+          ? html`
+              <span class="artifact-footer__status artifact-footer__status--saving">Saving…</span>
+            `
+          : editing
+            ? html`<span class="artifact-footer__status artifact-footer__status--saved">${icons.check} Saved</span>`
+            : nothing
+      }
+      ${
+        !isLegacy
+          ? html`<button class="artifact-footer__btn" @click=${() => props.onRefresh(tab.id)} title="Refresh from disk">${icons.loader} Refresh</button>`
+          : nothing
+      }
       <button class="artifact-footer__btn" @click=${() => props.onCopy(tab.id)} title="Copy">${icons.copy} Copy</button>
       <span class="artifact-footer__path">${tab.isLegacy ? "Tool Output" : shortenPath(tab.filePath)}</span>
     </div>

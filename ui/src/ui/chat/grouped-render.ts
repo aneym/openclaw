@@ -1,8 +1,8 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
 import type { AssistantIdentity } from "../assistant-identity";
-import { icons } from "../icons";
 import type { MessageGroup } from "../types/chat-types";
+import { icons } from "../icons";
 import { toSanitizedMarkdownHtml } from "../markdown";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
 import {
@@ -11,7 +11,12 @@ import {
   formatReasoningMarkdown,
 } from "./message-extract";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer";
-import { extractToolCards, renderToolCardSidebar, extractFilePathFromCard, isFileMutatingTool } from "./tool-cards";
+import {
+  extractToolCards,
+  renderToolCardSidebar,
+  extractFilePathFromCard,
+  isFileMutatingTool,
+} from "./tool-cards";
 
 /** Track which file paths have already been auto-opened to avoid re-render loops. */
 const autoOpenedPaths = new Set<string>();
@@ -71,9 +76,7 @@ type AudioExtraction = {
   cleanedText: string;
 };
 
-const AUDIO_EXTS = new Set([
-  ".ogg", ".mp3", ".m4a", ".wav", ".aac", ".opus", ".flac", ".oga",
-]);
+const AUDIO_EXTS = new Set([".ogg", ".mp3", ".m4a", ".wav", ".aac", ".opus", ".flac", ".oga"]);
 
 // Match <file name="..." mime="...">BINARY</file> — binary can be anything
 const FILE_TAG_RE = /<file\s+name="([^"]+)"\s+mime="([^"]*)">\s*[\s\S]*?<\/file>/gi;
@@ -82,7 +85,9 @@ const TRANSCRIPT_RE = /^\s*Transcript:\s*/i;
 
 function hasAudioExtension(filename: string): boolean {
   const dotIdx = filename.lastIndexOf(".");
-  if (dotIdx === -1) return false;
+  if (dotIdx === -1) {
+    return false;
+  }
   return AUDIO_EXTS.has(filename.slice(dotIdx).toLowerCase());
 }
 
@@ -97,8 +102,7 @@ function extractAudioFromText(text: string): AudioExtraction {
 
   cleaned = cleaned.replace(FILE_TAG_RE, (_match, name: string, mime: string) => {
     const isAudio =
-      (typeof mime === "string" && mime.startsWith("audio/")) ||
-      hasAudioExtension(name);
+      (typeof mime === "string" && mime.startsWith("audio/")) || hasAudioExtension(name);
     if (isAudio) {
       audioFiles.push({
         filename: name,
@@ -118,7 +122,9 @@ function extractAudioFromText(text: string): AudioExtraction {
 }
 
 function renderAudioPlayers(audioFiles: AudioBlock[]) {
-  if (audioFiles.length === 0) return nothing;
+  if (audioFiles.length === 0) {
+    return nothing;
+  }
   return html`
     <div class="chat-audio-players">
       ${audioFiles.map(
@@ -311,7 +317,9 @@ function isChipOnlyMessage(message: unknown): boolean {
   const role = typeof m.role === "string" ? m.role : "unknown";
 
   const cards = extractToolCards(message);
-  if (cards.length === 0) return false;
+  if (cards.length === 0) {
+    return false;
+  }
 
   const isToolResult =
     isToolResultMessage(message) ||
@@ -319,7 +327,9 @@ function isChipOnlyMessage(message: unknown): boolean {
     role.toLowerCase() === "tool_result" ||
     typeof m.toolCallId === "string" ||
     typeof m.tool_call_id === "string";
-  if (isToolResult) return true;
+  if (isToolResult) {
+    return true;
+  }
 
   // Assistant message with only tool_calls (no text content)
   if (role === "assistant") {
@@ -350,7 +360,9 @@ function renderGroupedMessages(
   let batchFilePaths: string[] = [];
 
   const flushChips = () => {
-    if (chipBatch.length === 0) return;
+    if (chipBatch.length === 0) {
+      return;
+    }
     const count = chipCount;
     const chips = chipBatch;
     const filePaths = [...batchFilePaths];
@@ -399,15 +411,16 @@ function renderGroupedMessages(
       for (const card of cards) {
         if (isFileMutatingTool(card)) {
           const fp = extractFilePathFromCard(card);
-          if (fp && fp.endsWith('.md')) batchFilePaths.push(fp);
+          if (fp && fp.endsWith(".md")) {
+            batchFilePaths.push(fp);
+          }
         }
       }
       chipBatch.push(
         renderGroupedMessage(
           item.message,
           {
-            isStreaming:
-              group.isStreaming && i === group.messages.length - 1,
+            isStreaming: group.isStreaming && i === group.messages.length - 1,
             showReasoning: opts.showReasoning,
           },
           opts.onOpenSidebar,
@@ -420,8 +433,7 @@ function renderGroupedMessages(
         renderGroupedMessage(
           item.message,
           {
-            isStreaming:
-              group.isStreaming && i === group.messages.length - 1,
+            isStreaming: group.isStreaming && i === group.messages.length - 1,
             showReasoning: opts.showReasoning,
           },
           opts.onOpenSidebar,
@@ -457,24 +469,16 @@ function renderGroupedMessage(
 
   const extractedText = extractTextCached(message);
   const extractedThinking =
-    opts.showReasoning && role === "assistant"
-      ? extractThinkingCached(message)
-      : null;
+    opts.showReasoning && role === "assistant" ? extractThinkingCached(message) : null;
 
   // Extract audio files from text and strip binary content
-  const audioExtraction = extractedText
-    ? extractAudioFromText(extractedText)
-    : null;
+  const audioExtraction = extractedText ? extractAudioFromText(extractedText) : null;
   const audioFiles = audioExtraction?.audioFiles ?? [];
   const hasAudio = audioFiles.length > 0;
-  const textAfterAudio = hasAudio
-    ? audioExtraction!.cleanedText
-    : extractedText;
+  const textAfterAudio = hasAudio ? audioExtraction!.cleanedText : extractedText;
 
   const markdownBase = textAfterAudio?.trim() ? textAfterAudio : null;
-  const reasoningMarkdown = extractedThinking
-    ? formatReasoningMarkdown(extractedThinking)
-    : null;
+  const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
 
@@ -511,19 +515,25 @@ function renderGroupedMessage(
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
       ${renderAudioPlayers(audioFiles)}
-      ${reasoningMarkdown
-        ? html`<div class="chat-thinking">${unsafeHTML(
-            toSanitizedMarkdownHtml(reasoningMarkdown),
-          )}</div>`
-        : nothing}
-      ${markdown
-        ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
-        : nothing}
-      ${showInlineChips
-        ? html`<div class="chat-tool-chips">${toolCards.map((card) =>
-            renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview),
-          )}</div>`
-        : nothing}
+      ${
+        reasoningMarkdown
+          ? html`<div class="chat-thinking">${unsafeHTML(
+              toSanitizedMarkdownHtml(reasoningMarkdown),
+            )}</div>`
+          : nothing
+      }
+      ${
+        markdown
+          ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
+          : nothing
+      }
+      ${
+        showInlineChips
+          ? html`<div class="chat-tool-chips">${toolCards.map((card) =>
+              renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview),
+            )}</div>`
+          : nothing
+      }
     </div>
   `;
 }

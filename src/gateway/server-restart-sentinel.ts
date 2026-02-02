@@ -6,7 +6,6 @@ import { resolveAnnounceTargetFromKey } from "../agents/tools/sessions-send-help
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import { agentCommand } from "../commands/agent.js";
 import { resolveMainSessionKeyFromConfig } from "../config/sessions.js";
-import { requestHeartbeatNow } from "../infra/heartbeat-wake.js";
 import { resolveOutboundTarget } from "../infra/outbound/targets.js";
 import {
   consumeRestartSentinel,

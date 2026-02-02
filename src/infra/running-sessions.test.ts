@@ -3,7 +3,6 @@ import fsp from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
 import {
   clearSessionRunning,
   consumeInterruptedSessions,
@@ -23,8 +22,11 @@ describe("running-sessions", () => {
   });
 
   afterEach(async () => {
-    if (prevStateDir) process.env.OPENCLAW_STATE_DIR = prevStateDir;
-    else delete process.env.OPENCLAW_STATE_DIR;
+    if (prevStateDir) {
+      process.env.OPENCLAW_STATE_DIR = prevStateDir;
+    } else {
+      delete process.env.OPENCLAW_STATE_DIR;
+    }
     await fsp.rm(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });

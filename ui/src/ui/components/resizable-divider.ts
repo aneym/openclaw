@@ -10,7 +10,7 @@ export class ResizableDivider extends LitElement {
   @property({ type: Number }) splitRatio = 0.6;
   @property({ type: Number }) minRatio = 0.4;
   @property({ type: Number }) maxRatio = 0.7;
-  @property({ type: String, reflect: true }) direction: 'horizontal' | 'vertical' = 'horizontal';
+  @property({ type: String, reflect: true }) direction: "horizontal" | "vertical" = "horizontal";
 
   private isDragging = false;
   private startX = 0;
@@ -24,23 +24,23 @@ export class ResizableDivider extends LitElement {
       flex-shrink: 0;
       position: relative;
     }
-
+    
     :host([direction="horizontal"]),
     :host(:not([direction])) {
       width: 4px;
       cursor: col-resize;
     }
-
+    
     :host([direction="vertical"]) {
       height: 4px;
       cursor: row-resize;
     }
-
+    
     :host::before {
       content: "";
       position: absolute;
     }
-
+    
     :host([direction="horizontal"])::before,
     :host(:not([direction]))::before {
       top: 0;
@@ -48,25 +48,27 @@ export class ResizableDivider extends LitElement {
       right: -4px;
       bottom: 0;
     }
-
+    
     :host([direction="vertical"])::before {
       left: 0;
       top: -4px;
       bottom: -4px;
       right: 0;
     }
-
+    
     :host(:hover) {
       background: var(--accent, #007bff);
     }
-
+    
     :host(.dragging) {
       background: var(--accent, #007bff);
     }
   `;
 
   render() {
-    return html``;
+    return html`
+      
+    `;
   }
 
   connectedCallback() {
@@ -95,17 +97,19 @@ export class ResizableDivider extends LitElement {
   };
 
   private handleMouseMove = (e: MouseEvent) => {
-    if (!this.isDragging) return;
+    if (!this.isDragging) {
+      return;
+    }
 
     const container = this.parentElement;
-    if (!container) return;
+    if (!container) {
+      return;
+    }
 
     const rect = container.getBoundingClientRect();
-    const isVertical = this.direction === 'vertical';
+    const isVertical = this.direction === "vertical";
     const containerSize = isVertical ? rect.height : rect.width;
-    const delta = isVertical
-      ? e.clientY - this.startY
-      : e.clientX - this.startX;
+    const delta = isVertical ? e.clientY - this.startY : e.clientX - this.startX;
     const deltaRatio = delta / containerSize;
 
     let newRatio = this.startRatio + deltaRatio;
@@ -116,7 +120,7 @@ export class ResizableDivider extends LitElement {
         detail: { splitRatio: newRatio },
         bubbles: true,
         composed: true,
-      })
+      }),
     );
   };
 

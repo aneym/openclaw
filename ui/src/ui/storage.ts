@@ -21,9 +21,8 @@ export type UiSettings = {
 export function loadSettings(): UiSettings {
   const defaultUrl = (() => {
     if (import.meta.env.DEV) {
-      const port = typeof __OPENCLAW_DEV_GATEWAY_PORT__ === 'string'
-        ? __OPENCLAW_DEV_GATEWAY_PORT__
-        : '18789';
+      const port =
+        typeof __OPENCLAW_DEV_GATEWAY_PORT__ === "string" ? __OPENCLAW_DEV_GATEWAY_PORT__ : "18789";
       return `ws://localhost:${port}`;
     }
     const proto = location.protocol === "https:" ? "wss" : "ws";
@@ -68,8 +67,7 @@ export function loadSettings(): UiSettings {
               parsed.sessionKey.trim()) ||
             defaults.lastActiveSessionKey,
       lastActiveThreadId:
-        typeof parsed.lastActiveThreadId === "string" &&
-        parsed.lastActiveThreadId.trim()
+        typeof parsed.lastActiveThreadId === "string" && parsed.lastActiveThreadId.trim()
           ? parsed.lastActiveThreadId.trim()
           : defaults.lastActiveThreadId,
       theme:
@@ -93,17 +91,13 @@ export function loadSettings(): UiSettings {
           ? parsed.splitRatio
           : defaults.splitRatio,
       splitLayout:
-        typeof parsed.splitLayout === "string"
-          ? parsed.splitLayout
-          : defaults.splitLayout,
+        typeof parsed.splitLayout === "string" ? parsed.splitLayout : defaults.splitLayout,
       navCollapsed:
         typeof parsed.navCollapsed === "boolean"
           ? parsed.navCollapsed
           : defaults.navCollapsed,
       navWidth:
-        typeof parsed.navWidth === "number" &&
-        parsed.navWidth >= 140 &&
-        parsed.navWidth <= 500
+        typeof parsed.navWidth === "number" && parsed.navWidth >= 140 && parsed.navWidth <= 500
           ? parsed.navWidth
           : defaults.navWidth,
       navGroupsCollapsed:

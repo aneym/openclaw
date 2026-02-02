@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-
 import { resolveStateDir } from "../config/paths.js";
 
 export interface RunningSessionEntry {
@@ -82,7 +81,9 @@ export function clearSessionRunning(
   env: NodeJS.ProcessEnv = process.env,
 ): void {
   const state = readStateSync(env);
-  if (!(sessionKey in state.sessions)) return;
+  if (!(sessionKey in state.sessions)) {
+    return;
+  }
   delete state.sessions[sessionKey];
   writeStateSync(state, env);
 }
@@ -97,12 +98,16 @@ export function consumeInterruptedSessions(
 ): InterruptedSession[] {
   const state = readStateSync(env);
   const entries = Object.entries(state.sessions);
-  if (entries.length === 0) return [];
+  if (entries.length === 0) {
+    return [];
+  }
 
   const interrupted: InterruptedSession[] = [];
   for (const [sessionKey, entry] of entries) {
     // Skip if the owning process is still alive
-    if (isProcessAlive(entry.pid)) continue;
+    if (isProcessAlive(entry.pid)) {
+      continue;
+    }
     interrupted.push({
       sessionKey,
       sessionId: entry.sessionId,

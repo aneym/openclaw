@@ -16,11 +16,11 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
 
   const handleSend = useCallback(() => {
     const trimmed = text.trim()
-    if (!trimmed || disabled) return
+    if (!trimmed || disabled) {return}
     onSend(trimmed)
     setText('')
     if (process.env.EXPO_OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
     }
   }, [text, disabled, onSend])
 

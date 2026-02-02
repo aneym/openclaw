@@ -94,7 +94,9 @@
   line-height: 1;
   padding: 0 2px;
   opacity: 0.5;
-  transition: opacity 100ms, color 100ms;
+  transition:
+    opacity 100ms,
+    color 100ms;
   display: inline-flex;
   align-items: center;
 }
@@ -206,7 +208,7 @@
 
 /* Edge highlight via data attribute set during dragover */
 .split-pane[data-drop-zone]::after {
-  content: '';
+  content: "";
   position: absolute;
   z-index: 50;
   pointer-events: none;
@@ -300,7 +302,9 @@
   font: inherit;
   font-size: 13px;
   color: var(--fg);
-  transition: background 100ms, border-color 100ms;
+  transition:
+    background 100ms,
+    border-color 100ms;
 }
 
 .session-picker__item:hover {

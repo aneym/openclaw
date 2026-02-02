@@ -4,7 +4,7 @@ import { icons } from "../icons";
 import { formatToolDetail, resolveToolDisplay } from "../tool-display";
 import { extractTextCached } from "./message-extract";
 import { isToolResultMessage } from "./message-normalizer";
-import { formatToolOutputForSidebar, getTruncatedPreview } from "./tool-helpers";
+import { formatToolOutputForSidebar } from "./tool-helpers";
 
 /** Tool names that operate on files (used for file preview). */
 const FILE_TOOL_NAMES = new Set(["read", "write", "edit"]);
@@ -52,7 +52,9 @@ export function extractToolCards(message: unknown): ToolCard[] {
  * Extract the file path from a tool card's args, if present.
  */
 export function extractFilePathFromCard(card: ToolCard): string | undefined {
-  if (!card.args || typeof card.args !== "object") return undefined;
+  if (!card.args || typeof card.args !== "object") {
+    return undefined;
+  }
   const args = card.args as Record<string, unknown>;
   const filePath =
     (typeof args.file_path === "string" && args.file_path) ||
@@ -120,9 +122,7 @@ export function renderToolCardSidebar(
     >
       <span class="chat-tool-chip__icon">${icons[display.icon]}</span>
       <span class="chat-tool-chip__label">${display.label}</span>
-      ${detail
-        ? html`<span class="chat-tool-chip__detail">${detail}</span>`
-        : nothing}
+      ${detail ? html`<span class="chat-tool-chip__detail">${detail}</span>` : nothing}
     </span>
   `;
 }

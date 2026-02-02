@@ -6,36 +6,36 @@
  */
 
 export interface ArtifactTab {
-  id: string
-  filePath: string
-  fileName: string
-  content: string | null
-  mtime: number | null
-  loading: boolean
-  error: string | null
+  id: string;
+  filePath: string;
+  fileName: string;
+  content: string | null;
+  mtime: number | null;
+  loading: boolean;
+  error: string | null;
   /** True when the tab shows raw tool output instead of a file. */
-  isLegacy?: boolean
+  isLegacy?: boolean;
   /** For markdown files: whether to show raw source or rendered. */
-  showRaw?: boolean
+  showRaw?: boolean;
   /** Brief visual indicator that content was updated. */
-  updated?: boolean
+  updated?: boolean;
   /** Currently in edit mode. */
-  editing?: boolean
+  editing?: boolean;
   /** Draft content while editing. */
-  editDraft?: string
+  editDraft?: string;
   /** Currently saving to disk. */
-  saving?: boolean
+  saving?: boolean;
 }
 
 export interface PaneState {
-  paneId: string
-  threadId: string
-  scrollUserNearBottom: boolean
+  paneId: string;
+  threadId: string;
+  scrollUserNearBottom: boolean;
   // Legacy sidebar fields
-  sidebarOpen: boolean
-  sidebarContent: string | null
-  sidebarError: string | null
-  sidebarSplitRatio: number
+  sidebarOpen: boolean;
+  sidebarContent: string | null;
+  sidebarError: string | null;
+  sidebarSplitRatio: number;
 }
 
 export function createPaneState(paneId: string, threadId: string): PaneState {
@@ -47,7 +47,7 @@ export function createPaneState(paneId: string, threadId: string): PaneState {
     sidebarContent: null,
     sidebarError: null,
     sidebarSplitRatio: 0.6,
-  }
+  };
 }
 
 /**
@@ -58,22 +58,22 @@ export function syncPaneStates(
   current: Map<string, PaneState>,
   leafEntries: Array<{ paneId: string; threadId: string }>,
 ): Map<string, PaneState> {
-  const next = new Map<string, PaneState>()
+  const next = new Map<string, PaneState>();
   for (const entry of leafEntries) {
-    const existing = current.get(entry.paneId)
+    const existing = current.get(entry.paneId);
     if (existing) {
       // Update threadId if changed (e.g. drag-and-drop replaced thread)
       if (existing.threadId !== entry.threadId) {
         next.set(entry.paneId, {
           ...createPaneState(entry.paneId, entry.threadId),
           sidebarSplitRatio: existing.sidebarSplitRatio,
-        })
+        });
       } else {
-        next.set(entry.paneId, existing)
+        next.set(entry.paneId, existing);
       }
     } else {
-      next.set(entry.paneId, createPaneState(entry.paneId, entry.threadId))
+      next.set(entry.paneId, createPaneState(entry.paneId, entry.threadId));
     }
   }
-  return next
+  return next;
 }

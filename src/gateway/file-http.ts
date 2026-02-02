@@ -86,7 +86,9 @@ function isBinaryExtension(filePath: string): boolean {
 function looksLikeBinary(buffer: Buffer): boolean {
   const check = Math.min(buffer.length, 8192);
   for (let i = 0; i < check; i++) {
-    if (buffer[i] === 0) return true;
+    if (buffer[i] === 0) {
+      return true;
+    }
   }
   return false;
 }
@@ -106,7 +108,9 @@ export async function handleFileHttpRequest(
   const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
   const isRead = url.pathname === READ_PREFIX;
   const isWrite = url.pathname === WRITE_PREFIX;
-  if (!isRead && !isWrite) return false;
+  if (!isRead && !isWrite) {
+    return false;
+  }
 
   if (isRead && req.method !== "GET") {
     sendText(res, 405, "Method Not Allowed");

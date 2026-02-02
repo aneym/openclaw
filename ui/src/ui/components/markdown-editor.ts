@@ -1,3 +1,5 @@
+import { Editor } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
 /**
  * <markdown-editor> — Lit element wrapping TipTap for WYSIWYG markdown editing.
  *
@@ -11,10 +13,8 @@
  * Methods:
  *   getMarkdown() — returns current markdown string
  */
-import { LitElement, html, css } from "lit";
-import { customElement, property, state } from "lit/decorators.js";
-import { Editor } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
+import { LitElement, html } from "lit";
+import { customElement, property } from "lit/decorators.js";
 import { Markdown } from "tiptap-markdown";
 
 @customElement("markdown-editor")
@@ -31,7 +31,9 @@ export class MarkdownEditor extends LitElement {
 
   firstUpdated() {
     const mount = this.querySelector(".md-editor-mount");
-    if (!mount) return;
+    if (!mount) {
+      return;
+    }
 
     this.editor = new Editor({
       element: mount as HTMLElement,
@@ -60,7 +62,7 @@ export class MarkdownEditor extends LitElement {
             detail: { markdown: editor.storage.markdown.getMarkdown() },
             bubbles: true,
             composed: true,
-          })
+          }),
         );
       },
     });
@@ -83,7 +85,9 @@ export class MarkdownEditor extends LitElement {
   }
 
   render() {
-    return html`<div class="md-editor-mount"></div>`;
+    return html`
+      <div class="md-editor-mount"></div>
+    `;
   }
 }
 

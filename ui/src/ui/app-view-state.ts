@@ -1,8 +1,17 @@
+import type { EventLogEntry } from "./app-events";
+import type { DevicePairingList } from "./controllers/devices";
+import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals";
+import type { SkillMessage } from "./controllers/skills";
+import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { Tab } from "./navigation";
+import type { PaneState } from "./pane-state";
+import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
 import type { ThemeMode } from "./theme";
 import type { ThemeTransitionContext } from "./theme-transition";
+import type { ThreadDescriptor, ThreadState } from "./thread-state";
 import type {
   AgentsListResult,
   ChannelsStatusSnapshot,
@@ -20,19 +29,7 @@ import type {
   StatusSummary,
 } from "./types";
 import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
-import type { EventLogEntry } from "./app-events";
-import type { SkillMessage } from "./controllers/skills";
-import type {
-  ExecApprovalsFile,
-  ExecApprovalsSnapshot,
-} from "./controllers/exec-approvals";
-import type { DevicePairingList } from "./controllers/devices";
-import type { ExecApprovalRequest } from "./controllers/exec-approval";
-import type { ToolApprovalRequest } from "./controllers/tool-approval";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
-import type { ThreadDescriptor, ThreadState } from "./thread-state";
-import type { SplitPaneLayout } from "./split-tree";
-import type { PaneState } from "./pane-state";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -101,7 +98,7 @@ export type AppViewState = {
   configApplying: boolean;
   updateRunning: boolean;
   configSnapshot: ConfigSnapshot | null;
-  configSchema: unknown | null;
+  configSchema: unknown;
   configSchemaLoading: boolean;
   configUiHints: Record<string, unknown>;
   configForm: Record<string, unknown> | null;
@@ -151,7 +148,7 @@ export type AppViewState = {
   debugStatus: StatusSummary | null;
   debugHealth: HealthSnapshot | null;
   debugModels: unknown[];
-  debugHeartbeat: unknown | null;
+  debugHeartbeat: unknown;
   debugCallMethod: string;
   debugCallParams: string;
   debugCallResult: string | null;
@@ -256,7 +253,7 @@ export type AppViewState = {
   splitRatio: number;
   // Global artifact panel state (renders to the right of all panes)
   artifactOpen: boolean;
-  artifactTabs: import('./pane-state').ArtifactTab[];
+  artifactTabs: import("./pane-state").ArtifactTab[];
   artifactActiveTabId: string | null;
   artifactSplitRatio: number;
   artifactClosedPaths: Set<string>;
@@ -264,12 +261,17 @@ export type AppViewState = {
   splitLayout: SplitPaneLayout | null;
   focusedPaneId: string | null;
   paneStates: Map<string, PaneState>;
-  splitPane: (direction: 'horizontal' | 'vertical') => void;
+  splitPane: (direction: "horizontal" | "vertical") => void;
   closePane: (paneId?: string) => void;
   focusPane: (paneId: string) => void;
   setThreadInPane: (paneId: string, threadId: string) => void;
   swapPanes: (paneIdA: string, paneIdB: string) => void;
-  movePaneBeside: (sourcePaneId: string, targetPaneId: string, direction: 'horizontal' | 'vertical', position: 'before' | 'after') => void;
+  movePaneBeside: (
+    sourcePaneId: string,
+    targetPaneId: string,
+    direction: "horizontal" | "vertical",
+    position: "before" | "after",
+  ) => void;
   handleSplitBranchResize: (branchId: string, ratio: number) => void;
   focusNextPane: () => void;
   exitSplitMode: () => void;

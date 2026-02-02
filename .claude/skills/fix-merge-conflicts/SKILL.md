@@ -28,10 +28,12 @@ Collect files with conflict markers (U statuses or files containing `<<<<<<<` / 
 Open each conflicting file and remove conflict markers. Merge both sides logically when feasible.
 
 **If mutually exclusive, pick the variant that:**
+
 - Compiles and passes type checks
 - Preserves existing public APIs and behavior
 
 **Language-aware strategy:**
+
 - **package.json / lockfiles**: Merge keys conservatively; run install to regenerate lockfiles
 - **Lock files** (pnpm-lock.yaml): Prefer regenerating via `pnpm install`
 - **Generated files / build artifacts**: Prefer current branch (ours)
@@ -43,6 +45,7 @@ Open each conflicting file and remove conflict markers. Merge both sides logical
 ### 3. Validate
 
 **TypeScript (primary codebase):**
+
 - Install deps if manifests changed (`pnpm install`)
 - Run `pnpm lint && pnpm build`
 - Run targeted tests for affected files

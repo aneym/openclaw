@@ -8,21 +8,27 @@ allowed-tools: Bash(git add:*), Bash(git status:*), Bash(git diff:*), Bash(git c
 ## Context
 
 ### Current Directory
+
 !`pwd`
 
 ### Current Branch
+
 !`git branch --show-current`
 
 ### Recent Commits (match this style)
+
 !`git log --oneline -10`
 
 ### Git Status
+
 !`git status`
 
 ### Staged Changes
+
 !`git diff --cached --stat`
 
 ### Full Diff
+
 !`git diff HEAD`
 
 ## Instructions
@@ -47,6 +53,7 @@ If unstaged changes should be committed, run `git add` for specific files.
 ### Step 4: Commit
 
 Prefer using the project's committer script:
+
 ```bash
 scripts/committer "<message>" <file1> <file2> ...
 ```

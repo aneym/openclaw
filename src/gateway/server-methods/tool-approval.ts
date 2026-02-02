@@ -1,4 +1,5 @@
 import type { ToolApprovalDecision, ToolApprovalManager } from "../tool-approval-manager.js";
+import type { GatewayRequestHandlers } from "./types.js";
 import {
   ErrorCodes,
   errorShape,
@@ -6,7 +7,6 @@ import {
   validateToolApprovalRequestParams,
   validateToolApprovalResolveParams,
 } from "../protocol/index.js";
-import type { GatewayRequestHandlers } from "./types.js";
 
 export function createToolApprovalHandlers(manager: ToolApprovalManager): GatewayRequestHandlers {
   return {

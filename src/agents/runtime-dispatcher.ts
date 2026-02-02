@@ -1,6 +1,6 @@
 import type { RunEmbeddedPiAgentParams } from "./pi-embedded-runner/run/params.js";
-import { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
 import type { EmbeddedPiRunResult } from "./pi-embedded-runner/types.js";
+import { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
 
 /**
  * Dispatches agent runs to the configured runtime engine.

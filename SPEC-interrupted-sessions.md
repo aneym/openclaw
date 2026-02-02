@@ -69,13 +69,16 @@ The file is written synchronously to avoid races. Reads are async (startup only)
 #### 2. Hook into agent turn lifecycle
 
 In `src/auto-reply/reply/agent-runner.ts` — `runReplyAgent()`:
+
 - **Before the run**: call `markSessionRunning({ sessionKey, sessionId, runId })`
 - **After the run (finally block)**: call `clearSessionRunning(sessionKey)`
 
 In `src/commands/agent.ts` — `agentCommand()`:
+
 - Same pattern: mark before run, clear in finally
 
 In `src/agents/pi-embedded-runner.ts` or equivalent entry points for CLI backends:
+
 - Same pattern
 
 The key insight: we must mark BEFORE the agent starts and clear AFTER it finishes, in a finally block so crashes/errors still clean up.
@@ -83,6 +86,7 @@ The key insight: we must mark BEFORE the agent starts and clear AFTER it finishe
 #### 3. On startup: inject system events for interrupted sessions
 
 In `src/gateway/server-startup.ts` — `startGatewaySidecars()`:
+
 - After the restart sentinel wake (which handles the single triggering session), call a new function `wakeInterruptedSessions()`
 - This reads the interrupted sessions state, and for each one:
   - Injects a system event via `enqueueSystemEvent()` with a message like: `"⚠️ Your previous turn was interrupted by a gateway restart. The response was not completed. Review context and continue if needed."`
@@ -93,10 +97,12 @@ In `src/gateway/server-startup.ts` — `startGatewaySidecars()`:
 #### 4. Integration with gateway close
 
 In `src/gateway/server-close.ts`:
+
 - Before closing, snapshot the current running sessions to the state file (they're about to be interrupted)
 - This handles graceful restarts (SIGUSR1, config apply, update)
 
 For ungraceful crashes (SIGKILL, OOM, power loss):
+
 - The state file already has the entries because we write them at run start
 - On next startup, we'll find them and notify
 

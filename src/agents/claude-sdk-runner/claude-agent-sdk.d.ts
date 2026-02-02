@@ -35,6 +35,7 @@ declare module "@anthropic-ai/claude-agent-sdk" {
   export function createSdkMcpServer(options: {
     name: string;
     version?: string;
+    // eslint-disable-next-line typescript-eslint/no-explicit-any -- SDK generic param
     tools?: Array<SdkMcpToolDefinition<any>>;
   }): McpSdkServerConfigWithInstance;
 
@@ -46,7 +47,7 @@ declare module "@anthropic-ai/claude-agent-sdk" {
 
   interface SDKPartialAssistantMessage {
     type: "stream_event";
-    // biome-ignore lint/suspicious/noExplicitAny: raw SDK event type
+    // eslint-disable-next-line typescript-eslint/no-explicit-any -- raw SDK event type
     event: any;
     parent_tool_use_id: string | null;
   }
@@ -54,7 +55,7 @@ declare module "@anthropic-ai/claude-agent-sdk" {
   interface SDKAssistantMessage {
     type: "assistant";
     message?: {
-      // biome-ignore lint/suspicious/noExplicitAny: content block union
+      // eslint-disable-next-line typescript-eslint/no-explicit-any -- content block union
       content: any[];
     };
   }
@@ -80,7 +81,7 @@ declare module "@anthropic-ai/claude-agent-sdk" {
   interface QueryOptions {
     model?: string;
     systemPrompt?: string;
-    // biome-ignore lint/suspicious/noExplicitAny: MCP server config union
+    // eslint-disable-next-line typescript-eslint/no-explicit-any -- MCP server config union
     mcpServers?: Record<string, any>;
     permissionMode?: string;
     allowDangerouslySkipPermissions?: boolean;

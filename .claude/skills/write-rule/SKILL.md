@@ -16,16 +16,19 @@ You are creating a Claude Code rule file. Rules provide persistent context for s
 ### Step 1: Gather Information
 
 **Required inputs:**
+
 1. **Rule name** - kebab-case identifier (e.g., `gateway-protocol`, `railway-deploy`)
 2. **Topic** - What this rule covers (MCP, library, pattern, etc.)
 3. **Documentation** - User may paste docs inline, or provide a URL
 4. **Scope** - Is this global or file-specific? (see Step 1.5)
 
 **If user provides a GitHub URL:**
+
 - Convert to raw URL: `https://raw.githubusercontent.com/{owner}/{repo}/main/README.md`
 - Fetch and parse the README for official documentation
 
 **If user pastes docs inline:**
+
 - Parse the pasted content for key patterns, gotchas, and examples
 
 ### Step 1.5: Determine Rule Scope & Location
@@ -62,12 +65,12 @@ Is this rule relevant to ALL files in the codebase?
 
 **Good vs Bad Path Examples:**
 
-| Bad (Too Broad) | Good (Targeted) | When to Use |
-|-----------------|-----------------|-------------|
-| `**/*.ts` | `src/gateway/**/*` | Gateway-specific patterns |
-| `**/*` | `src/agents/**/*.ts` | Agent runtime patterns |
-| `**/*.swift` | `apps/ios/Sources/**/*` | iOS-specific patterns |
-| `**/*.ts` | `extensions/**/*` | Extension/plugin patterns |
+| Bad (Too Broad) | Good (Targeted)         | When to Use               |
+| --------------- | ----------------------- | ------------------------- |
+| `**/*.ts`       | `src/gateway/**/*`      | Gateway-specific patterns |
+| `**/*`          | `src/agents/**/*.ts`    | Agent runtime patterns    |
+| `**/*.swift`    | `apps/ios/Sources/**/*` | iOS-specific patterns     |
+| `**/*.ts`       | `extensions/**/*`       | Extension/plugin patterns |
 
 ### Step 2: Systematic MCP Discovery (If MCP-related)
 
@@ -103,11 +106,12 @@ From the documentation and your exploration, extract:
 **Location**: `.claude/rules/<rule-name>.md`
 
 **Format**:
+
 ```markdown
 ---
 paths:
-  - "src/gateway/**/*"    # Required for non-global rules
-  - "src/agents/**/*"     # Use array format for multiple patterns
+  - "src/gateway/**/*" # Required for non-global rules
+  - "src/agents/**/*" # Use array format for multiple patterns
 ---
 
 # <Title>
@@ -115,8 +119,8 @@ paths:
 ## Quick Reference
 
 | Task | Tool/Method | Notes |
-|------|-------------|-------|
-| ... | ... | ... |
+| ---- | ----------- | ----- |
+| ...  | ...         | ...   |
 
 ## Key Concepts
 
@@ -125,9 +129,11 @@ Brief explanation of core concepts.
 ## Common Workflows
 
 ### Workflow 1: <Name>
+
 Steps and examples...
 
 ### Workflow 2: <Name>
+
 Steps and examples...
 
 ## Gotchas & Tips
@@ -138,8 +144,8 @@ Steps and examples...
 ## Error Reference
 
 | Error | Cause | Solution |
-|-------|-------|----------|
-| ... | ... | ... |
+| ----- | ----- | -------- |
+| ...   | ...   | ...      |
 
 ## Environment/Setup
 
@@ -149,6 +155,7 @@ Required configuration...
 ### Step 6: Rule Writing Guidelines
 
 **DO:**
+
 - Keep under 500 lines (split if larger)
 - Use tables for quick reference
 - Include real examples, not hypotheticals
@@ -158,10 +165,11 @@ Required configuration...
 - Document project-specific config (org IDs, region URLs, project names)
 
 **DON'T:**
+
 - Include obvious/generic information
 - Copy entire API docs verbatim
 - Omit `paths` frontmatter for file-specific rules (causes context bloat)
-- **Use broad paths like `**/*.ts`** - these match everything and clog context
+- **Use broad paths like `**/\*.ts`\*\* - these match everything and clog context
 - Write vague guidance ("use the right tool")
 - Skip tools just because you didn't test them - at minimum list them
 

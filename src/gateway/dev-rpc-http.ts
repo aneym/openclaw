@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-
+import type { GatewayRequestContext } from "./server-methods/types.js";
 import { loadConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import { authorizeGatewayConnect, type ResolvedGatewayAuth } from "./auth.js";
@@ -12,7 +12,6 @@ import {
 } from "./http-common.js";
 import { getBearerToken } from "./http-utils.js";
 import { coreGatewayHandlers } from "./server-methods.js";
-import type { GatewayRequestContext } from "./server-methods/types.js";
 
 const log = createSubsystemLogger("gateway").child("dev-rpc");
 
@@ -36,10 +35,14 @@ export async function handleDevRpcHttpRequest(
   opts: { auth: ResolvedGatewayAuth; trustedProxies?: string[] },
 ): Promise<boolean> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
-  if (url.pathname !== "/api/rpc") return false;
+  if (url.pathname !== "/api/rpc") {
+    return false;
+  }
 
   // Only available when the gateway was started with --dev.
-  if (process.env.OPENCLAW_GATEWAY_DEV !== "1") return false;
+  if (process.env.OPENCLAW_GATEWAY_DEV !== "1") {
+    return false;
+  }
 
   if (req.method !== "POST") {
     sendMethodNotAllowed(res, "POST");
@@ -60,7 +63,9 @@ export async function handleDevRpcHttpRequest(
   }
 
   const bodyUnknown = await readJsonBodyOrError(req, res, MAX_BODY_BYTES);
-  if (bodyUnknown === undefined) return true;
+  if (bodyUnknown === undefined) {
+    return true;
+  }
   const body = (bodyUnknown ?? {}) as DevRpcBody;
 
   const method = typeof body.method === "string" ? body.method.trim() : "";
@@ -97,7 +102,9 @@ export async function handleDevRpcHttpRequest(
       client: null,
       isWebchatConnect: () => false,
       respond: (ok, payload, err) => {
-        if (responded) return;
+        if (responded) {
+          return;
+        }
         responded = true;
         if (ok) {
           result = payload;

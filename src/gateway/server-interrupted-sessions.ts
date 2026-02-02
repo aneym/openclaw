@@ -28,7 +28,9 @@ export type WakeInterruptedSessionsParams = {
  */
 export async function wakeInterruptedSessions(params: WakeInterruptedSessionsParams) {
   const interrupted = consumeInterruptedSessions();
-  if (interrupted.length === 0) return;
+  if (interrupted.length === 0) {
+    return;
+  }
 
   const sentinel = await readRestartSentinel();
   const sentinelSessionKey = sentinel?.payload.sessionKey?.trim();
@@ -38,8 +40,12 @@ export async function wakeInterruptedSessions(params: WakeInterruptedSessionsPar
 
   const wakePromises: Promise<void>[] = [];
   for (const session of interrupted) {
-    if (sentinelSessionKey && session.sessionKey === sentinelSessionKey) continue;
-    if (session.sessionKey.startsWith("cron:")) continue;
+    if (sentinelSessionKey && session.sessionKey === sentinelSessionKey) {
+      continue;
+    }
+    if (session.sessionKey.startsWith("cron:")) {
+      continue;
+    }
 
     const abortController = new AbortController();
     const runId = session.sessionId ?? session.sessionKey;

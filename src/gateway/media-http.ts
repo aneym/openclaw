@@ -8,12 +8,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import path from "node:path";
-
+import { loadConfig } from "../config/config.js";
 import { getMediaDir } from "../media/store.js";
 import { authorizeGatewayConnect, isLocalDirectRequest, type ResolvedGatewayAuth } from "./auth.js";
 import { sendText, sendUnauthorized } from "./http-common.js";
 import { getBearerToken } from "./http-utils.js";
-import { loadConfig } from "../config/config.js";
 
 const MIME_BY_EXT: Record<string, string> = {
   ".ogg": "audio/ogg",
@@ -38,11 +37,21 @@ const PREFIX = "/api/media/";
  * Only bare filenames allowed — no slashes, no "..", no null bytes.
  */
 function isSafeFilename(name: string): boolean {
-  if (!name) return false;
-  if (name.includes("/") || name.includes("\\")) return false;
-  if (name.includes("..")) return false;
-  if (name.includes("\0")) return false;
-  if (name === "." || name === "..") return false;
+  if (!name) {
+    return false;
+  }
+  if (name.includes("/") || name.includes("\\")) {
+    return false;
+  }
+  if (name.includes("..")) {
+    return false;
+  }
+  if (name.includes("\0")) {
+    return false;
+  }
+  if (name === "." || name === "..") {
+    return false;
+  }
   return true;
 }
 
@@ -57,7 +66,9 @@ export async function handleMediaHttpRequest(
   opts: { auth: ResolvedGatewayAuth; trustedProxies?: string[] },
 ): Promise<boolean> {
   const url = new URL(req.url ?? "/", `http://${req.headers.host || "localhost"}`);
-  if (!url.pathname.startsWith(PREFIX)) return false;
+  if (!url.pathname.startsWith(PREFIX)) {
+    return false;
+  }
 
   if (req.method !== "GET") {
     res.statusCode = 405;

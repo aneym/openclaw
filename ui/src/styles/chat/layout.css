@@ -182,7 +182,10 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
-  transition: background 150ms ease-out, color 150ms ease-out, border-color 150ms ease-out;
+  transition:
+    background 150ms ease-out,
+    color 150ms ease-out,
+    border-color 150ms ease-out;
 }
 
 .chat-load-more__btn:hover {

@@ -7,8 +7,8 @@ import { setLastActiveSessionKey } from "./app-settings";
 import { resetToolStream } from "./app-tool-stream";
 import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat";
 import { loadSessions } from "./controllers/sessions";
-import { normalizeBasePath } from "./navigation";
 import { clearDraft, clearAttachments, saveQueue } from "./draft-storage";
+import { normalizeBasePath } from "./navigation";
 import { generateUUID } from "./uuid";
 
 type ChatHost = {
@@ -36,10 +36,7 @@ function scrollChat(host: ChatHost, force: boolean) {
       force,
     );
   } else {
-    scheduleChatScroll(
-      host as unknown as Parameters<typeof scheduleChatScroll>[0],
-      force,
-    );
+    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], force);
   }
 }
 

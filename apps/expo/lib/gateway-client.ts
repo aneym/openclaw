@@ -77,46 +77,46 @@ export class GatewayClient {
   // --- private ---
 
   private connect() {
-    if (this.closed) return
+    if (this.closed) {return}
     this.ws = new WebSocket(this.opts.url)
-    this.ws.onopen = () => this.queueConnect()
-    this.ws.onmessage = (ev) => this.handleMessage(String(ev.data ?? ''))
-    this.ws.onclose = (ev) => {
+    this.ws.addEventListener('open', () => this.queueConnect())
+    this.ws.addEventListener('message', (ev) => this.handleMessage(String(ev.data ?? '')))
+    this.ws.addEventListener('close', (ev) => {
       const reason = String((ev as { reason?: string }).reason ?? '')
       this.ws = null
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`))
       this.opts.onClose?.({ code: ev.code, reason })
       this.scheduleReconnect()
-    }
-    this.ws.onerror = () => {
+    })
+    this.ws.addEventListener('error', () => {
       // close handler will fire
-    }
+    })
   }
 
   private scheduleReconnect() {
-    if (this.closed) return
+    if (this.closed) {return}
     const delay = this.backoffMs
     this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000)
     setTimeout(() => this.connect(), delay)
   }
 
   private flushPending(err: Error) {
-    for (const [, p] of this.pending) p.reject(err)
+    for (const [, p] of this.pending) {p.reject(err)}
     this.pending.clear()
   }
 
   private queueConnect() {
     this.connectNonce = null
     this.connectSent = false
-    if (this.connectTimer !== null) clearTimeout(this.connectTimer)
+    if (this.connectTimer !== null) {clearTimeout(this.connectTimer)}
     // Wait briefly for challenge event, then connect anyway
     this.connectTimer = setTimeout(() => {
-      void this.sendConnect()
+       this.sendConnect()
     }, 750)
   }
 
   private sendConnect() {
-    if (this.connectSent) return
+    if (this.connectSent) {return}
     this.connectSent = true
     if (this.connectTimer !== null) {
       clearTimeout(this.connectTimer)
@@ -170,7 +170,7 @@ export class GatewayClient {
         const nonce = payload && typeof payload.nonce === 'string' ? payload.nonce : null
         if (nonce) {
           this.connectNonce = nonce
-          void this.sendConnect()
+           this.sendConnect()
         }
         return
       }
@@ -180,7 +180,7 @@ export class GatewayClient {
       }
       try {
         this.opts.onEvent?.(evt)
-        for (const listener of this.eventListeners) listener(evt)
+        for (const listener of this.eventListeners) {listener(evt)}
       } catch (err) {
         console.error('[gateway] event handler error:', err)
       }
@@ -190,10 +190,10 @@ export class GatewayClient {
     if (frame.type === 'res') {
       const res = parsed as GatewayResponseFrame
       const pending = this.pending.get(res.id)
-      if (!pending) return
+      if (!pending) {return}
       this.pending.delete(res.id)
-      if (res.ok) pending.resolve(res.payload)
-      else pending.reject(new Error(res.error?.message ?? 'request failed'))
+      if (res.ok) {pending.resolve(res.payload)}
+      else {pending.reject(new Error(res.error?.message ?? 'request failed'))}
     }
   }
 }

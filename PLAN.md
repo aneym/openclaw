@@ -21,6 +21,7 @@ Multi-pane streaming is broken because tool stream and chat stream state is **gl
 **Location:** `app.ts:879-953`
 
 `focusPane` synchronously: (1) snapshots host state to old thread, (2) changes `host.sessionKey`, (3) restores target thread state. WebSocket events are async. If a delta arrives between steps 1-3:
+
 - The event targets `host.sessionKey` which may have just changed
 - `chatRunId` may be restored as `null` if the target thread had no active run, hiding the stop button
 - Stream data from the snapshotted session can be permanently lost
@@ -32,6 +33,7 @@ Multi-pane streaming is broken because tool stream and chat stream state is **gl
 **Location:** `app-gateway.ts:311-343`
 
 The visible-but-not-focused handler does basic delta/final text handling then `return`s early. Skipped operations:
+
 - `handleChatEvent()` full state machine (error handling, run ID reconciliation for sub-agent `final` events)
 - `flushChatQueueForEvent()` — queued messages in non-focused panes never send
 - `resetToolStream()` on final/error — stale tool stream persists from previous run
@@ -44,6 +46,7 @@ The visible-but-not-focused handler does basic delta/final text handling then `r
 **Location:** `app-gateway.ts:339-341` + `app.ts:879-931`
 
 When `final` arrives for a non-focused visible pane, `loadChatHistoryForThread()` fires async. If the user focuses that pane before the load completes:
+
 1. `focusPane` → `restoreThreadState` copies the thread's **pre-history** messages to host
 2. Async history load completes, writes to `thread.chatMessages`
 3. Host's `chatMessages` is stale — shows incomplete history until something else triggers a re-render
@@ -88,27 +91,32 @@ Import `ToolStreamEntry` from `./app-tool-stream`.
 ### 2. `ui/src/ui/app-tool-stream.ts` — Route events to per-thread tool streams
 
 **Change `handleAgentEvent`** (line 184-241):
+
 - Accept an optional `targetThread: ThreadState` parameter
 - When `targetThread` is provided and `sessionKey !== host.sessionKey`, operate on `targetThread.toolStreamById` / `targetThread.toolStreamOrder` / `targetThread.chatToolMessages` instead of the host
 - Remove the `if (sessionKey && sessionKey !== host.sessionKey) return` guard (line 196) — the caller now handles routing
 - Add a `handleAgentEventForThread(thread: ThreadState, payload)` variant (or make the existing function polymorphic) that operates on ThreadState fields
 
 **Add `resetToolStreamForThread(thread: ThreadState)`**:
+
 - Clears `thread.toolStreamById`, `thread.toolStreamOrder`, `thread.chatToolMessages`
 - Mirrors `resetToolStream(host)` but scoped to a thread
 
 **Add `syncToolStreamMessagesForThread(thread: ThreadState)`**:
+
 - Rebuilds `thread.chatToolMessages` from `thread.toolStreamOrder`/`thread.toolStreamById`
 
 ### 3. `ui/src/ui/app-gateway.ts` — Full lifecycle for visible panes + routing fix
 
 **Agent event routing (lines 230-255):**
+
 - When `agentSessionKey` matches a visible non-focused pane, look up the `ThreadState` and call `handleAgentEventForThread(thread, agentPayload)` instead of relying on the host-level function
 - Keep the host-level call for the focused session
 
 **Chat event visible-pane handler (lines 311-343) — expand to full lifecycle:**
 
 Replace the minimal handler with:
+
 ```
 if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
   const paneThreadId = host.sessionKeyToThreadId.get(eventSessionKey)
@@ -142,12 +150,14 @@ if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
 ```
 
 **Add `handleChatEventForThread(thread: ThreadState, payload: ChatEventPayload)`:**
+
 - Mirrors `handleChatEvent` from `controllers/chat.ts` but operates on ThreadState fields instead of the host
 - Handles delta (append stream text), final/error/aborted (clear run state), sub-agent run ID reconciliation
 
 ### 4. `ui/src/ui/controllers/chat.ts` — Add thread-scoped variant
 
 **Add `handleChatEventForThread(thread: ThreadState, payload: ChatEventPayload)`:**
+
 ```typescript
 export function handleChatEventForThread(
   thread: ThreadState,
@@ -165,6 +175,7 @@ This avoids the `if (payload.sessionKey !== state.sessionKey) return null` guard
 **`focusPane` (line 879):**
 
 Add an event buffering guard:
+
 ```typescript
 focusPane(paneId: string) {
   if (paneId === this.focusedPaneId) return
@@ -208,24 +219,26 @@ focusPane(paneId: string) {
 **`queryChatStatus` (line 724-766):**
 
 After restoring `chatRunId` and `chatStream`, also query the gateway for active tool state if available. If the gateway doesn't expose tool stream snapshots, at minimum:
+
 - Don't call `resetToolStream()` on reconnect if an active run exists (defer the reset until after `queryChatStatus` confirms no run)
 - Move `resetToolStream()` from `onHello` (line 163) into the `queryChatStatus().then()` handler (line 180-193), only calling it when `!host.chatRunId`
 
 Current code already does this partially (lines 181-185 clear `chatStream` only if no active run), but the `resetToolStream()` at line 163 runs unconditionally before `queryChatStatus` even fires.
 
 **Fix:** Remove `resetToolStream()` from line 163. Add it inside the `.then()` at line 180:
+
 ```typescript
 void queryChatStatus(host).then(() => {
   if (!host.chatRunId) {
     (host as any).chatStream = null;
     (host as any).chatStreamStartedAt = null;
-    resetToolStream(host as any);  // <-- moved here
+    resetToolStream(host as any); // <-- moved here
   }
   for (const thread of host.threads.values()) {
     if (!thread.chatRunId) {
       thread.chatStream = null;
       thread.chatStreamStartedAt = null;
-      resetToolStreamForThread(thread);  // <-- per-thread
+      resetToolStreamForThread(thread); // <-- per-thread
     }
   }
 });
@@ -262,25 +275,33 @@ This already reads from `thread.chatToolMessages` for non-active sessions, which
 ## Risks and Edge Cases
 
 ### Race conditions during rapid focus switching
+
 If the user clicks between panes rapidly, multiple snapshot/restore cycles can overlap. The `_switching` flag approach assumes synchronous execution within `focusPane`, which holds because the async parts (history load, textarea focus) are deferred. However, the `_historyLoading` polling loop could fire stale if focus moved again. Mitigation: the polling checks `this.focusedPaneId === paneId` before applying.
 
 ### Memory usage with per-thread tool streams
+
 Each ThreadState now holds its own tool stream map. With many threads and tool-heavy runs, memory could grow. Mitigation: the existing `TOOL_STREAM_LIMIT = 50` cap should apply per-thread. Inactive threads should have their tool streams cleared on `final`.
 
 ### Backward compatibility of `chatToolMessages` on ThreadState
+
 `ThreadState.chatToolMessages` already exists (typed as `unknown[]`). It's populated during snapshot/restore but not during live streaming for non-focused threads. After this fix, it will be actively written to during streaming. No interface change needed.
 
 ### Sub-agent `final` events
+
 `handleChatEvent` has special handling for `final` from a different `runId` (line 166-173 in controllers/chat.ts). The thread-scoped variant must replicate this: a sub-agent completing should trigger history reload but not clear the parent run's stream state.
 
 ### Existing onboarding mode guard
+
 `app-gateway.ts:231` skips agent events during onboarding. This guard should remain and apply before any per-thread routing.
 
 ### `flushChatQueue` for non-focused panes
+
 Currently `flushChatQueue` operates on the host's `chatQueue`. With per-thread queues, a thread-scoped flush is needed. `ThreadState` already has `chatQueue`. A `flushChatQueueForThread(host, thread)` variant should use `thread.chatQueue` and send via `host.client.request('chat.send', { sessionKey: thread.descriptor.sessionKey, ... })`.
 
 ### `compactionStatus` scoping
+
 Compaction events (`app-tool-stream.ts:154-182`) are handled globally. In a multi-pane setup, compaction should be scoped to the correct session. This is a lower-priority concern — compaction is rare and short-lived — but worth noting for a follow-up.
 
 ### WebSocket `onGap` handling
+
 Seq gaps are logged but not acted on (line 206-208). In a multi-pane scenario with high event throughput, gaps are more likely. No fix needed now, but worth monitoring.

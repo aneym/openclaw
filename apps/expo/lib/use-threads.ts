@@ -28,7 +28,7 @@ function dedup(list: ThreadDescriptor[]): ThreadDescriptor[] {
   const seen = new Set<string>()
   const result: ThreadDescriptor[] = []
   for (const t of list) {
-    if (seen.has(t.id)) continue
+    if (seen.has(t.id)) {continue}
     seen.add(t.id)
     result.push(t)
   }
@@ -38,7 +38,7 @@ function dedup(list: ThreadDescriptor[]): ThreadDescriptor[] {
 function loadDescriptors(): ThreadDescriptor[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
+    if (!raw) {return []}
     const parsed = JSON.parse(raw)
     return Array.isArray(parsed) ? dedup(parsed) : []
   } catch {
@@ -128,7 +128,7 @@ function isCronThread(t: ThreadDescriptor): boolean {
 
 /** Group threads matching web UI: Active, Older, Automated, Archived */
 export function groupThreads(threads: ThreadDescriptor[]): ThreadSection[] {
-  if (threads.length === 0) return []
+  if (threads.length === 0) {return []}
 
   const now = Date.now()
   const active: ThreadDescriptor[] = []
@@ -149,10 +149,10 @@ export function groupThreads(threads: ThreadDescriptor[]): ThreadSection[] {
   }
 
   const sections: ThreadSection[] = []
-  if (active.length > 0) sections.push({ title: 'Active', data: active })
-  if (older.length > 0) sections.push({ title: 'Older', data: older })
-  if (automated.length > 0) sections.push({ title: 'Automated', data: automated })
-  if (archived.length > 0) sections.push({ title: 'Archived', data: archived })
+  if (active.length > 0) {sections.push({ title: 'Active', data: active })}
+  if (older.length > 0) {sections.push({ title: 'Older', data: older })}
+  if (automated.length > 0) {sections.push({ title: 'Automated', data: automated })}
+  if (archived.length > 0) {sections.push({ title: 'Archived', data: archived })}
   return sections
 }
 
@@ -193,7 +193,7 @@ export function useThreads(): UseThreadsReturn {
     client
       .request<SessionsListResult>('sessions.list', { activeMinutes: 10080 })
       .then((res) => {
-        if (!res.sessions) return
+        if (!res.sessions) {return}
         const descriptors = res.sessions.map((s) =>
           sessionToDescriptor(s, parentSessionKey),
         )
@@ -283,7 +283,7 @@ export function useThreads(): UseThreadsReturn {
 
   // Re-resolve local session keys if parentSessionKey changes
   useEffect(() => {
-    if (!parentSessionKey) return
+    if (!parentSessionKey) {return}
     const current = localRef.current
     const needsUpdate = current.some(
       (t) => t.isLocal !== false && t.parentSessionKey !== parentSessionKey,
@@ -307,11 +307,11 @@ export function useThreads(): UseThreadsReturn {
   const seenIds = new Set<string>()
   const deduped: ThreadDescriptor[] = []
   for (const t of allThreads) {
-    if (seenIds.has(t.id)) continue
+    if (seenIds.has(t.id)) {continue}
     seenIds.add(t.id)
     deduped.push(t)
   }
-  const merged = deduped.sort(
+  const merged = deduped.toSorted(
     (a, b) => b.lastActivityAt - a.lastActivityAt,
   )
 

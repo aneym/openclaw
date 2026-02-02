@@ -5,12 +5,12 @@ import { bubbleColors } from '@/lib/colors'
 import type { ChatMessage, ContentBlock } from '@/lib/gateway-types'
 
 function extractText(content: string | ContentBlock[] | undefined): string {
-  if (!content) return ''
-  if (typeof content === 'string') return content
+  if (!content) {return ''}
+  if (typeof content === 'string') {return content}
   const parts: string[] = []
   for (const block of content) {
-    if (block.type === 'text') parts.push(block.text)
-    else if (block.type === 'tool_use') parts.push(`[Tool: ${block.name}]`)
+    if (block.type === 'text') {parts.push(block.text)}
+    else if (block.type === 'tool_use') {parts.push(`[Tool: ${block.name}]`)}
   }
   return parts.join('\n') || ''
 }
@@ -22,7 +22,7 @@ export const ChatMessageBubble = memo(function ChatMessageBubble({
 }) {
   const isUser = message.role === 'user'
   const text = extractText(message.content)
-  if (!text) return null
+  if (!text) {return null}
 
   return (
     <Animated.View

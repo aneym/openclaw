@@ -44,9 +44,9 @@ export function useGateway() {
  * from the hello snapshot's sessionDefaults.
  */
 function resolveSessionKey(key: string, defaults?: SessionDefaults): string {
-  if (!defaults?.mainSessionKey) return key
+  if (!defaults?.mainSessionKey) {return key}
   const raw = (key ?? '').trim()
-  if (!raw) return defaults.mainSessionKey
+  if (!raw) {return defaults.mainSessionKey}
   const mainKey = defaults.mainKey?.trim() || 'main'
   const agentId = defaults.defaultAgentId?.trim()
   const isAlias =
@@ -112,10 +112,10 @@ export function GatewayProvider({ children }: { children: ReactNode }) {
   // Auto-connect on mount if we have saved settings
   useEffect(() => {
     const settings = loadSettings()
-    if (!settings.gatewayUrl) return
+    if (!settings.gatewayUrl) {return}
     const token = getSecureValue('token') ?? undefined
     const password = getSecureValue('password') ?? undefined
-    if (settings.sessionKey) setSessionKeyRaw(settings.sessionKey)
+    if (settings.sessionKey) {setSessionKeyRaw(settings.sessionKey)}
     connect(settings.gatewayUrl, token, password)
     return () => {
       clientRef.current?.stop()

@@ -8,24 +8,31 @@ allowed-tools: Read, Edit, Write, Glob, Grep, AskUserQuestion, Task
 ## Context
 
 ### Target Scope
+
 !`echo "${ARGUMENTS:-all}"`
 
 ### Project Skills
+
 !`ls -1 .claude/skills/*/SKILL.md 2>/dev/null | sed 's|.*/skills/||; s|/SKILL.md||' || echo "None"`
 
 ### Project Rules
+
 !`ls -1 .claude/rules/*.md 2>/dev/null | xargs -I{} basename {} .md || echo "None"`
 
 ### Project Hooks
+
 !`ls -1 .claude/hooks/*.js 2>/dev/null | xargs -I{} basename {} || echo "None"`
 
 ### Settings Files
+
 !`ls -la .claude/settings*.json 2>/dev/null | awk '{print $NF}' || echo "None"`
 
 ### Personal Skills
+
 !`ls -1 ~/.claude/skills/*/SKILL.md 2>/dev/null | sed 's|.*/skills/||; s|/SKILL.md||' | head -10 || echo "None"`
 
 ### Personal Rules
+
 !`ls -1 ~/.claude/rules/*.md 2>/dev/null | xargs -I{} basename {} .md | head -10 || echo "None"`
 
 ## Instructions
@@ -47,13 +54,13 @@ Return a concise validation checklist for each.")
 
 Parse `$ARGUMENTS` to determine what to audit:
 
-| Argument | Audit Targets |
-|----------|---------------|
-| `skills` | `.claude/skills/*/SKILL.md` |
-| `rules` | `.claude/rules/*.md` |
-| `hooks` | `.claude/hooks/*.js` + settings.json hooks |
-| `settings` | `.claude/settings.json`, `.claude/settings.local.json` |
-| `all` (default) | Everything above |
+| Argument        | Audit Targets                                          |
+| --------------- | ------------------------------------------------------ |
+| `skills`        | `.claude/skills/*/SKILL.md`                            |
+| `rules`         | `.claude/rules/*.md`                                   |
+| `hooks`         | `.claude/hooks/*.js` + settings.json hooks             |
+| `settings`      | `.claude/settings.json`, `.claude/settings.local.json` |
+| `all` (default) | Everything above                                       |
 
 ### Step 3: Audit Each Config Type
 
@@ -63,20 +70,21 @@ For each `SKILL.md` file, validate:
 
 **Frontmatter Fields (all optional but check usage):**
 
-| Field | Valid Values | Check |
-|-------|--------------|-------|
-| `name` | lowercase, numbers, hyphens (max 64) | Must match directory name |
-| `description` | any string | **Recommended** - enables auto-trigger |
-| `argument-hint` | e.g., `<file> [options]` | Format: `<required> [optional]` |
-| `disable-model-invocation` | `true`, `false` | Set `true` for side-effect skills |
-| `user-invocable` | `true`, `false` | Set `false` for background knowledge |
-| `allowed-tools` | comma-separated | Validate tool names exist |
-| `model` | `sonnet`, `opus`, `haiku`, or model ID | Check valid alias |
-| `context` | `fork` | Only valid value |
-| `agent` | `Explore`, `Plan`, `general-purpose`, custom | Requires `context: fork` |
-| `hooks` | object | Validate hook structure |
+| Field                      | Valid Values                                 | Check                                  |
+| -------------------------- | -------------------------------------------- | -------------------------------------- |
+| `name`                     | lowercase, numbers, hyphens (max 64)         | Must match directory name              |
+| `description`              | any string                                   | **Recommended** - enables auto-trigger |
+| `argument-hint`            | e.g., `<file> [options]`                     | Format: `<required> [optional]`        |
+| `disable-model-invocation` | `true`, `false`                              | Set `true` for side-effect skills      |
+| `user-invocable`           | `true`, `false`                              | Set `false` for background knowledge   |
+| `allowed-tools`            | comma-separated                              | Validate tool names exist              |
+| `model`                    | `sonnet`, `opus`, `haiku`, or model ID       | Check valid alias                      |
+| `context`                  | `fork`                                       | Only valid value                       |
+| `agent`                    | `Explore`, `Plan`, `general-purpose`, custom | Requires `context: fork`               |
+| `hooks`                    | object                                       | Validate hook structure                |
 
 **Content Checks:**
+
 - [ ] Has $ARGUMENTS if skill accepts input
 - [ ] Pre-computed bash (exclamation prefix) commands are valid
 - [ ] No deprecated commands/ references (use skills/)
@@ -91,16 +99,19 @@ Valid tools: `Read`, `Write`, `Edit`, `Glob`, `Grep`, `Bash`, `Bash(pattern:*)`,
 For each `.md` rule file, validate:
 
 **Frontmatter:**
+
 - `paths:` must be array of glob patterns if present
 - No other frontmatter fields supported
 
 **Path Pattern Validation:**
+
 ```
 ✓ Valid: **/*.ts, src/**/*.tsx, {src,lib}/**/*
 ✗ Invalid: *.ts (missing **), **/* (too broad)
 ```
 
 **Content Checks:**
+
 - [ ] Under 500 lines
 - [ ] No duplicate rules (same name in different locations)
 - [ ] Clear, actionable guidance
@@ -108,15 +119,14 @@ For each `.md` rule file, validate:
 #### 3c. Audit Hooks
 
 **settings.json hook structure:**
+
 ```json
 {
   "hooks": {
     "EventName": [
       {
         "matcher": "ToolPattern",
-        "hooks": [
-          { "type": "command", "command": "...", "timeout": 60 }
-        ]
+        "hooks": [{ "type": "command", "command": "...", "timeout": 60 }]
       }
     ]
   }
@@ -127,12 +137,14 @@ For each `.md` rule file, validate:
 `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, `Notification`, `SubagentStart`, `SubagentStop`, `Stop`, `PreCompact`, `Setup`, `SessionEnd`
 
 **Matcher Patterns (for tool events):**
+
 - Exact: `Write`, `Edit`
 - Regex: `Write|Edit`, `mcp__supabase__.*`
 - Required for: `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`
 - Optional for: `Notification`, `SubagentStart`, `SubagentStop`, `PreCompact`, `Setup`
 
 **Hook Script Validation (.js files):**
+
 - [ ] Uses `process.stdin` to read JSON input
 - [ ] Exit codes: 0 (ok), 2 (block), other (warn)
 - [ ] No hardcoded paths (use `process.cwd()` or env vars)
@@ -141,6 +153,7 @@ For each `.md` rule file, validate:
 #### 3d. Audit Settings
 
 **settings.json structure:**
+
 ```json
 {
   "permissions": { "allow": [], "ask": [], "deny": [] },
@@ -153,6 +166,7 @@ For each `.md` rule file, validate:
 ```
 
 **Permission Rule Syntax:**
+
 ```
 Tool                    # Any use of tool
 Tool(pattern)           # Tool with arg containing pattern
@@ -169,29 +183,37 @@ Format findings as:
 # Claude Config Audit Report
 
 ## Summary
+
 - Skills: X checked, Y issues
 - Rules: X checked, Y issues
 - Hooks: X checked, Y issues
 - Settings: X issues
 
 ## 🔴 Critical (Blocks Functionality)
+
 ### [config-type] file-name
+
 - **Issue**: Description
 - **Expected**: What it should be
 - **Current**: What it is
 - **Fix**: Specific change needed
 
 ## 🟡 Warnings (Should Fix)
+
 ### [config-type] file-name
+
 - **Issue**: Description
 - **Fix**: How to fix
 
 ## 🟢 Deprecated (Update Recommended)
+
 ### [config-type] file-name
+
 - **Issue**: Using deprecated pattern
 - **Modern**: Updated approach
 
 ## ✅ Passing
+
 - skill-name: Valid frontmatter, valid tools
 - rule-name: Valid paths, focused content
 ```
@@ -204,23 +226,32 @@ For each issue, prepare the specific edit:
 ## Proposed Fixes
 
 ### Fix 1: [file-path]
+
 **Issue**: Missing description field
 **Change**:
 \`\`\`diff
+
 ---
+
 name: skill-name
-+ description: What this skill does
-argument-hint: <args>
+
+- description: What this skill does
+  argument-hint: <args>
+
 ---
+
 \`\`\`
 
 ### Fix 2: [file-path]
+
 **Issue**: Invalid tool name
 **Change**:
 \`\`\`diff
+
 - allowed-tools: Read, Wirte, Glob
-+ allowed-tools: Read, Write, Glob
-\`\`\`
+
+* allowed-tools: Read, Write, Glob
+  \`\`\`
 ```
 
 ### Step 6: Get Approval
@@ -240,6 +271,7 @@ Options:
 ### Step 7: Apply Approved Fixes
 
 For each approved fix:
+
 1. Read the current file
 2. Apply the specific edit
 3. Verify the change
@@ -291,10 +323,12 @@ After applying fixes, summarize:
 ⏭️ Skipped 2 deprecated patterns (manual review needed)
 
 ### Files Modified
+
 - .claude/skills/foo/SKILL.md
 - .claude/settings.json
 
 ### Remaining Issues
+
 - [file]: Issue that needs manual review
 ```
 

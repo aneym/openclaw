@@ -211,7 +211,9 @@ function startGateway() {
     // Exit code 0 = intentional restart request (dev mode), respawn with fresh code
     if (code === 0) {
       if (!lastBuildClean) {
-        console.error("[watch] gateway wants to restart but build has errors — waiting for clean build...");
+        console.error(
+          "[watch] gateway wants to restart but build has errors — waiting for clean build...",
+        );
         pendingRestart = true;
         return;
       }

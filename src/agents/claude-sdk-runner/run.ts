@@ -1,14 +1,14 @@
 import type { RunEmbeddedPiAgentParams } from "../pi-embedded-runner/run/params.js";
 import type { EmbeddedPiRunResult } from "../pi-embedded-runner/types.js";
-import { createMcpServerFromTools } from "./tools.js";
-import { createOpenClawCodingTools } from "../pi-tools.js";
-import { resolveOpenClawAgentDir } from "../agent-paths.js";
-import { DEFAULT_MODEL } from "../defaults.js";
 import {
   emitAgentEvent,
   registerAgentRunContext,
   clearAgentRunContext,
 } from "../../infra/agent-events.js";
+import { resolveOpenClawAgentDir } from "../agent-paths.js";
+import { DEFAULT_MODEL } from "../defaults.js";
+import { createOpenClawCodingTools } from "../pi-tools.js";
+import { createMcpServerFromTools } from "./tools.js";
 
 /**
  * Runs an agent request through the Claude Agent SDK instead of Pi.
@@ -142,7 +142,9 @@ export async function runClaudeAgentSDK(
         case "assistant": {
           // Full assistant message — extract text and tool use blocks
           const content = message.message?.content;
-          if (!content) break;
+          if (!content) {
+            break;
+          }
 
           for (const block of content) {
             if ("text" in block && typeof block.text === "string") {

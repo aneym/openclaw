@@ -19,6 +19,7 @@ When the webchat UI is streaming a response, tool execution produces no visual f
 In the `createAgentEventHandler` return function (~line 249), change the tool event gating:
 
 **Current behavior:**
+
 ```ts
 if (evt.stream === "tool" && !shouldEmitToolEvents(evt.runId, sessionKey)) {
   agentRunSeq.set(evt.runId, evt.seq);
@@ -27,6 +28,7 @@ if (evt.stream === "tool" && !shouldEmitToolEvents(evt.runId, sessionKey)) {
 ```
 
 **New behavior:**
+
 - When verbose IS on: broadcast full tool events (unchanged)
 - When verbose is OFF: still broadcast `start` and `result` phase events, but strip heavy payloads (`args`, `result`, `partialResult`). Skip `update` events entirely.
 
@@ -62,6 +64,7 @@ This ensures the UI always knows when tools start and finish, with tool names, w
 In `buildChatItems()` (~line 700), change the tool message rendering gate:
 
 **Current:**
+
 ```ts
 if (props.showThinking) {
   for (let i = 0; i < tools.length; i++) {
@@ -75,6 +78,7 @@ if (props.showThinking) {
 ```
 
 **New:** Always show tool messages when there's an active run (stream is non-null), regardless of showThinking:
+
 ```ts
 const showTools = props.showThinking || (props.stream !== null && tools.length > 0);
 if (showTools) {

@@ -22,7 +22,7 @@ export function setSecureValue(key: keyof typeof SECURE_KEYS, value: string): vo
 
 export function deleteSecureValue(key: keyof typeof SECURE_KEYS): void {
   try {
-    SecureStore.deleteItemAsync(SECURE_KEYS[key])
+    void SecureStore.deleteItemAsync(SECURE_KEYS[key])
   } catch {
     // ignore
   }
@@ -47,7 +47,7 @@ const DEFAULT_SETTINGS: GatewaySettings = {
 export function loadSettings(): GatewaySettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY)
-    if (!raw) return { ...DEFAULT_SETTINGS }
+    if (!raw) {return { ...DEFAULT_SETTINGS }}
     return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) }
   } catch {
     return { ...DEFAULT_SETTINGS }

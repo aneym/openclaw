@@ -20,6 +20,7 @@ User says: "merge", "sync", "pull upstream", "update from origin", etc.
 ## Conflict Resolution
 
 If `git stash pop` fails with conflicts:
+
 - Run `git diff --name-only --diff-filter=U` to list conflicted files
 - For each conflicted file, show the conflict markers
 - Ask the user what to do (keep ours, keep theirs, manual merge)
@@ -39,6 +40,7 @@ When your PR is merged upstream, the next `/merge` will pull in those commits. W
 ## Quick Check
 
 Before merging, optionally check how many commits behind:
+
 ```bash
 git fetch origin && git log --oneline HEAD..origin/main | wc -l
 ```

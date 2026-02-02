@@ -298,7 +298,9 @@ export function createGatewayHttpServer(opts: {
         }
       }
       // Lightweight title generation — always available (no session creation)
-      if (await handleTitleHttpRequest(req, res, { auth: resolvedAuth, trustedProxies })) return;
+      if (await handleTitleHttpRequest(req, res, { auth: resolvedAuth, trustedProxies })) {
+        return;
+      }
       if (openAiChatCompletionsEnabled) {
         if (
           await handleOpenAiHttpRequest(req, res, {
@@ -318,7 +320,9 @@ export function createGatewayHttpServer(opts: {
         }
       }
       // Web UI (React chat) at /app/ — check before control UI since it's more specific.
-      if (handleWebUiHttpRequest(req, res)) return;
+      if (handleWebUiHttpRequest(req, res)) {
+        return;
+      }
       if (controlUiEnabled) {
         if (
           handleControlUiAvatarRequest(req, res, {

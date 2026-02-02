@@ -24,20 +24,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function parseToolApprovalRequested(payload: unknown): ToolApprovalRequest | null {
-  if (!isRecord(payload)) return null;
+  if (!isRecord(payload)) {
+    return null;
+  }
   const id = typeof payload.id === "string" ? payload.id.trim() : "";
   const request = payload.request;
-  if (!id || !isRecord(request)) return null;
+  if (!id || !isRecord(request)) {
+    return null;
+  }
   const toolName = typeof request.toolName === "string" ? request.toolName.trim() : "";
-  if (!toolName) return null;
+  if (!toolName) {
+    return null;
+  }
   const createdAtMs = typeof payload.createdAtMs === "number" ? payload.createdAtMs : 0;
   const expiresAtMs = typeof payload.expiresAtMs === "number" ? payload.expiresAtMs : 0;
-  if (!createdAtMs || !expiresAtMs) return null;
+  if (!createdAtMs || !expiresAtMs) {
+    return null;
+  }
   return {
     id,
     request: {
       toolName,
-      toolInput: isRecord(request.toolInput) ? (request.toolInput as Record<string, unknown>) : {},
+      toolInput: isRecord(request.toolInput) ? request.toolInput : {},
       agentId: typeof request.agentId === "string" ? request.agentId : null,
       sessionKey: typeof request.sessionKey === "string" ? request.sessionKey : null,
     },
@@ -47,9 +55,13 @@ export function parseToolApprovalRequested(payload: unknown): ToolApprovalReques
 }
 
 export function parseToolApprovalResolved(payload: unknown): ToolApprovalResolved | null {
-  if (!isRecord(payload)) return null;
+  if (!isRecord(payload)) {
+    return null;
+  }
   const id = typeof payload.id === "string" ? payload.id.trim() : "";
-  if (!id) return null;
+  if (!id) {
+    return null;
+  }
   return {
     id,
     decision: typeof payload.decision === "string" ? payload.decision : null,
@@ -72,6 +84,9 @@ export function addToolApproval(
   return next;
 }
 
-export function removeToolApproval(queue: ToolApprovalRequest[], id: string): ToolApprovalRequest[] {
+export function removeToolApproval(
+  queue: ToolApprovalRequest[],
+  id: string,
+): ToolApprovalRequest[] {
   return pruneToolApprovalQueue(queue).filter((entry) => entry.id !== id);
 }

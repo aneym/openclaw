@@ -113,8 +113,12 @@ export function formatRestartSentinelMessage(payload: RestartSentinelPayload): s
   const reason = payload.message || payload.stats?.reason;
   const mode = payload.stats?.mode;
   const parts = [`GatewayRestart ${status}`];
-  if (mode) parts.push(mode);
-  if (reason) parts.push(`— ${reason}`);
+  if (mode) {
+    parts.push(mode);
+  }
+  if (reason) {
+    parts.push(`— ${reason}`);
+  }
   return parts.join(" ");
 }
 
