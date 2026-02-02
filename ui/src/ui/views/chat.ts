@@ -3,7 +3,7 @@ import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewaySessionRow, SessionsListResult } from "../types";
 import type { ChatItem, MessageGroup } from "../types/chat-types";
-import type { ChatAttachment, ChatQueueItem } from "../ui-types";
+import type { ChatAttachment, ChatQueueItem, SlashCommandEntry } from "../ui-types";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
@@ -18,6 +18,7 @@ import { extractToolCards } from "../chat/tool-cards";
 import { icons } from "../icons";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
 import { humanizeSessionKey } from "./thread-list";
+import { renderSlashAutocomplete, getFilteredCommands } from "./slash-autocomplete";
 import "../components/resizable-divider";
 
 export type CompactionIndicatorStatus = {
@@ -78,9 +79,35 @@ export type ChatProps = {
   onChatScroll?: (event: Event) => void;
   // File preview callback (opens global artifact panel)
   onOpenFilePreview?: (filePath: string) => void;
+  // Slash command autocomplete
+  slashCommands?: SlashCommandEntry[];
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
+
+// ── Slash autocomplete state (module-scoped, keyed by session) ──
+type AutocompleteState = {
+  visible: boolean;
+  selectedIndex: number;
+};
+
+const autocompleteStates = new Map<string, AutocompleteState>();
+
+function getAutocompleteState(sessionKey: string): AutocompleteState {
+  let state = autocompleteStates.get(sessionKey);
+  if (!state) {
+    state = { visible: false, selectedIndex: 0 };
+    autocompleteStates.set(sessionKey, state);
+  }
+  return state;
+}
+
+function getSlashFilter(draft: string): string | null {
+  if (!draft.startsWith("/")) return null;
+  const spaceIdx = draft.indexOf(" ");
+  if (spaceIdx !== -1) return null;
+  return draft.slice(1);
+}
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
@@ -397,6 +424,27 @@ function renderSessionPicker(
   `;
 }
 
+function renderAutocompleteOverlay(props: ChatProps) {
+  const commands = props.slashCommands ?? [];
+  if (commands.length === 0) return nothing;
+  const filter = getSlashFilter(props.draft);
+  if (filter === null) return nothing;
+  const acState = getAutocompleteState(props.sessionKey);
+  if (!acState.visible) return nothing;
+
+  return renderSlashAutocomplete({
+    visible: true,
+    commands,
+    filter,
+    selectedIndex: acState.selectedIndex,
+    onSelect: (cmd) => {
+      acState.visible = false;
+      acState.selectedIndex = 0;
+      props.onDraftChange(`/${cmd.name} `);
+    },
+  });
+}
+
 export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
   const isBusy = props.sending || props.stream !== null;
@@ -656,8 +704,14 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div class="chat-compose">
+      <div class="chat-compose" style="position:relative;"
+        @slash-hover=${(e: CustomEvent) => {
+          const acState = getAutocompleteState(props.sessionKey);
+          acState.selectedIndex = e.detail.index;
+        }}
+      >
         ${renderAttachmentPreview(props)}
+        ${renderAutocompleteOverlay(props)}
         <div class="chat-compose__row">
           <label class="field chat-compose__field">
             <span>Message</span>
@@ -666,10 +720,54 @@ export function renderChat(props: ChatProps) {
               .value=${props.draft}
               rows="1"
               @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") {
+                if (e.isComposing || e.keyCode === 229) {
                   return;
                 }
-                if (e.isComposing || e.keyCode === 229) {
+
+                // Slash autocomplete keyboard handling
+                const acState = getAutocompleteState(props.sessionKey);
+                const commands = props.slashCommands ?? [];
+                const filter = getSlashFilter(props.draft);
+
+                if (acState.visible && filter !== null && commands.length > 0) {
+                  const filtered = getFilteredCommands(commands, filter);
+                  if (filtered.length > 0) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      acState.selectedIndex = (acState.selectedIndex + 1) % filtered.length;
+                      // Force re-render by touching draft
+                      props.onDraftChange(props.draft);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      acState.selectedIndex =
+                        (acState.selectedIndex - 1 + filtered.length) % filtered.length;
+                      props.onDraftChange(props.draft);
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      const selected = filtered[Math.min(acState.selectedIndex, filtered.length - 1)];
+                      if (selected) {
+                        acState.visible = false;
+                        acState.selectedIndex = 0;
+                        props.onDraftChange(`/${selected.name} `);
+                      }
+                      return;
+                    }
+                  }
+                }
+
+                if (e.key === "Escape" && acState.visible) {
+                  e.preventDefault();
+                  acState.visible = false;
+                  acState.selectedIndex = 0;
+                  props.onDraftChange(props.draft);
+                  return;
+                }
+
+                if (e.key !== "Enter") {
                   return;
                 }
                 // Cmd+Shift+Enter (Mac) or Ctrl+Shift+Enter = send immediately when busy
@@ -694,7 +792,24 @@ export function renderChat(props: ChatProps) {
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
                 adjustTextareaHeight(target);
-                props.onDraftChange(target.value);
+                const value = target.value;
+                props.onDraftChange(value);
+
+                // Update autocomplete visibility
+                const acState = getAutocompleteState(props.sessionKey);
+                const filter = getSlashFilter(value);
+                const commands = props.slashCommands ?? [];
+                if (filter !== null && commands.length > 0) {
+                  const filtered = getFilteredCommands(commands, filter);
+                  acState.visible = filtered.length > 0;
+                  // Reset index when filter changes
+                  if (acState.selectedIndex >= filtered.length) {
+                    acState.selectedIndex = 0;
+                  }
+                } else {
+                  acState.visible = false;
+                  acState.selectedIndex = 0;
+                }
               }}
               @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
               placeholder=${composePlaceholder}

@@ -402,6 +402,80 @@
   border-color: rgba(16, 24, 40, 0.2);
 }
 
+/* =============================================
+   SLASH COMMAND AUTOCOMPLETE
+   ============================================= */
+
+.slash-autocomplete {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  width: 100%;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.25);
+  z-index: 20;
+  padding: 4px;
+  margin-bottom: 4px;
+}
+
+.slash-autocomplete__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 100ms ease-out;
+}
+
+.slash-autocomplete__item--selected {
+  background: var(--bg-hover);
+}
+
+.slash-autocomplete__item:hover {
+  background: var(--bg-hover);
+}
+
+.slash-autocomplete__name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.slash-autocomplete__desc {
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.slash-autocomplete__badge {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  padding: 1px 6px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Light theme autocomplete overrides */
+:root[data-theme="light"] .slash-autocomplete {
+  background: #ffffff;
+  border-color: rgba(16, 24, 40, 0.15);
+  box-shadow: 0 -4px 16px rgba(16, 24, 40, 0.12);
+}
+
 /* Chat compose - sticky at bottom */
 .chat-compose {
   position: sticky;
@@ -718,6 +792,36 @@
   max-width: 420px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Model picker styles */
+.model-picker {
+  display: flex;
+  align-items: center;
+}
+
+.model-picker__field {
+  min-width: 140px;
+  max-width: 220px;
+}
+
+.model-picker__field select {
+  padding: 6px 10px;
+  font-size: 13px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 768px) {
+  .model-picker__field {
+    min-width: 120px;
+    max-width: 180px;
+  }
+
+  .model-picker__field select {
+    max-width: 180px;
+  }
 }
 
 .chat-controls__thinking {

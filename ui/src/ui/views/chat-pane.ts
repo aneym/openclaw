@@ -24,6 +24,7 @@ import { saveThreadDescriptors } from "../thread-storage";
 import "../components/pane-context-menu";
 import { renderChat, type ChatProps } from "./chat";
 import { humanizeSessionKey } from "./thread-list";
+import { renderModelPicker } from "../app-render.helpers";
 
 export interface ChatPaneProps {
   leaf: SplitLeaf;
@@ -151,6 +152,7 @@ export function renderChatPane(props: ChatPaneProps) {
     assistantName: state.assistantName,
     assistantAvatar: state.assistantAvatar,
     openSessionKeys,
+    slashCommands: state.slashCommands,
   };
 
   const handleDragOver = (e: DragEvent) => {
@@ -363,6 +365,7 @@ export function renderChatPane(props: ChatPaneProps) {
             state.closePane(leaf.id);
           }}
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>
+        ${renderModelPicker(state)}
         <button
           class="split-pane__titlebar-close"
           data-tooltip="Close pane (⌃W)"

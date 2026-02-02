@@ -14,6 +14,22 @@ export type ChatQueueItem = {
 
 export const CRON_CHANNEL_LAST = "last";
 
+export type SlashCommandEntry = {
+  name: string;
+  description: string;
+  category?: string;
+};
+
+export type ModelCatalogEntry = {
+  id: string;
+  name: string;
+  provider: string;
+  contextWindow?: number;
+  reasoning?: boolean;
+  input?: Array<"text" | "image">;
+  isDefault?: boolean;
+};
+
 export type CronFormState = {
   name: string;
   description: string;

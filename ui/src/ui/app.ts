@@ -110,7 +110,13 @@ import {
   restoreThreadState,
 } from "./thread-state";
 import { loadThreadDescriptors, saveThreadDescriptors } from "./thread-storage";
-import { type ChatAttachment, type ChatQueueItem, type CronFormState } from "./ui-types";
+import {
+  type ChatAttachment,
+  type ChatQueueItem,
+  type CronFormState,
+  type ModelCatalogEntry,
+  type SlashCommandEntry,
+} from "./ui-types";
 
 declare global {
   interface Window {
@@ -166,6 +172,7 @@ export class OpenClawApp extends LitElement {
   @state() chatThinkingLevel: string | null = null;
   @state() chatQueue: ChatQueueItem[] = [];
   @state() chatAttachments: ChatAttachment[] = [];
+  @state() slashCommands: SlashCommandEntry[] = [];
   /** Session keys that currently have an active agent run (global, across all sessions). */
   @state() runningSessions: Set<string> = new Set();
   // Sidebar state for tool output viewing
@@ -262,6 +269,17 @@ export class OpenClawApp extends LitElement {
   @state() sessionsIncludeGlobal = true;
   @state() sessionsIncludeUnknown = false;
 
+  @state() modelsLoading = false;
+  @state() modelsList: ModelCatalogEntry[] = [];
+  @state() modelsError: string | null = null;
+  // Models config page state
+  @state() modelsConfig: { providers: import("./views/models").ModelProvider[] } | null = null;
+  @state() modelsConfigLoading = false;
+  @state() modelsConfigSaving = false;
+  @state() modelsConfigError: string | null = null;
+  @state() modelsConfigHash: string | null = null;
+  @state() visibleModels: string[] = [];
+
   @state() cronLoading = false;
   @state() cronJobs: CronJob[] = [];
   @state() cronStatus: CronStatus | null = null;
@@ -329,9 +347,10 @@ export class OpenClawApp extends LitElement {
   private chatScrollTimeout: number | null = null;
   private chatHasAutoScrolled = false;
   private chatUserNearBottom = true;
-  private nodesPollInterval: number | null = null;
-  private logsPollInterval: number | null = null;
-  private debugPollInterval: number | null = null;
+  nodesPollInterval: number | null = null;
+  logsPollInterval: number | null = null;
+  debugPollInterval: number | null = null;
+  modelsPollInterval: number | null = null;
   private logsScrollFrame: number | null = null;
   toolStreamById = new Map<string, ToolStreamEntry>();
   toolStreamOrder: string[] = [];
@@ -348,9 +367,9 @@ export class OpenClawApp extends LitElement {
     return this;
   }
 
-  connectedCallback() {
+  async connectedCallback() {
     super.connectedCallback();
-    handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
+    await handleConnected(this as unknown as Parameters<typeof handleConnected>[0]);
     this.addEventListener("chat-load-more", () => this.requestUpdate());
     // Restore draft + attachments + queue for the active session (survives HMR)
     const draft = loadDraft(this.sessionKey);
@@ -1096,7 +1115,7 @@ export class OpenClawApp extends LitElement {
     this.resetChatScroll();
   }
 
-  closePane(paneId?: string) {
+  async closePane(paneId?: string) {
     if (!this.splitLayout) {
       return;
     }
@@ -1121,22 +1140,39 @@ export class OpenClawApp extends LitElement {
     }
 
     const newRoot = removeLeafTree(this.splitLayout.root, targetId);
-    if (!newRoot || newRoot.kind === "leaf") {
-      // Only one pane left or tree is empty - exit split mode
-      if (newRoot?.kind === "leaf") {
-        this.sessionKey = newRoot.threadId;
-        // Restore the remaining thread's state
-        const remainingId = this.sessionKeyToThreadId.get(newRoot.threadId);
-        if (remainingId) {
-          const remainingThread = this.threads.get(remainingId);
-          if (remainingThread) {
-            restoreThreadState(this, remainingThread);
-          }
+    if (!newRoot) {
+      // Tree is empty - create a single leaf with current session
+      const { createLeaf } = await import("./split-tree.js");
+      const leaf = createLeaf(this.sessionKey, "pane-initial");
+      this.splitLayout = {
+        root: leaf,
+        focusedPaneId: leaf.id,
+      };
+      this.focusedPaneId = leaf.id;
+      this.syncPaneStatesFromLayout();
+      this.persistSplitLayout();
+      this.syncUrlWithPanes(false);
+      scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+      return;
+    }
+
+    if (newRoot.kind === "leaf") {
+      // Only one pane left - keep it as single-leaf layout
+      this.sessionKey = newRoot.threadId;
+      this.splitLayout = {
+        root: newRoot,
+        focusedPaneId: newRoot.id,
+      };
+      this.focusedPaneId = newRoot.id;
+      // Restore the remaining thread's state
+      const remainingId = this.sessionKeyToThreadId.get(newRoot.threadId);
+      if (remainingId) {
+        const remainingThread = this.threads.get(remainingId);
+        if (remainingThread) {
+          restoreThreadState(this, remainingThread);
         }
       }
-      this.splitLayout = null;
-      this.focusedPaneId = null;
-      this.paneStates = new Map();
+      this.syncPaneStatesFromLayout();
       this.persistSplitLayout();
       this.syncUrlWithPanes(false);
       scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
@@ -1471,10 +1507,16 @@ export class OpenClawApp extends LitElement {
     );
   }
 
-  exitSplitMode() {
-    this.splitLayout = null;
-    this.focusedPaneId = null;
-    this.paneStates = new Map();
+  async exitSplitMode() {
+    // Instead of clearing layout, collapse to single leaf with current session
+    const { createLeaf } = await import("./split-tree.js");
+    const leaf = createLeaf(this.sessionKey, "pane-initial");
+    this.splitLayout = {
+      root: leaf,
+      focusedPaneId: leaf.id,
+    };
+    this.focusedPaneId = leaf.id;
+    this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
   }
@@ -1592,6 +1634,170 @@ export class OpenClawApp extends LitElement {
       scrollAll();
       setTimeout(scrollAll, 150);
     });
+  }
+
+  // Model selection handlers
+  async handleModelsLoad() {
+    if (!this.client || !this.connected) {
+      return;
+    }
+    if (this.modelsLoading) {
+      return;
+    }
+    this.modelsLoading = true;
+    try {
+      const res = await this.client.request("models.list", {});
+      const payload = res as { models?: unknown[] } | undefined;
+      this.modelsList = (Array.isArray(payload?.models) ? payload.models : []) as ModelCatalogEntry[];
+      this.modelsError = null;
+    } catch (err) {
+      this.modelsError = String(err);
+    } finally {
+      this.modelsLoading = false;
+    }
+  }
+
+  async handleModelSelect(modelRef: string) {
+    this.applySettings({
+      ...this.settings,
+      selectedModel: modelRef,
+    });
+  }
+
+  async handleModelsConfigLoad() {
+    if (!this.client) return;
+    this.modelsConfigLoading = true;
+    this.modelsConfigError = null;
+    try {
+      // Load both the model catalog (effective providers) and raw config
+      const [catalogResult, configResult] = await Promise.all([
+        this.client.request<{ models?: Array<{ provider: string; id: string; name: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; input?: string[]; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } }> }>("models.list", {}),
+        this.client.request<{ hash: string; config?: { models?: { providers?: Record<string, import("./views/models").ModelProvider>; visibleModels?: string[] } } }>("config.get", {}),
+      ]);
+
+      // Store the config hash for optimistic concurrency
+      this.modelsConfigHash = configResult?.hash ?? null;
+
+      // Load visible models setting
+      this.visibleModels = configResult?.config?.models?.visibleModels ?? [];
+
+      const catalogModels = catalogResult?.models ?? [];
+      const configProviders = configResult?.config?.models?.providers ?? {};
+
+      // Build provider list from config (editable) + catalog (for display)
+      const providerMap = new Map<string, import("./views/models").ModelProvider>();
+
+      // First add explicit providers from config
+      for (const [name, provider] of Object.entries(configProviders)) {
+        providerMap.set(name, { ...provider, name });
+      }
+
+      // Then add implicit providers from catalog (auth-based like Anthropic)
+      // Group models by provider
+      const modelsByProvider = new Map<string, typeof catalogModels>();
+      for (const model of catalogModels) {
+        if (!modelsByProvider.has(model.provider)) {
+          modelsByProvider.set(model.provider, []);
+        }
+        modelsByProvider.get(model.provider)!.push(model);
+      }
+
+      // Add providers that aren't in config yet (as read-only style)
+      for (const [providerName, models] of modelsByProvider) {
+        if (!providerMap.has(providerName)) {
+          // This is an implicit provider (like Anthropic from auth profiles)
+          // Sort models by capability: reasoning > vision > context window
+          const sortedModels = [...models].sort((a, b) => {
+            const score = (m: typeof a) => {
+              let s = 0;
+              if (m.reasoning) s += 1000;
+              if (m.input?.includes("image")) s += 100;
+              s += (m.contextWindow ?? 0) / 10000;
+              return s;
+            };
+            return score(b) - score(a);
+          });
+          providerMap.set(providerName, {
+            name: providerName,
+            baseUrl: "",
+            apiKey: "",
+            models: sortedModels.map(m => ({
+              id: m.id,
+              name: m.name,
+              api: "anthropic-messages" as const,
+              reasoning: m.reasoning ?? false,
+              input: (m.input as Array<"text" | "image">) ?? ["text"],
+              contextWindow: m.contextWindow ?? 200000,
+              maxTokens: m.maxTokens ?? 8192,
+              cost: m.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+            })),
+            isImplicit: true,
+          });
+        } else {
+          // Sort existing provider's models too
+          const provider = providerMap.get(providerName)!;
+          provider.models = [...provider.models].sort((a, b) => {
+            const score = (m: typeof a) => {
+              let s = 0;
+              if (m.reasoning) s += 1000;
+              if (m.input?.includes("image")) s += 100;
+              s += (m.contextWindow ?? 0) / 10000;
+              return s;
+            };
+            return score(b) - score(a);
+          });
+        }
+      }
+
+      this.modelsConfig = { providers: Array.from(providerMap.values()) };
+    } catch (error) {
+      this.modelsConfigError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.modelsConfigLoading = false;
+    }
+  }
+
+  async handleModelsConfigSave() {
+    if (!this.client || !this.modelsConfig) return;
+    this.modelsConfigSaving = true;
+    this.modelsConfigError = null;
+    try {
+      // Get the current config hash
+      const baseHash = this.modelsConfigHash;
+      if (!baseHash) {
+        this.modelsConfigError = "Config hash missing; reload and retry.";
+        return;
+      }
+
+      // Convert Array<Provider> to Record<string, Provider>, filtering out implicit providers
+      const providersRecord: Record<string, Omit<import("./views/models").ModelProvider, "name" | "isImplicit">> = {};
+      for (const provider of this.modelsConfig.providers) {
+        if (provider.isImplicit) continue; // Skip auth-based providers like Anthropic
+        const { name, isImplicit, ...providerConfig } = provider;
+        providersRecord[name] = providerConfig;
+      }
+
+      // Use config.set with baseHash for optimistic concurrency
+      await this.client.request("config.set", {
+        raw: JSON.stringify({ models: { providers: providersRecord, visibleModels: this.visibleModels } }),
+        baseHash,
+      });
+
+      // Reload to refresh implicit providers
+      await this.handleModelsConfigLoad();
+    } catch (error) {
+      this.modelsConfigError = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.modelsConfigSaving = false;
+    }
+  }
+
+  handleToggleModelVisibility(modelRef: string, visible: boolean) {
+    if (visible) {
+      this.visibleModels = [...this.visibleModels, modelRef];
+    } else {
+      this.visibleModels = this.visibleModels.filter(m => m !== modelRef);
+    }
   }
 
   render() {

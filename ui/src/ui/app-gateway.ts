@@ -9,6 +9,7 @@ import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
 import type { ThreadState } from "./thread-state";
 import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types";
+import type { SlashCommandEntry } from "./ui-types";
 import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat";
 import { applySettings, loadCron, refreshActiveTab, setLastActiveSessionKey } from "./app-settings";
 import {
@@ -79,6 +80,7 @@ type GatewayHost = {
   runningSessions: Set<string>;
   initDefaultThread: () => void;
   renameThread: (threadId: string, label: string) => void;
+  slashCommands: SlashCommandEntry[];
   // Split pane state
   splitLayout: SplitPaneLayout | null;
   paneStates: Map<string, PaneState>;
@@ -613,6 +615,7 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
         presence?: PresenceEntry[];
         health?: HealthSnapshot;
         sessionDefaults?: SessionDefaultsSnapshot;
+        slashCommands?: SlashCommandEntry[];
       }
     | undefined;
   if (snapshot?.presence && Array.isArray(snapshot.presence)) {
@@ -623,5 +626,8 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   }
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
+  }
+  if (snapshot?.slashCommands && Array.isArray(snapshot.slashCommands)) {
+    host.slashCommands = snapshot.slashCommands;
   }
 }

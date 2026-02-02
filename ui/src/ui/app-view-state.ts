@@ -30,7 +30,7 @@ import type {
   SkillStatusReport,
   StatusSummary,
 } from "./types";
-import type { ChatAttachment, ChatQueueItem, CronFormState } from "./ui-types";
+import type { ChatAttachment, ChatQueueItem, CronFormState, ModelCatalogEntry, SlashCommandEntry } from "./ui-types";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form";
 
 export type AppViewState = {
@@ -70,6 +70,7 @@ export type AppViewState = {
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
   compactionStatus: import("./app-tool-stream").CompactionStatus | null;
+  slashCommands: SlashCommandEntry[];
   runningSessions: Set<string>;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
@@ -131,6 +132,9 @@ export type AppViewState = {
   sessionsFilterLimit: string;
   sessionsIncludeGlobal: boolean;
   sessionsIncludeUnknown: boolean;
+  modelsLoading: boolean;
+  modelsList: ModelCatalogEntry[];
+  modelsError: string | null;
   cronLoading: boolean;
   cronJobs: CronJob[];
   cronStatus: CronStatus | null;
@@ -223,6 +227,19 @@ export type AppViewState = {
   handleCronFormUpdate: (path: string, value: unknown) => void;
   handleSessionsLoad: () => Promise<void>;
   handleSessionsPatch: (key: string, patch: unknown) => Promise<void>;
+  handleModelsLoad: () => Promise<void>;
+  handleModelSelect: (modelRef: string) => Promise<void>;
+  // Models config page state
+  modelsConfig: { providers: import("./views/models").ModelProvider[] } | null;
+  modelsConfigLoading: boolean;
+  modelsConfigSaving: boolean;
+  modelsConfigError: string | null;
+  modelsConfigHash: string | null;
+  handleModelsConfigLoad: () => Promise<void>;
+  handleModelsConfigSave: () => Promise<void>;
+  // Model visibility settings
+  visibleModels: string[];
+  handleToggleModelVisibility: (modelRef: string, visible: boolean) => void;
   handleLoadNodes: () => Promise<void>;
   handleLoadPresence: () => Promise<void>;
   handleLoadSkills: () => Promise<void>;
@@ -282,11 +299,11 @@ export type AppViewState = {
   artifactSplitRatio: number;
   artifactClosedPaths: Set<string>;
   // Split pane layout
-  splitLayout: SplitPaneLayout | null;
+  splitLayout: SplitPaneLayout;
   focusedPaneId: string | null;
   paneStates: Map<string, PaneState>;
   splitPane: (direction: "horizontal" | "vertical") => void;
-  closePane: (paneId?: string) => void;
+  closePane: (paneId?: string) => Promise<void>;
   focusPane: (paneId: string) => void;
   setThreadInPane: (paneId: string, threadId: string) => void;
   swapPanes: (paneIdA: string, paneIdB: string) => void;
@@ -298,6 +315,6 @@ export type AppViewState = {
   ) => void;
   handleSplitBranchResize: (branchId: string, ratio: number) => void;
   focusNextPane: () => void;
-  exitSplitMode: () => void;
+  exitSplitMode: () => Promise<void>;
   restoreSplitLayout: () => void;
 };
