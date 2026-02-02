@@ -816,6 +816,12 @@ export class OpenClawApp extends LitElement {
     this.codingTerminalOpen = null;
   }
 
+  async handleAttachCodingTerminal(id: string) {
+    try {
+      await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/terminal`, { method: "POST" });
+    } catch {}
+  }
+
   handleArtifactToggleRaw(tabId: string) {
     const tab = this.artifactTabs.find((t) => t.id === tabId);
     if (!tab) {

@@ -8,6 +8,7 @@
  */
 
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { execSync } from "node:child_process";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { getSession, getFinishedSession } from "../agents/bash-process-registry.js";
@@ -134,6 +135,42 @@ export function handleCodingSessionsRequest(
     session.finishedAt = new Date().toISOString();
     writeState(state);
     json(res, { ok: true, id });
+    return true;
+  }
+
+  /* ── Open terminal — attach to the tmux session in a new terminal window ── */
+  if (req.method === "POST" && /^\/api\/coding-sessions\/[^/]+\/terminal$/.test(pathname)) {
+    const id = pathname.split("/")[3]!;
+    const state = readState();
+    const session = state.sessions[id];
+    if (!session) {
+      json(res, { error: "Session not found" }, 404);
+      return true;
+    }
+
+    const tmuxName = session.tmuxSession;
+    if (!tmuxName) {
+      json(res, { error: "No tmux session linked" }, 400);
+      return true;
+    }
+
+    // Check if tmux session exists
+    try {
+      execSync(`tmux has-session -t ${tmuxName} 2>/dev/null`);
+    } catch {
+      json(res, { error: "tmux session no longer exists" }, 410);
+      return true;
+    }
+
+    // Open a new terminal window attached to the tmux session
+    try {
+      execSync(
+        `osascript -e 'tell application "Terminal" to do script "tmux attach-session -t ${tmuxName}"' -e 'tell application "Terminal" to activate'`,
+      );
+      json(res, { ok: true, tmuxSession: tmuxName });
+    } catch (e: any) {
+      json(res, { error: `Failed to open terminal: ${e.message}` }, 500);
+    }
     return true;
   }
 

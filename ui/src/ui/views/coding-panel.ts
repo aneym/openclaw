@@ -42,6 +42,7 @@ export interface CodingPanelProps {
   onRefresh: () => void;
   onOpenTerminal: (id: string) => void;
   onCloseTerminal: () => void;
+  onAttachTerminal: (id: string) => void;
 }
 
 /* ── Stream-JSON Parser ── */
@@ -143,13 +144,35 @@ function shortPath(p: string): string {
   return parts.length > 3 ? "…/" + parts.slice(-3).join("/") : p;
 }
 
+// Strip ANSI/terminal escape sequences (from tmux PTY output)
+function stripAnsi(s: string): string {
+  return s.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, "")
+    .replace(/\x1b\][^\x07]*\x07/g, "")
+    .replace(/\x1b\[[?!]?[0-9;]*[a-zA-Z]/g, "")
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+}
+
+// Extract JSON objects from a potentially messy line (tmux wraps JSON in control sequences)
+function extractJson(line: string): any | null {
+  const clean = stripAnsi(line);
+  // Try the whole cleaned line first
+  try { return JSON.parse(clean); } catch {}
+  // Try to find a JSON object in the line
+  const match = clean.match(/(\{"type":.+)/);
+  if (match) {
+    try { return JSON.parse(match[1]); } catch {}
+  }
+  return null;
+}
+
 export function parseStreamEvents(rawLines: string): StreamEvent[] {
   if (!rawLines) return [];
   const events: StreamEvent[] = [];
   for (const line of rawLines.split("\n")) {
     if (!line.trim()) continue;
+    const raw = extractJson(line);
+    if (!raw) continue;
     try {
-      const raw = JSON.parse(line);
       // For assistant messages, extract ALL tool uses (not just last)
       if (raw.type === "assistant" && raw.message?.content) {
         for (const block of raw.message.content) {
@@ -244,9 +267,14 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
         <div class="cs-card__body">
           <!-- Action buttons -->
           <div class="cs-card__toolbar">
+            ${(session as any).tmuxSession ? html`
+              <button class="cs-btn cs-btn--terminal" @click=${() => props.onAttachTerminal(session.id)} title="Open in Terminal.app">
+                🖥️ Open Terminal
+              </button>
+            ` : nothing}
             ${session.execSessionId ? html`
-              <button class="cs-btn cs-btn--terminal" @click=${() => props.onOpenTerminal(session.id)} title="View full output">
-                ⌨️ Terminal
+              <button class="cs-btn" @click=${() => props.onOpenTerminal(session.id)} title="View output in panel">
+                📋 Output
               </button>
             ` : nothing}
             <span class="cs-card__branch">${icons.gitBranch} ${session.branch}</span>
