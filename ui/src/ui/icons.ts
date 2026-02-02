@@ -271,6 +271,15 @@ export const icons = {
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
     </svg>
   `,
+  listPlus: html`
+    <svg viewBox="0 0 24 24">
+      <path d="M11 12H3" />
+      <path d="M16 6H3" />
+      <path d="M16 18H3" />
+      <path d="M18 9v6" />
+      <path d="M21 12h-6" />
+    </svg>
+  `,
 } as const;
 
 export type IconName = keyof typeof icons;

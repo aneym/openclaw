@@ -43,6 +43,7 @@ import {
   handleWhatsAppWait as handleWhatsAppWaitInternal,
 } from "./app-channels";
 import {
+  clearAllQueuedMessages as clearAllQueuedMessagesInternal,
   handleAbortChat as handleAbortChatInternal,
   handleSendChat as handleSendChatInternal,
   removeQueuedMessage as removeQueuedMessageInternal,
@@ -469,6 +470,12 @@ export class OpenClawApp extends LitElement {
     removeQueuedMessageInternal(
       this as unknown as Parameters<typeof removeQueuedMessageInternal>[0],
       id,
+    );
+  }
+
+  clearAllQueuedMessages() {
+    clearAllQueuedMessagesInternal(
+      this as unknown as Parameters<typeof clearAllQueuedMessagesInternal>[0],
     );
   }
 

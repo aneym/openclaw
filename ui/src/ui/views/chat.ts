@@ -69,6 +69,7 @@ export type ChatProps = {
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
   onQueueSendNow: (id: string) => void;
+  onQueueClearAll: () => void;
   onSendImmediately: () => void;
   onNewSession: () => void;
   onOpenSidebar?: (content: string) => void;
@@ -87,7 +88,9 @@ function adjustTextareaHeight(el: HTMLTextAreaElement) {
 }
 
 function renderCompactionIndicator(status: CompactionIndicatorStatus | null | undefined) {
-  if (!status) return nothing;
+  if (!status) {
+    return nothing;
+  }
 
   // Show "compacting..." while active
   if (status.active) {
@@ -193,7 +196,9 @@ async function compressImage(
 
 function handlePaste(e: ClipboardEvent, props: ChatProps) {
   const items = e.clipboardData?.items;
-  if (!items || !props.onAttachmentsChange) return;
+  if (!items || !props.onAttachmentsChange) {
+    return;
+  }
 
   const imageItems: DataTransferItem[] = [];
   for (let i = 0; i < items.length; i++) {
@@ -203,16 +208,20 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
     }
   }
 
-  if (imageItems.length === 0) return;
+  if (imageItems.length === 0) {
+    return;
+  }
 
   e.preventDefault();
 
   for (const item of imageItems) {
     const file = item.getAsFile();
-    if (!file) continue;
+    if (!file) {
+      continue;
+    }
 
     const reader = new FileReader();
-    reader.onload = async () => {
+    reader.addEventListener("load", async () => {
       const rawDataUrl = reader.result as string;
       const { dataUrl, mimeType } = await compressImage(rawDataUrl, file.type);
       const newAttachment: ChatAttachment = {
@@ -222,14 +231,16 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
       };
       const current = props.attachments ?? [];
       props.onAttachmentsChange?.([...current, newAttachment]);
-    };
+    });
     reader.readAsDataURL(file);
   }
 }
 
 function renderAttachmentPreview(props: ChatProps) {
   const attachments = props.attachments ?? [];
-  if (attachments.length === 0) return nothing;
+  if (attachments.length === 0) {
+    return nothing;
+  }
 
   return html`
     <div class="chat-attachments">
@@ -258,6 +269,24 @@ function renderAttachmentPreview(props: ChatProps) {
       )}
     </div>
   `;
+}
+
+/** Friendly relative time for queue items (e.g. "just now", "2m ago") */
+function relativeQueueTime(createdAt: number): string {
+  const diff = Date.now() - createdAt;
+  if (diff < 0 || diff < 10_000) {
+    return "just now";
+  }
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) {
+    return `${sec}s ago`;
+  }
+  const min = Math.round(sec / 60);
+  if (min < 60) {
+    return `${min}m ago`;
+  }
+  const hr = Math.round(min / 60);
+  return `${hr}h ago`;
 }
 
 /** Compact relative time (e.g. "3m", "2h", "5d") */
@@ -551,7 +580,9 @@ export function renderChat(props: ChatProps) {
                   error: props.sidebarError ?? null,
                   onClose: props.onCloseSidebar!,
                   onViewRawText: () => {
-                    if (!props.sidebarContent || !props.onOpenSidebar) return;
+                    if (!props.sidebarContent || !props.onOpenSidebar) {
+                      return;
+                    }
                     props.onOpenSidebar(`\`\`\`\n${props.sidebarContent}\n\`\`\``);
                   },
                 })}
@@ -565,35 +596,57 @@ export function renderChat(props: ChatProps) {
         props.queue.length
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
+              <div class="chat-queue__header">
+                <span class="chat-queue__count">
+                  ${icons.listPlus} Queued · ${props.queue.length}
+                </span>
+                <button
+                  class="chat-queue__clear-all"
+                  type="button"
+                  title="Clear all queued messages"
+                  @click=${() => props.onQueueClearAll()}
+                >Clear</button>
+              </div>
               <div class="chat-queue__list">
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
-                      <div class="chat-queue__text">
-                        ${
-                          item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                        }
+                      <div class="chat-queue__item-body">
+                        <div class="chat-queue__text">
+                          ${
+                            item.text ||
+                            (item.attachments?.length ? `Image (${item.attachments.length})` : "")
+                          }
+                        </div>
+                        <div class="chat-queue__meta">
+                          ${
+                            item.attachments?.length
+                              ? html`<span class="chat-queue__attachment-indicator" title="${item.attachments.length} attachment${item.attachments.length > 1 ? "s" : ""}">${icons.paperclip}</span>`
+                              : nothing
+                          }
+                          <span class="chat-queue__time">${relativeQueueTime(item.createdAt)}</span>
+                        </div>
                       </div>
-                      <button
-                        class="chat-queue__send-now"
-                        type="button"
-                        aria-label="Send this message now"
-                        title="Send now"
-                        @click=${() => props.onQueueSendNow(item.id)}
-                      >
-                        ${icons.zap}
-                      </button>
-                      <button
-                        class="chat-queue__remove"
-                        type="button"
-                        aria-label="Remove queued message"
-                        title="Remove from queue"
-                        @click=${() => props.onQueueRemove(item.id)}
-                      >
-                        ${icons.x}
-                      </button>
+                      <div class="chat-queue__actions">
+                        <button
+                          class="chat-queue__send-now"
+                          type="button"
+                          aria-label="Send this message now"
+                          title="Stop current run and send now"
+                          @click=${() => props.onQueueSendNow(item.id)}
+                        >
+                          ${icons.arrowUp}
+                        </button>
+                        <button
+                          class="chat-queue__remove"
+                          type="button"
+                          aria-label="Remove queued message"
+                          title="Remove from queue"
+                          @click=${() => props.onQueueRemove(item.id)}
+                        >
+                          ${icons.x}
+                        </button>
+                      </div>
                     </div>
                   `,
                 )}
@@ -613,12 +666,30 @@ export function renderChat(props: ChatProps) {
               .value=${props.draft}
               rows="1"
               @keydown=${(e: KeyboardEvent) => {
-                if (e.key !== "Enter") return;
-                if (e.isComposing || e.keyCode === 229) return;
-                if (e.shiftKey) return;
-                if (!props.connected) return;
+                if (e.key !== "Enter") {
+                  return;
+                }
+                if (e.isComposing || e.keyCode === 229) {
+                  return;
+                }
+                // Cmd+Shift+Enter (Mac) or Ctrl+Shift+Enter = send immediately when busy
+                if (e.shiftKey && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  if (props.connected && isBusy) {
+                    props.onSendImmediately();
+                  }
+                  return;
+                }
+                if (e.shiftKey) {
+                  return;
+                } // Allow Shift+Enter for line breaks
+                if (!props.connected) {
+                  return;
+                }
                 e.preventDefault();
-                if (canCompose) props.onSend();
+                if (canCompose) {
+                  props.onSend();
+                }
               }}
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
@@ -644,15 +715,15 @@ export function renderChat(props: ChatProps) {
               ?disabled=${!props.connected}
               title="${isBusy ? "Queue" : "Send"}"
               @click=${props.onSend}
-            >${icons.arrowUp}</button>
+            >${isBusy ? icons.listPlus : icons.arrowUp}</button>
             ${
               isBusy
                 ? html`<button
                   class="btn chat-compose__icon-btn chat-compose__icon-btn--send-now"
                   ?disabled=${!props.connected}
-                  title="Send Now"
+                  title="Stop current run and send now (⇧⌘↩)"
                   @click=${props.onSendImmediately}
-                >${icons.zap}</button>`
+                >${icons.arrowUp}</button>`
                 : nothing
             }
           </div>
@@ -703,7 +774,9 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     if (isChipOnly) {
       currentGroup!.messages.push({ message: item.message, key: item.key });
     } else if (!currentGroup || currentGroup.role !== role) {
-      if (currentGroup) result.push(currentGroup);
+      if (currentGroup) {
+        result.push(currentGroup);
+      }
       currentGroup = {
         kind: "group",
         key: `group:${role}:${item.key}`,
@@ -717,7 +790,9 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     }
   }
 
-  if (currentGroup) result.push(currentGroup);
+  if (currentGroup) {
+    result.push(currentGroup);
+  }
   return result;
 }
 
@@ -821,13 +896,21 @@ function isChipOnlyMessage(message: unknown): boolean {
 function messageKey(message: unknown, index: number): string {
   const m = message as Record<string, unknown>;
   const toolCallId = typeof m.toolCallId === "string" ? m.toolCallId : "";
-  if (toolCallId) return `tool:${toolCallId}`;
+  if (toolCallId) {
+    return `tool:${toolCallId}`;
+  }
   const id = typeof m.id === "string" ? m.id : "";
-  if (id) return `msg:${id}`;
+  if (id) {
+    return `msg:${id}`;
+  }
   const messageId = typeof m.messageId === "string" ? m.messageId : "";
-  if (messageId) return `msg:${messageId}`;
+  if (messageId) {
+    return `msg:${messageId}`;
+  }
   const timestamp = typeof m.timestamp === "number" ? m.timestamp : null;
   const role = typeof m.role === "string" ? m.role : "unknown";
-  if (timestamp != null) return `msg:${role}:${timestamp}:${index}`;
+  if (timestamp != null) {
+    return `msg:${role}:${timestamp}:${index}`;
+  }
   return `msg:${role}:${index}`;
 }

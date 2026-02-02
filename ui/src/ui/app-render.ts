@@ -876,6 +876,7 @@ function renderChatWithArtifactPanel(
         onAbort: () => void state.handleAbortChat(),
         onQueueRemove: (id) => state.removeQueuedMessage(id),
         onQueueSendNow: (id) => void state.handleQueueSendNow(id),
+        onQueueClearAll: () => state.clearAllQueuedMessages(),
         onSendImmediately: () => void state.handleSendChatImmediately(),
         onNewSession: () => startNewSession(state),
         sidebarOpen: state.sidebarOpen,

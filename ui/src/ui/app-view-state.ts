@@ -251,6 +251,7 @@ export type AppViewState = {
   handleAbortChat: () => Promise<void>;
   abortThreadRun: (sessionKey: string, runId: string) => Promise<boolean>;
   removeQueuedMessage: (id: string) => void;
+  clearAllQueuedMessages: () => void;
   resetToolStream: () => void;
   resetChatScroll: () => void;
   exportLogs: (lines: string[], label: string) => void;

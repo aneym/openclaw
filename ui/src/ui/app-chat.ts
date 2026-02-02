@@ -159,6 +159,11 @@ export function removeQueuedMessage(host: ChatHost, id: string) {
   saveQueue(host.sessionKey, host.chatQueue);
 }
 
+export function clearAllQueuedMessages(host: ChatHost) {
+  host.chatQueue = [];
+  saveQueue(host.sessionKey, host.chatQueue);
+}
+
 /**
  * Poll until `host.chatRunId` clears (abort completed) or timeout.
  * Returns true if abort completed, false on timeout.
@@ -200,6 +205,8 @@ export async function sendChatImmediately(
     enqueueChatMessage(host, message, attachments);
     return;
   }
+  // Reload history so the aborted partial response is visible
+  await loadChatHistory(host as unknown as OpenClawApp);
   await sendChatMessageNow(host, message, {
     attachments: attachments?.length ? attachments : undefined,
   });
