@@ -141,17 +141,32 @@ export function handleCodingSessionsRequest(
       json(res, { error: "Session not found" }, 404);
       return true;
     }
-    if (session.pid) {
-      try {
-        process.kill(session.pid, "SIGTERM");
-      } catch {
-        /* already dead */
+
+    let killed = false;
+
+    // Kill via exec session registry (primary — has the real PID)
+    if (session.execSessionId) {
+      const execSession = getSession(session.execSessionId);
+      if (execSession?.pid) {
+        try {
+          process.kill(execSession.pid, "SIGTERM");
+          killed = true;
+        } catch {}
       }
     }
+
+    // Fallback: kill by PID stored in state file
+    if (!killed && session.pid) {
+      try {
+        process.kill(session.pid, "SIGTERM");
+        killed = true;
+      } catch {}
+    }
+
     session.status = "aborted";
     session.finishedAt = new Date().toISOString();
     writeState(state);
-    json(res, { ok: true, id });
+    json(res, { ok: true, id, killed });
     return true;
   }
 
