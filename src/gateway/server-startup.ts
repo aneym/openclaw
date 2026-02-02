@@ -170,7 +170,10 @@ export async function startGatewaySidecars(params: {
 
   if (shouldWakeFromRestartSentinel()) {
     setTimeout(() => {
-      void scheduleRestartSentinelWake({ deps: params.deps });
+      void scheduleRestartSentinelWake({
+        deps: params.deps,
+        chatAbortControllers: params.chatAbortControllers,
+      });
     }, 750);
   }
 
