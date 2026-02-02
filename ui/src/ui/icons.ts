@@ -271,15 +271,9 @@ export const icons = {
       <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
     </svg>
   `,
-  listPlus: html`
-    <svg viewBox="0 0 24 24">
-      <path d="M11 12H3" />
-      <path d="M16 6H3" />
-      <path d="M16 18H3" />
-      <path d="M18 9v6" />
-      <path d="M21 12h-6" />
-    </svg>
-  `,
+  chevronDown: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`,
+  refreshCw: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>`,
+  code: html`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
 } as const;
 
 export type IconName = keyof typeof icons;

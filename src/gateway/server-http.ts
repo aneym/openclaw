@@ -13,6 +13,7 @@ import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { handleA2uiHttpRequest } from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
+import { handleCodingSessionsRequest } from "./coding-sessions-http.js";
 import {
   handleControlUiAvatarRequest,
   handleControlUiHttpRequest,
@@ -297,6 +298,11 @@ export function createGatewayHttpServer(opts: {
           return;
         }
       }
+      // Coding sessions API
+      if (
+        handleCodingSessionsRequest(req, res, new URL(req.url ?? "/", "http://localhost").pathname)
+      )
+        return;
       // Lightweight title generation — always available (no session creation)
       if (await handleTitleHttpRequest(req, res, { auth: resolvedAuth, trustedProxies })) {
         return;

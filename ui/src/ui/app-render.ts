@@ -3,6 +3,7 @@ import type { AppViewState } from "./app-view-state";
 import type { NavSessionEntry } from "./views/thread-list";
 import { renderTab, renderThemeToggle } from "./app-render.helpers";
 import { syncUrlWithSessionKey } from "./app-settings";
+import { renderCodingPanel } from "./views/coding-panel";
 import { loadChannels } from "./controllers/channels";
 import { loadChatHistory } from "./controllers/chat";
 import {
@@ -259,6 +260,20 @@ export function renderApp(state: AppViewState) {
               : nothing
           }
           ${renderThemeToggle(state)}
+          ${state.tab === "chat" ? html`
+            <button
+              class="coding-panel-toggle ${state.codingPanelOpen ? 'coding-panel-toggle--active' : ''}"
+              @click=${() => state.toggleCodingPanel()}
+              title="${state.codingPanelOpen ? 'Close code sessions' : 'Open code sessions'}"
+              style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;font-size:12px;${state.codingPanelOpen ? 'color:var(--accent);background:var(--hover);' : ''}"
+            >
+              ${icons.code}
+              <span>Code</span>
+              ${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length > 0
+                ? html`<span style="background:var(--accent);color:white;font-size:10px;padding:0 5px;border-radius:8px;font-weight:700;">${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length}</span>`
+                : nothing}
+            </button>
+          ` : nothing}
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
@@ -820,6 +835,7 @@ function renderChatWithArtifactPanel(state: AppViewState) {
   const chatContent = renderSplitPaneContainer(state);
 
   const gitOpen = state.gitPanelOpen;
+  const codingPanelOpen = state.codingPanelOpen;
 
   // Auto-load git status when panel opens
   if (gitOpen && state.gitFiles.length === 0 && !state.gitLoading && !state.gitError) {
@@ -827,7 +843,7 @@ function renderChatWithArtifactPanel(state: AppViewState) {
   }
 
   // No side panels open — just chat
-  if (!artifactOpen && !gitOpen) {
+  if (!artifactOpen && !gitOpen && !codingPanelOpen) {
     return chatContent;
   }
 
@@ -836,6 +852,18 @@ function renderChatWithArtifactPanel(state: AppViewState) {
       <div class="chat-artifact-wrapper__chat" style="flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;">
         ${chatContent}
       </div>
+      ${codingPanelOpen ? html`
+        <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);">
+          ${renderCodingPanel({
+            sessions: state.codingSessions,
+            expanded: state.codingExpanded,
+            onToggleExpand: (id) => state.handleCodingToggleExpand(id),
+            onKill: (id) => state.handleCodingKill(id),
+            onClose: () => state.toggleCodingPanel(),
+            onRefresh: () => state.fetchCodingSessions(),
+          })}
+        </div>
+      ` : nothing}
       ${
         artifactOpen
           ? html`

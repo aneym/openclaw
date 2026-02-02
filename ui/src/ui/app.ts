@@ -186,6 +186,12 @@ export class OpenClawApp extends LitElement {
   @state() artifactTabs: import("./pane-state").ArtifactTab[] = [];
   @state() artifactActiveTabId: string | null = null;
   @state() artifactSplitRatio = 0.65;
+
+  // Coding sessions panel
+  @state() codingPanelOpen = false;
+  @state() codingSessions: import('./views/coding-panel').CodingSession[] = [];
+  @state() codingExpanded: Set<string> = new Set();
+  private codingPollTimer: ReturnType<typeof setInterval> | null = null;
   artifactClosedPaths: Set<string> = new Set();
   private artifactRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -700,6 +706,58 @@ export class OpenClawApp extends LitElement {
   handleArtifactClose() {
     this.artifactOpen = false;
     scrollAllVisibleChats(this as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+  }
+
+  // ── Coding Sessions Panel ──
+
+  toggleCodingPanel() {
+    this.codingPanelOpen = !this.codingPanelOpen;
+    if (this.codingPanelOpen) {
+      void this.fetchCodingSessions();
+      this.startCodingPoll();
+    } else {
+      this.stopCodingPoll();
+    }
+  }
+
+  async fetchCodingSessions() {
+    try {
+      const baseUrl = this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
+      const res = await fetch(`${baseUrl}/api/coding-sessions`);
+      if (res.ok) {
+        const data = await res.json();
+        this.codingSessions = data.sessions || [];
+      }
+    } catch {
+      // silent fail
+    }
+  }
+
+  startCodingPoll() {
+    this.stopCodingPoll();
+    this.codingPollTimer = setInterval(() => void this.fetchCodingSessions(), 3000);
+  }
+
+  stopCodingPoll() {
+    if (this.codingPollTimer) {
+      clearInterval(this.codingPollTimer);
+      this.codingPollTimer = null;
+    }
+  }
+
+  handleCodingToggleExpand(id: string) {
+    const next = new Set(this.codingExpanded);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    this.codingExpanded = next;
+  }
+
+  async handleCodingKill(id: string) {
+    try {
+      const baseUrl = this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
+      await fetch(`${baseUrl}/api/coding-sessions/${id}/kill`, { method: "POST" });
+      void this.fetchCodingSessions();
+    } catch {}
   }
 
   handleArtifactToggleRaw(tabId: string) {

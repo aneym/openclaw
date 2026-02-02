@@ -1,0 +1,363 @@
+/* ── Coding Sessions Panel ── */
+
+.coding-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.coding-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.coding-panel__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.coding-panel__title-icon {
+  font-size: 16px;
+}
+
+.coding-panel__badge {
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+}
+
+.coding-panel__header-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.coding-panel__btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.coding-panel__btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.coding-panel__btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.coding-panel__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.coding-panel__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  text-align: center;
+}
+
+.coding-panel__empty-icon {
+  font-size: 32px;
+  opacity: 0.5;
+}
+
+.coding-panel__empty-hint {
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.coding-panel__section {
+  margin-bottom: 16px;
+}
+
+.coding-panel__section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  padding: 4px 8px;
+  margin-bottom: 4px;
+}
+
+/* ── Session Card ── */
+
+.coding-session-card {
+  background: var(--bg-secondary, var(--bg));
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s ease;
+}
+
+.coding-session-card--active {
+  border-color: var(--accent);
+}
+
+.coding-session-card--done {
+  opacity: 0.85;
+}
+
+.coding-session-card--error {
+  border-color: var(--error, #ef4444);
+}
+
+.coding-session-card__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.coding-session-card__header:hover {
+  background: var(--hover);
+}
+
+.coding-session-card__status {
+  position: relative;
+  flex-shrink: 0;
+  font-size: 18px;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.coding-session-card__pulse {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: coding-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes coding-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+.coding-session-card__info {
+  flex: 1;
+  min-width: 0;
+}
+
+.coding-session-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coding-session-card__meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+}
+
+.coding-session-card__last-progress {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.coding-session-card__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.coding-session-card__btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  color: var(--text-secondary);
+}
+
+.coding-session-card__btn:hover {
+  background: var(--hover);
+}
+
+.coding-session-card__btn--kill:hover {
+  color: var(--error, #ef4444);
+}
+
+.coding-session-card__btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.coding-session-card__chevron {
+  display: flex;
+  transition: transform 0.15s ease;
+}
+
+.coding-session-card__chevron svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-secondary);
+}
+
+.coding-session-card__chevron--open {
+  transform: rotate(180deg);
+}
+
+/* ── Card Body (expanded) ── */
+
+.coding-session-card__body {
+  border-top: 1px solid var(--border);
+  padding: 10px 12px;
+}
+
+.coding-session-card__summary {
+  margin-bottom: 10px;
+}
+
+.coding-session-card__summary-text {
+  font-size: 13px;
+  margin-bottom: 6px;
+}
+
+.coding-session-card__error {
+  font-size: 12px;
+  color: var(--error, #ef4444);
+  background: rgba(239, 68, 68, 0.1);
+  padding: 6px 10px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+}
+
+.coding-session-card__files {
+  font-size: 12px;
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.coding-session-card__diff {
+  display: flex;
+  gap: 6px;
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+}
+
+.coding-session-card__diff--add {
+  color: var(--success, #22c55e);
+}
+
+.coding-session-card__diff--del {
+  color: var(--error, #ef4444);
+}
+
+.coding-session-card__file-list {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  max-height: 120px;
+  overflow-y: auto;
+  margin-bottom: 8px;
+}
+
+.coding-session-card__file {
+  padding: 1px 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.coding-session-card__pr a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.coding-session-card__pr a:hover {
+  text-decoration: underline;
+}
+
+.coding-session-card__progress {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.coding-progress-item {
+  font-size: 12px;
+  padding: 3px 0;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border-subtle, transparent);
+}
+
+.coding-progress-item__msg {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+}
+
+.coding-session-card__footer {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.coding-session-card__branch {
+  font-size: 11px;
+  font-family: var(--font-mono, monospace);
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.coding-session-card__branch svg {
+  width: 12px;
+  height: 12px;
+}
