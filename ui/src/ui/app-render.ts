@@ -867,6 +867,8 @@ function renderChatWithArtifactPanel(state: AppViewState) {
             onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
             onCloseTerminal: () => state.handleCloseCodingTerminal(),
             onAttachTerminal: (id: string) => state.handleAttachCodingTerminal(id),
+            onRespond: (id: string, text: string, toolUseId?: string) => state.handleCodingRespond(id, text, toolUseId),
+            pendingQuestions: state.codingQuestions,
           })}
         </div>
       ` : nothing}

@@ -174,12 +174,84 @@ export function handleCodingSessionsRequest(
     return true;
   }
 
+  /* ── Respond — pipe an answer back to Claude Code via exec session stdin ── */
+  if (req.method === "POST" && /^\/api\/coding-sessions\/[^/]+\/respond$/.test(pathname)) {
+    const id = pathname.split("/")[3]!;
+    const state = readState();
+    const session = state.sessions[id];
+    if (!session) {
+      json(res, { error: "Session not found" }, 404);
+      return true;
+    }
+
+    let body = "";
+    req.on("data", (chunk: Buffer) => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        const { text, toolUseId } = JSON.parse(body);
+        if (!text) {
+          json(res, { error: "text is required" }, 400);
+          return;
+        }
+
+        const execId = session.execSessionId;
+        if (!execId) {
+          json(res, { error: "No exec session linked" }, 400);
+          return;
+        }
+
+        const execSession = getSession(execId);
+        if (!execSession) {
+          json(res, { error: "Exec session not found or finished" }, 410);
+          return;
+        }
+
+        const stdin = (execSession as any).stdin ?? (execSession as any).child?.stdin;
+        if (!stdin || stdin.destroyed) {
+          json(res, { error: "Session stdin not writable" }, 410);
+          return;
+        }
+
+        // Format as stream-json user message with tool result
+        const response = toolUseId
+          ? JSON.stringify({
+              type: "user",
+              message: {
+                role: "user",
+                content: [{ tool_use_id: toolUseId, type: "tool_result", content: text }],
+              },
+            })
+          : text;
+
+        stdin.write(response + "\n", (err: Error | null | undefined) => {
+          if (err) {
+            json(res, { error: `Write failed: ${err.message}` }, 500);
+          } else {
+            // Clear pending question status
+            if (session.status === "waiting") {
+              session.status = "running";
+              writeState(state);
+            }
+            json(res, { ok: true });
+          }
+        });
+      } catch {
+        json(res, { error: "Invalid JSON body" }, 400);
+      }
+    });
+    return true;
+  }
+
   /* ── Update / upsert a session (agent writes metadata here) ── */
   if (
     req.method === "POST" &&
     /^\/api\/coding-sessions\/[^/]+$/.test(pathname) &&
     !pathname.endsWith("/kill") &&
-    !pathname.endsWith("/log")
+    !pathname.endsWith("/log") &&
+    !pathname.endsWith("/respond") &&
+    !pathname.endsWith("/terminal")
   ) {
     const id = pathname.split("/")[3]!;
     let body = "";

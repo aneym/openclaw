@@ -28,6 +28,8 @@ export interface StreamEvent {
   toolName?: string;
   cost?: number;
   turns?: number;
+  question?: string;
+  toolUseId?: string;
 }
 
 export interface CodingPanelProps {
@@ -43,6 +45,8 @@ export interface CodingPanelProps {
   onOpenTerminal: (id: string) => void;
   onCloseTerminal: () => void;
   onAttachTerminal: (id: string) => void;
+  onRespond: (id: string, text: string, toolUseId?: string) => void;
+  pendingQuestions: Map<string, { question: string; toolUseId: string }>;
 }
 
 /* ── Stream-JSON Parser ── */
@@ -115,6 +119,9 @@ function summarizeEvent(event: any): StreamEvent | null {
           icon = "🔍"; summary = `Grep: ${input.pattern || input.query || ""}`;
         } else if (name === "Task") {
           icon = "🔀"; summary = `Sub-agent: ${(input.prompt || input.task || "").slice(0, 60)}`;
+        } else if (name === "AskUserQuestion") {
+          icon = "❓"; summary = input.question || "Waiting for input…";
+          return { type: "question", phase: "idle" as Phase, icon, summary, toolName: name, question: input.question, toolUseId: block.id };
         } else if (name === "WebSearch") {
           icon = "🌐"; summary = `Search: ${input.query || ""}`;
         } else if (name === "Skill") {
@@ -292,6 +299,34 @@ function renderSessionCard(session: CodingSession, props: CodingPanelProps) {
               `)}
           </div>
 
+          ${(() => {
+            const q = props.pendingQuestions.get(session.id);
+            if (!q) return nothing;
+            return html`
+              <div class="cs-question">
+                <div class="cs-question__label">❓ Claude Code is asking:</div>
+                <div class="cs-question__text">${q.question}</div>
+                <div class="cs-question__input">
+                  <input type="text" class="cs-question__field" placeholder="Type your answer…"
+                    @keydown=${(e: KeyboardEvent) => {
+                      if (e.key === "Enter") {
+                        const input = e.target as HTMLInputElement;
+                        if (input.value.trim()) {
+                          props.onRespond(session.id, input.value.trim(), q.toolUseId);
+                          input.value = "";
+                        }
+                      }
+                    }} />
+                  <button class="cs-btn cs-btn--terminal" @click=${(e: Event) => {
+                    const input = (e.target as HTMLElement).previousElementSibling as HTMLInputElement;
+                    if (input?.value?.trim()) {
+                      props.onRespond(session.id, input.value.trim(), q.toolUseId);
+                      input.value = "";
+                    }
+                  }}>Send</button>
+                </div>
+              </div>`;
+          })()}
           ${session.error ? html`<div class="cs-card__error">${session.error}</div>` : nothing}
           ${session.summary ? html`<div class="cs-card__summary">${session.summary}</div>` : nothing}
         </div>

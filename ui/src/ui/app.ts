@@ -195,6 +195,7 @@ export class OpenClawApp extends LitElement {
   @state() codingSessionEvents: Map<string, import('./views/coding-panel').StreamEvent[]> = new Map();
   @state() codingSessionPhases: Map<string, import('./views/coding-panel').Phase> = new Map();
   @state() codingTerminalOpen: string | null = null;
+  @state() codingQuestions: Map<string, { question: string; toolUseId: string }> = new Map();
   private codingPollTimer: ReturnType<typeof setInterval> | null = null;
   private codingLogOffsets: Map<string, number> = new Map();
   artifactClosedPaths: Set<string> = new Set();
@@ -770,6 +771,14 @@ export class OpenClawApp extends LitElement {
         const nextPhases = new Map(this.codingSessionPhases);
         nextPhases.set(id, detectCurrentPhase(trimmed));
         this.codingSessionPhases = nextPhases;
+
+        // Detect pending questions (AskUserQuestion tool calls)
+        const lastQuestion = [...newEvents].reverse().find(e => e.type === "question" && e.question);
+        const nextQuestions = new Map(this.codingQuestions);
+        if (lastQuestion?.question && lastQuestion?.toolUseId) {
+          nextQuestions.set(id, { question: lastQuestion.question, toolUseId: lastQuestion.toolUseId });
+        }
+        this.codingQuestions = nextQuestions;
       }
 
       // Update offset to fetch only new lines next time
@@ -819,6 +828,20 @@ export class OpenClawApp extends LitElement {
   async handleAttachCodingTerminal(id: string) {
     try {
       await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/terminal`, { method: "POST" });
+    } catch {}
+  }
+
+  async handleCodingRespond(id: string, text: string, toolUseId?: string) {
+    try {
+      await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/respond`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, toolUseId }),
+      });
+      // Clear the pending question
+      const next = new Map(this.codingQuestions);
+      next.delete(id);
+      this.codingQuestions = next;
     } catch {}
   }
 
