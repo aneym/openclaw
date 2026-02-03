@@ -25,7 +25,7 @@
 - [x] Build message normalization layer (gateway/normalize.ts) — convert raw gateway messages to ChatMessage parts model.
 - [x] Build useMessages hook — fetch history via gateway RPC on mount, subscribe to new messages via gateway events.
 - [x] Build useStreaming hook — track streaming state per session (stream.start, stream.delta, stream.end events).
-- [ ] Build MessageList with auto-scroll (IntersectionObserver on sentinel element). "New messages" badge when scrolled up.
+- [x] Build MessageList with auto-scroll (IntersectionObserver on sentinel element). "New messages" badge when scrolled up.
 - [ ] Build MessageGroup — groups consecutive same-role messages. Avatar + grouped bubbles + timestamp footer.
 - [ ] Build TextPart — markdown rendering with marked.js + DOMPurify + highlight.js syntax highlighting. Code blocks get copy button.
 - [ ] Build ComposeBar — auto-resizing textarea, Enter=send, Shift+Enter=newline. Send via gateway RPC. Disable when disconnected.
