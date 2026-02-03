@@ -34,7 +34,7 @@
 ## Section 4: Chat UI — Advanced (KOS-13, KOS-5)
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-5
 
-- [ ] Build ToolCallChip — compact chip with icon per tool type (📖 Read, ✏️ Edit, 📝 Write, ⚡ exec, 🔍 search, 🌐 fetch, 🔧 default).
+- [x] Build ToolCallChip — compact chip with icon per tool type (📖 Read, ✏️ Edit, 📝 Write, ⚡ exec, 🔍 search, 🌐 fetch, 🔧 default).
 - [ ] Build ToolCallGroup — collapsed by default ("🔧 3 tool calls"), expand to show individual chips.
 - [ ] Build ReasoningBlock — collapsible "Thought for Xs..." block with purple accent.
 - [ ] Build ImageAttachment — inline image display, clickable for full-size.
