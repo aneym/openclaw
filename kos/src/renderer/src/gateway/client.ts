@@ -104,10 +104,11 @@ export class GatewayClient {
       minProtocol: 3,
       maxProtocol: 3,
       client: {
-        id: "kos",
+        id: "openclaw-control-ui",
+        displayName: "kOS",
         version: "0.1.0",
         platform: process.platform,
-        mode: "webchat",
+        mode: "ui",
       },
       role: "operator",
       scopes: ["operator.admin", "operator.approvals", "operator.pairing"],
