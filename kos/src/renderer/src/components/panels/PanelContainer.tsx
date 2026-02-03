@@ -2,6 +2,7 @@ import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import type { PanelNode } from '../../types'
 import { usePanelStore } from '../../stores/panel-store'
 import { PanelContent } from './PanelContent'
+import { PanelToolbar } from './PanelToolbar'
 
 interface PanelContainerProps {
   threadId: string
@@ -28,11 +29,18 @@ interface RenderNodeProps {
 }
 
 function RenderNode({ node, threadId }: RenderNodeProps) {
-  // Leaf node: render the panel content
+  // Leaf node: render the panel content with toolbar
   if (node.type === 'leaf') {
     return (
-      <div className="h-full w-full">
-        <PanelContent type={node.panelType} props={node.props} threadId={threadId} />
+      <div className="h-full w-full flex flex-col">
+        <PanelToolbar
+          panelId={node.panelId}
+          panelType={node.panelType}
+          threadId={threadId}
+        />
+        <div className="flex-1 overflow-hidden">
+          <PanelContent type={node.panelType} props={node.props} threadId={threadId} />
+        </div>
       </div>
     )
   }
