@@ -68,11 +68,12 @@ function getToolDetails(part: ToolCallPart | ToolResultPart): string | null {
 
 /**
  * Format duration for exec results (if available)
+ * TODO: Use this when displaying execution duration in tool chips
  */
-function formatDuration(ms?: number): string | null {
-  if (!ms) return null
-  return `${(ms / 1000).toFixed(1)}s`
-}
+// function formatDuration(ms?: number): string | null {
+//   if (!ms) return null
+//   return `${(ms / 1000).toFixed(1)}s`
+// }
 
 export function ToolCallChip({ part, onClick }: ToolCallChipProps) {
   const icon = getToolIcon(part.toolName)

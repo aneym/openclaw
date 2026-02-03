@@ -48,17 +48,17 @@
 - [x] Build Linear GraphQL client (src/renderer/src/linear/) — fetch team issues with states, priorities, assignees, labels, relations. Use workspace config for API key.
 - [x] Build useLinearTeam hook — fetches issues for a team, caches with background refetch (60s). Returns issues + states + loading state.
 - [x] Build dependency graph (useDependencyGraph) — build DAG from `blocks` relations. Expose isBlocked, getBlockers, getUnblockedTasks, getDownstreamCount, getCriticalPath.
-- [ ] Build LinearBoard kanban component — columns per Linear state, cards sorted by priority then dependency depth.
-- [ ] Build LinearCard — shows identifier, title, priority icon, assignee, labels. Blocked cards get reduced opacity + "⛔ Blocked" badge. Downstream count badge.
-- [ ] Build drag-and-drop between columns — optimistic state update + Linear API mutation.
-- [ ] Build task→thread routing: click card → find existing thread or create new one, activate it.
-- [ ] Wire LinearBoard as a panel type in PanelContent. Show when project has Linear team linked.
+- [x] Build LinearBoard kanban component — columns per Linear state, cards sorted by priority then dependency depth.
+- [x] Build LinearCard — shows identifier, title, priority icon, assignee, labels. Blocked cards get reduced opacity + "⛔ Blocked" badge. Downstream count badge.
+- [x] Build drag-and-drop between columns — optimistic state update + Linear API mutation.
+- [x] Build task→thread routing: click card → find existing thread or create new one, activate it.
+- [x] Wire LinearBoard as a panel type in PanelContent. Show when project has Linear team linked.
 
 ## Section 6: Project Navigation (KOS-7, KOS-13)
 > Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-7, KOS-13
 
-- [ ] Build ProjectList in sidebar — expandable projects with thread count badge.
-- [ ] Build WorkspaceSwitcher dropdown at top of sidebar — shows active workspace, switch between workspaces.
+- [x] Build ProjectList in sidebar — expandable projects with thread count badge.
+- [x] Build WorkspaceSwitcher dropdown at top of sidebar — shows active workspace, switch between workspaces.
 - [ ] Build ProjectSettings modal/drawer — project name, icon, color, Linear team connection, repo path, enabled skills.
 - [ ] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
 

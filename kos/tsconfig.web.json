@@ -10,6 +10,9 @@
     "composite": true,
     "jsx": "react-jsx",
     "baseUrl": ".",
+    "esModuleInterop": true,
+    "downlevelIteration": true,
+    "skipLibCheck": true,
     "paths": {
       "@/*": [
         "src/renderer/src/*"

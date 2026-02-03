@@ -12,6 +12,7 @@ interface ThreadState {
   archiveThread: (id: string) => void
   getThread: (id: string) => Thread | undefined
   getThreadsByProject: (projectId: string) => Thread[]
+  getThreadByLinearIssue: (linearIssueId: string) => Thread | undefined
 }
 
 export const useThreadStore = create<ThreadState>()(
@@ -65,6 +66,13 @@ export const useThreadStore = create<ThreadState>()(
         const { threads } = get()
         return Array.from(threads.values()).filter(
           (t) => t.projectId === projectId && t.status !== 'archived'
+        )
+      },
+
+      getThreadByLinearIssue: (linearIssueId: string) => {
+        const { threads } = get()
+        return Array.from(threads.values()).find(
+          (t) => t.linearIssueId === linearIssueId && t.status !== 'archived'
         )
       }
     }),

@@ -1,5 +1,8 @@
 import type { PanelType } from '../../types'
 import { ChatPanel } from './ChatPanel'
+import { LinearBoard } from '../linear/LinearBoard'
+import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useThreadStore } from '../../stores/thread-store'
 
 interface PanelContentProps {
   type: PanelType
@@ -8,6 +11,9 @@ interface PanelContentProps {
 }
 
 export function PanelContent({ type, props, threadId }: PanelContentProps) {
+  const activeWorkspace = useWorkspaceStore((state) => state.activeWorkspace)
+  const getThread = useThreadStore((state) => state.getThread)
+
   switch (type) {
     case 'chat':
       return <ChatPanel threadId={threadId} />
@@ -43,12 +49,35 @@ export function PanelContent({ type, props, threadId }: PanelContentProps) {
       )
     }
 
-    case 'linear-board':
-      return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Linear Board Panel</p>
-        </div>
-      )
+    case 'linear-board': {
+      // Get teamId from panel props or thread
+      const teamId = props?.teamId as string | undefined
+      const linearApiKey = activeWorkspace?.linearApiKey
+
+      if (!teamId) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+            <p className="text-sm">No Linear team configured</p>
+            <p className="text-xs mt-2">Configure a Linear team for this project</p>
+          </div>
+        )
+      }
+
+      if (!linearApiKey) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+            <p className="text-sm">No Linear API key configured</p>
+            <p className="text-xs mt-2">Add a Linear API key in workspace settings</p>
+          </div>
+        )
+      }
+
+      // Get projectId from thread if available
+      const thread = getThread(threadId)
+      const projectId = thread?.projectId
+
+      return <LinearBoard teamId={teamId} apiKey={linearApiKey} projectId={projectId} />
+    }
 
     case 'browser': {
       const url = props?.url

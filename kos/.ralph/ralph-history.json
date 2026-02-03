@@ -517,9 +517,142 @@
       "exitCode": 0,
       "completionDetected": false,
       "errors": []
+    },
+    {
+      "iteration": 29,
+      "startedAt": "2026-02-03T05:26:25.205Z",
+      "endedAt": "2026-02-03T05:29:44.614Z",
+      "durationMs": 198309,
+      "toolsUsed": {
+        "BFS": 1,
+        "DFS": 1,
+        "Kahn": 1
+      },
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/renderer/src/components/chat/StreamingIndicator.tsx",
+        "src/renderer/src/linear/client.ts",
+        "src/renderer/src/linear/hooks/index.ts",
+        "src/renderer/src/linear/hooks/useDependencyGraph.ts",
+        "src/renderer/src/linear/hooks/useLinearTeam.ts",
+        "src/renderer/src/linear/index.ts",
+        "src/renderer/src/linear/src/renderer/src/linear/README.md",
+        "src/renderer/src/linear/types.ts",
+        "kos/.ralph/ralph-history.json",
+        "kos/.ralph/ralph-loop.state.json",
+        "kos/.ralph/ralph-tasks.md",
+        "kos/src/renderer/src/components/chat/ComposeBar.tsx",
+        "kos/src/renderer/src/components/chat/MessageGroup.tsx",
+        "kos/src/renderer/src/components/chat/MessageList.tsx",
+        "kos/src/renderer/src/components/chat/MessageQueue.tsx",
+        "kos/src/renderer/src/components/panels/ChatPanel.tsx",
+        "kos/src/renderer/src/stores/message-queue-store.ts",
+        "kos/src/renderer/src/components/chat/StreamingIndicator.tsx",
+        "kos/src/renderer/src/linear/"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 30,
+      "startedAt": "2026-02-03T05:29:48.097Z",
+      "endedAt": "2026-02-03T05:33:30.573Z",
+      "durationMs": 221300,
+      "toolsUsed": {},
+      "filesModified": [
+        "kos/.ralph/ralph-tasks.md",
+        "kos/src/renderer/src/components/linear/",
+        ".ralph/ralph-tasks.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 31,
+      "startedAt": "2026-02-03T05:33:34.093Z",
+      "endedAt": "2026-02-03T05:35:30.628Z",
+      "durationMs": 115380,
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-tasks.md"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 32,
+      "startedAt": "2026-02-03T05:35:34.254Z",
+      "endedAt": "2026-02-03T05:39:05.800Z",
+      "durationMs": 210393,
+      "toolsUsed": {},
+      "filesModified": [
+        "kos/package-lock.json",
+        "kos/package.json",
+        "kos/tsconfig.web.json",
+        ".ralph/ralph-tasks.md",
+        "package-lock.json",
+        "package.json",
+        "tsconfig.web.json"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 33,
+      "startedAt": "2026-02-03T05:39:09.237Z",
+      "endedAt": "2026-02-03T05:43:26.776Z",
+      "durationMs": 256330,
+      "toolsUsed": {},
+      "filesModified": [
+        "kos/src/renderer/src/stores/thread-store.ts",
+        ".ralph/ralph-tasks.md",
+        "src/renderer/src/stores/thread-store.ts"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 34,
+      "startedAt": "2026-02-03T05:43:30.413Z",
+      "endedAt": "2026-02-03T05:48:10.185Z",
+      "durationMs": 278589,
+      "toolsUsed": {},
+      "filesModified": [
+        "kos/src/renderer/src/components/panels/PanelContent.tsx",
+        ".ralph/ralph-tasks.md",
+        "package-lock.json",
+        "src/renderer/src/components/panels/PanelContent.tsx"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 35,
+      "startedAt": "2026-02-03T05:48:13.724Z",
+      "endedAt": "2026-02-03T05:52:00.782Z",
+      "durationMs": 225807,
+      "toolsUsed": {},
+      "filesModified": [
+        "kos/src/renderer/src/components/layout/Sidebar.tsx",
+        "kos/src/renderer/src/components/threads/ThreadList.tsx",
+        "kos/src/renderer/src/components/nav/",
+        "kos/src/renderer/src/stores/project-store.ts",
+        ".ralph/ralph-tasks.md",
+        "src/renderer/src/components/layout/Sidebar.tsx",
+        "src/renderer/src/components/threads/ThreadList.tsx"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
     }
   ],
-  "totalDurationMs": 4322423,
+  "totalDurationMs": 5828531,
   "struggleIndicators": {
     "repeatedErrors": {},
     "noProgressIterations": 0,

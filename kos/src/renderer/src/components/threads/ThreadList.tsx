@@ -11,10 +11,12 @@ interface GroupedThreads {
 }
 
 interface ThreadListProps {
+  projectId?: string | null // Filter to specific project (null = unsorted only)
   onThreadClick?: () => void
+  compact?: boolean // If true, don't show project headers
 }
 
-export function ThreadList({ onThreadClick }: ThreadListProps) {
+export function ThreadList({ projectId, onThreadClick, compact = false }: ThreadListProps) {
   const threads = useThreadStore((s) => s.threads)
   const activeThreadId = useThreadStore((s) => s.activeThreadId)
   const setActiveThread = useThreadStore((s) => s.setActiveThread)
@@ -26,10 +28,28 @@ export function ThreadList({ onThreadClick }: ThreadListProps) {
   const groupedThreads = useMemo(() => {
     const activeThreads = Array.from(threads.values()).filter((t) => t.status !== 'archived')
 
+    // If projectId filter is provided, only show threads from that project
+    const filteredThreads =
+      projectId !== undefined
+        ? activeThreads.filter((t) => t.projectId === projectId)
+        : activeThreads
+
+    // If compact mode, just return threads sorted
+    if (compact) {
+      const sorted = [...filteredThreads].sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+      return [
+        {
+          projectId: projectId ?? null,
+          projectName: projectId || 'Unsorted',
+          threads: sorted
+        }
+      ]
+    }
+
     // Group by projectId
     const groups = new Map<string | null, Thread[]>()
 
-    activeThreads.forEach((thread) => {
+    filteredThreads.forEach((thread) => {
       const key = thread.projectId || null
       if (!groups.has(key)) {
         groups.set(key, [])
@@ -62,7 +82,7 @@ export function ThreadList({ onThreadClick }: ThreadListProps) {
     })
 
     return result
-  }, [threads])
+  }, [threads, projectId, compact])
 
   const toggleProject = (projectId: string | null) => {
     const key = projectId || 'unsorted'
@@ -85,6 +105,30 @@ export function ThreadList({ onThreadClick }: ThreadListProps) {
   if (groupedThreads.length === 0) {
     return (
       <div className="px-4 pb-4 text-sm text-muted-foreground">No active threads</div>
+    )
+  }
+
+  // In compact mode, just show thread items without headers
+  if (compact) {
+    const group = groupedThreads[0]
+    if (!group || group.threads.length === 0) {
+      return null
+    }
+
+    return (
+      <div className="space-y-1">
+        {group.threads.map((thread) => (
+          <ThreadItem
+            key={thread.id}
+            thread={thread}
+            isActive={thread.id === activeThreadId}
+            onClick={() => {
+              setActiveThread(thread.id)
+              onThreadClick?.()
+            }}
+          />
+        ))}
+      </div>
     )
   }
 

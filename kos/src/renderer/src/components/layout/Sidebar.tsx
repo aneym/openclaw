@@ -1,5 +1,6 @@
 import { MessageSquare, Settings } from 'lucide-react'
-import { ThreadList } from '../threads/ThreadList'
+import { ProjectList } from '../nav/ProjectList'
+import { WorkspaceSwitcher } from '../nav/WorkspaceSwitcher'
 import { NewThreadButton } from './NewThreadButton'
 
 type View = 'home' | 'settings'
@@ -18,7 +19,9 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
         className="shrink-0 border-b border-border [-webkit-app-region:drag]"
         style={{ paddingTop: 'var(--titlebar-height)' }}
       >
-        <div className="h-12 px-4 flex items-center font-semibold">kOS</div>
+        <div className="h-12 px-2 flex items-center [-webkit-app-region:no-drag]">
+          <WorkspaceSwitcher />
+        </div>
       </div>
 
       {/* Nav */}
@@ -37,7 +40,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
       </div>
 
       <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-        Threads
+        Projects
       </div>
 
       <div className="p-2">
@@ -45,7 +48,7 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
-        <ThreadList onThreadClick={() => onNavigate('home')} />
+        <ProjectList onThreadClick={() => onNavigate('home')} />
       </div>
 
       {/* Bottom nav - Settings */}

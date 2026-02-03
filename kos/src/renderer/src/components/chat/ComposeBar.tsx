@@ -177,7 +177,7 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     if (!canSend) return
 
     const messageText = text.trim()
-    const messageImages = [...images]
+    // const messageImages = [...images] // TODO: Use when image support is added
     setText('')
     setImages([])
 

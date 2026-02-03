@@ -1,6 +1,6 @@
 import { useMemo, useCallback } from 'react'
 import { marked } from 'marked'
-import * as DOMPurify from 'dompurify'
+import DOMPurify from 'dompurify'
 import hljs from 'highlight.js/lib/core'
 
 // Register common languages for syntax highlighting
@@ -30,7 +30,7 @@ hljs.registerLanguage('go', go)
 // Configure marked with highlight.js
 const renderer = new marked.Renderer()
 
-renderer.code = ({ text, lang, escaped }: { text: string; lang?: string; escaped?: boolean }) => {
+renderer.code = ({ text, lang }: { text: string; lang?: string; escaped?: boolean }) => {
   const code = text
   const language = lang || ''
   let highlighted = code
