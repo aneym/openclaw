@@ -263,9 +263,41 @@
       "exitCode": 0,
       "completionDetected": false,
       "errors": []
+    },
+    {
+      "iteration": 14,
+      "startedAt": "2026-02-03T04:41:02.331Z",
+      "endedAt": "2026-02-03T04:44:42.788Z",
+      "durationMs": 219488,
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "docs/hooks/use-streaming.md",
+        "src/renderer/src/hooks/use-streaming.example.tsx",
+        "src/renderer/src/hooks/use-streaming.ts",
+        "kos/.ralph/ralph-history.json",
+        "kos/.ralph/ralph-loop.state.json"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
+    },
+    {
+      "iteration": 15,
+      "startedAt": "2026-02-03T04:44:46.034Z",
+      "endedAt": "2026-02-03T04:46:37.406Z",
+      "durationMs": 110338,
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/renderer/src/components/chat/MessageList.tsx"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
     }
   ],
-  "totalDurationMs": 1666972,
+  "totalDurationMs": 1996798,
   "struggleIndicators": {
     "repeatedErrors": {},
     "noProgressIterations": 0,

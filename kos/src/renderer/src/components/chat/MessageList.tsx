@@ -1,13 +1,40 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ChatMessage } from '@/types/message'
 import { Button } from '@/components/ui/button'
 import { ChevronDown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { MessageGroup } from './MessageGroup'
 
 interface MessageListProps {
   messages: ChatMessage[]
   isStreaming?: boolean
   className?: string
+}
+
+interface MessageGrouping {
+  role: 'user' | 'assistant' | 'system' | 'tool'
+  messages: ChatMessage[]
+}
+
+function groupConsecutiveMessages(messages: ChatMessage[]): MessageGrouping[] {
+  const groups: MessageGrouping[] = []
+  let currentGroup: MessageGrouping | null = null
+
+  for (const message of messages) {
+    if (currentGroup && currentGroup.role === message.role) {
+      // Add to current group
+      currentGroup.messages.push(message)
+    } else {
+      // Start new group
+      currentGroup = {
+        role: message.role,
+        messages: [message],
+      }
+      groups.push(currentGroup)
+    }
+  }
+
+  return groups
 }
 
 export function MessageList({ messages, isStreaming, className }: MessageListProps) {
@@ -16,6 +43,9 @@ export function MessageList({ messages, isStreaming, className }: MessageListPro
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasNewMessages, setHasNewMessages] = useState(false)
   const prevMessageCountRef = useRef(messages.length)
+
+  // Group consecutive same-role messages
+  const messageGroups = useMemo(() => groupConsecutiveMessages(messages), [messages])
 
   // Track when we're at the bottom using IntersectionObserver
   useEffect(() => {
@@ -85,20 +115,21 @@ export function MessageList({ messages, isStreaming, className }: MessageListPro
             No messages yet. Start a conversation!
           </div>
         ) : (
-          <div className="space-y-4">
-            {messages.map((message) => (
-              <div key={message.id} className="text-sm">
-                <div className="font-medium mb-1 capitalize">{message.role}</div>
-                <div className="text-muted-foreground">
-                  {message.parts.map((part, idx) => {
-                    if (part.type === 'text') {
-                      return <div key={idx}>{part.text}</div>
-                    }
-                    return <div key={idx}>[{part.type}]</div>
-                  })}
-                </div>
-              </div>
-            ))}
+          <div className="space-y-6">
+            {messageGroups.map((group, idx) => {
+              // Check if this is the last group and if it's streaming
+              const isLastGroup = idx === messageGroups.length - 1
+              const shouldShowStreaming = isLastGroup && isStreaming
+
+              return (
+                <MessageGroup
+                  key={`group-${idx}-${group.messages[0].id}`}
+                  messages={group.messages}
+                  role={group.role}
+                  isStreaming={shouldShowStreaming}
+                />
+              )
+            })}
           </div>
         )}
 
