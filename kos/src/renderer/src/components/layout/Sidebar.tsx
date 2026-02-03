@@ -1,5 +1,6 @@
 import { MessageSquare, Settings } from 'lucide-react'
 import { ThreadList } from '../threads/ThreadList'
+import { NewThreadButton } from './NewThreadButton'
 
 type View = 'home' | 'settings'
 
@@ -37,6 +38,10 @@ export function Sidebar({ onNavigate, currentView }: SidebarProps) {
 
       <div className="px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
         Threads
+      </div>
+
+      <div className="p-2">
+        <NewThreadButton />
       </div>
 
       <div className="flex-1 overflow-y-auto p-2">
