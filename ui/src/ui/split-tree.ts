@@ -7,10 +7,13 @@
 
 export type SplitDirection = "horizontal" | "vertical";
 
+export type PaneType = "chat" | "terminal";
+
 export interface SplitLeaf {
   kind: "leaf";
   id: string;
-  threadId: string;
+  threadId: string; // for chat: session key. for terminal: terminal session id
+  paneType?: PaneType; // default: "chat" (backward compat)
 }
 
 export interface SplitBranch {
@@ -40,6 +43,11 @@ export function generatePaneId(): string {
 
 export function createLeaf(threadId: string, id?: string): SplitLeaf {
   return { kind: "leaf", id: id ?? generatePaneId(), threadId };
+}
+
+/** Create a leaf for a terminal pane. */
+export function createTerminalLeaf(terminalId: string, id?: string): SplitLeaf {
+  return { kind: "leaf", id: id ?? generatePaneId(), threadId: terminalId, paneType: "terminal" };
 }
 
 /** Split a leaf into a branch with the original leaf and a new pane. */
@@ -262,7 +270,7 @@ export function prevLeafId(root: SplitNode, currentId: string): string | null {
 // Serialization (for localStorage persistence)
 // ---------------------------------------------------------------------------
 
-type SerializedLeaf = { k: "l"; id: string; t: string };
+type SerializedLeaf = { k: "l"; id: string; t: string; pt?: "t" }; // pt:"t" = terminal
 type SerializedBranch = {
   k: "b";
   id: string;
@@ -276,7 +284,11 @@ type SerializedLayout = { root: SerializedNode; fp: string };
 
 function serializeNode(node: SplitNode): SerializedNode {
   if (node.kind === "leaf") {
-    return { k: "l", id: node.id, t: node.threadId };
+    const s: SerializedLeaf = { k: "l", id: node.id, t: node.threadId };
+    if (node.paneType === "terminal") {
+      s.pt = "t";
+    }
+    return s;
   }
   return {
     k: "b",
