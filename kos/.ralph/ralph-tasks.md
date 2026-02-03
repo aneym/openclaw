@@ -29,7 +29,7 @@
 - [x] Build MessageGroup — groups consecutive same-role messages. Avatar + grouped bubbles + timestamp footer.
 - [x] Build TextPart — markdown rendering with marked.js + DOMPurify + highlight.js syntax highlighting. Code blocks get copy button.
 - [x] Build ComposeBar — auto-resizing textarea, Enter=send, Shift+Enter=newline. Send via gateway RPC. Disable when disconnected.
-- [ ] Wire ChatPanel together: MessageList + ComposeBar. Replace the chat stub in PanelContent.
+- [x] Wire ChatPanel together: MessageList + ComposeBar. Replace the chat stub in PanelContent.
 
 ## Section 4: Chat UI — Advanced (KOS-13, KOS-5)
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-5
