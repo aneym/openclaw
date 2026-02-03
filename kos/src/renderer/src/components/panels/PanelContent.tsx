@@ -1,6 +1,7 @@
 import type { PanelType } from '../../types'
 import { ChatPanel } from './ChatPanel'
 import { LinearBoard } from '../linear/LinearBoard'
+import { CodingSessionPanel } from '../coding/CodingSessionPanel'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThreadStore } from '../../stores/thread-store'
 
@@ -38,15 +39,8 @@ export function PanelContent({ type, props, threadId }: PanelContentProps) {
       )
 
     case 'coding-session': {
-      const sessionKey = props?.sessionKey
-      return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Coding Session Panel</p>
-          {sessionKey != null && (
-            <p className="text-xs mt-2">Session: {String(sessionKey)}</p>
-          )}
-        </div>
-      )
+      const sessionKey = props?.sessionKey ?? threadId
+      return <CodingSessionPanel sessionKey={String(sessionKey)} />
     }
 
     case 'linear-board': {

@@ -5,6 +5,7 @@ import type { Project } from '../types'
 interface ProjectState {
   projects: Map<string, Project>
   expandedProjectIds: Set<string>
+  selectedProjectId: string | null
 
   addProject: (project: Project) => void
   updateProject: (id: string, patch: Partial<Project>) => void
@@ -12,6 +13,7 @@ interface ProjectState {
   getProjectsByWorkspace: (workspaceId: string) => Project[]
   toggleExpanded: (id: string) => void
   isExpanded: (id: string) => boolean
+  setSelectedProject: (id: string | null) => void
 }
 
 export const useProjectStore = create<ProjectState>()(
@@ -19,6 +21,7 @@ export const useProjectStore = create<ProjectState>()(
     (set, get) => ({
       projects: new Map(),
       expandedProjectIds: new Set(),
+      selectedProjectId: null,
 
       addProject: (project: Project) => {
         const { projects } = get()
@@ -61,6 +64,10 @@ export const useProjectStore = create<ProjectState>()(
 
       isExpanded: (id: string) => {
         return get().expandedProjectIds.has(id)
+      },
+
+      setSelectedProject: (id: string | null) => {
+        set({ selectedProjectId: id })
       }
     }),
     {

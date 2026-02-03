@@ -60,14 +60,14 @@
 - [x] Build ProjectList in sidebar — expandable projects with thread count badge.
 - [x] Build WorkspaceSwitcher dropdown at top of sidebar — shows active workspace, switch between workspaces.
 - [x] Build ProjectSettings modal/drawer — project name, icon, color, Linear team connection, repo path, enabled skills.
-- [ ] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
+- [x] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
 
 ## Section 7: Coding Session Panel (KOS-5)
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-5
 
-- [ ] Build CodingSessionPanel — monitors agent coding sessions in real-time. Header with phase indicator + session name + duration.
-- [ ] Build phase detection (useCodingSession hook) — parse tool events to detect phase: exploring (Read/search), planning (long text), building (Write/Edit/exec), testing (exec with test commands), complete, error.
-- [ ] Build SessionTimeline — event timeline within a session. Each event shows tool icon + description + duration.
+- [x] Build CodingSessionPanel — monitors agent coding sessions in real-time. Header with phase indicator + session name + duration.
+- [x] Build phase detection (useCodingSession hook) — parse tool events to detect phase: exploring (Read/search), planning (long text), building (Write/Edit/exec), testing (exec with test commands), complete, error.
+- [x] Build SessionTimeline — event timeline within a session. Each event shows tool icon + description + duration.
 - [ ] Build PhaseIndicator — colored badge per phase (🔍 blue, 🧠 purple, 🔨 amber, 🧪 green, ✅ green, ❌ red).
 - [ ] Wire CodingSessionPanel into PanelContent as the 'coding-session' panel type.
 

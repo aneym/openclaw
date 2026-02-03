@@ -18,10 +18,25 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
     activeWorkspace ? s.getProjectsByWorkspace(activeWorkspace.id) : []
   )
   const isExpanded = useProjectStore((s) => s.isExpanded)
+  const setSelectedProject = useProjectStore((s) => s.setSelectedProject)
   const threads = useThreadStore((s) => s.threads)
+  const activeThreadId = useThreadStore((s) => s.activeThreadId)
 
   // Settings modal state
   const [settingsProject, setSettingsProject] = useState<Project | null>(null)
+
+  // Handle project click: expand to show threads, or show Linear board if no active thread
+  const handleProjectClick = (projectId: string) => {
+    const project = projects.find((p) => p.id === projectId)
+
+    // Always toggle expansion to show/hide threads
+    onProjectClick?.(projectId)
+
+    // If no active thread and project has a Linear team, show the board
+    if (!activeThreadId && project?.linearTeamId) {
+      setSelectedProject(projectId)
+    }
+  }
 
   // Get threads grouped by project
   const threadsByProject = new Map<string, number>()
@@ -53,14 +68,17 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
               <ProjectItem
                 project={project}
                 threadCount={count}
-                onClick={() => onProjectClick?.(project.id)}
+                onClick={() => handleProjectClick(project.id)}
                 onSettingsClick={() => setSettingsProject(project)}
               />
               {expanded && count > 0 && (
                 <div className="ml-6 mt-1 space-y-1">
                   <ThreadList
                     projectId={project.id}
-                    onThreadClick={onThreadClick}
+                    onThreadClick={() => {
+                      setSelectedProject(null)
+                      onThreadClick?.()
+                    }}
                     compact
                   />
                 </div>
@@ -75,7 +93,14 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
             <div className="px-3 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Unsorted
             </div>
-            <ThreadList projectId={null} onThreadClick={onThreadClick} compact />
+            <ThreadList
+              projectId={null}
+              onThreadClick={() => {
+                setSelectedProject(null)
+                onThreadClick?.()
+              }}
+              compact
+            />
           </div>
         )}
       </div>

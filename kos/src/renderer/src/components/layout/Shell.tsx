@@ -4,8 +4,10 @@ import { StatusBar } from './StatusBar'
 import { Settings } from '../settings/Settings'
 import { PanelContainer } from '../panels/PanelContainer'
 import { ThreadSearch } from './ThreadSearch'
+import { LinearBoard } from '../linear/LinearBoard'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThreadStore } from '../../stores/thread-store'
+import { useProjectStore } from '../../stores/project-store'
 
 type View = 'home' | 'settings'
 
@@ -14,6 +16,10 @@ export function Shell() {
   const [searchOpen, setSearchOpen] = useState(false)
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace)
   const activeThreadId = useThreadStore((s) => s.activeThreadId)
+  const selectedProjectId = useProjectStore((s) => s.selectedProjectId)
+  const selectedProject = useProjectStore((s) =>
+    s.selectedProjectId ? s.getProject(s.selectedProjectId) : undefined
+  )
 
   // Cmd+K keyboard shortcut
   useEffect(() => {
@@ -42,6 +48,14 @@ export function Shell() {
               <Settings />
             ) : activeThreadId ? (
               <PanelContainer threadId={activeThreadId} />
+            ) : selectedProjectId && selectedProject?.linearTeamId && activeWorkspace?.linearApiKey ? (
+              <div className="h-full overflow-auto">
+                <LinearBoard
+                  projectId={selectedProjectId}
+                  teamId={selectedProject.linearTeamId}
+                  apiKey={activeWorkspace.linearApiKey}
+                />
+              </div>
             ) : (
               <div className="flex-1 flex items-center justify-center h-full">
                 <div className="text-center max-w-md">
