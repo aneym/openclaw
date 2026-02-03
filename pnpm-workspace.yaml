@@ -1,6 +1,7 @@
 packages:
   - .
   - ui
+  - kos
   - packages/*
   - extensions/*
 
