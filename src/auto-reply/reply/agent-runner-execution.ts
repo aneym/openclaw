@@ -495,6 +495,20 @@ export async function runAgentTurnWithFallback(params: {
         }
       }
 
+      // Handle other embedded errors (rate limits, auth failures, etc.)
+      if (embeddedError && embeddedError.message) {
+        console.log(
+          `[AGENT-RUNNER-EXECUTION] Returning embedded error as final payload: ${embeddedError.message.substring(0, 100)}`,
+        );
+        return {
+          kind: "final",
+          payload: {
+            text: `⚠️ ${embeddedError.message}`,
+            isError: true,
+          },
+        };
+      }
+
       break;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

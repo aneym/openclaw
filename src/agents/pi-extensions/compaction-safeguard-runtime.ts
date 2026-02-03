@@ -1,6 +1,14 @@
 export type CompactionSafeguardRuntimeValue = {
   maxHistoryShare?: number;
   contextWindowTokens?: number;
+  /** Custom instructions appended to compaction summarization prompts. */
+  customInstructions?: string;
+  /**
+   * Minimum token count to trigger actual summarization.
+   * Below this threshold, the previous summary is preserved as-is to prevent
+   * double-compaction from degrading context. Default: 10000.
+   */
+  minTokensForCompaction?: number;
 };
 
 // Session-scoped runtime registry keyed by object identity.

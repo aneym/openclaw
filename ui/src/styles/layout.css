@@ -9,6 +9,7 @@
   --shell-topbar-height: 56px;
   --shell-focus-duration: 200ms;
   --shell-focus-ease: var(--ease-out);
+  position: relative;
   height: 100vh;
   display: grid;
   grid-template-columns: var(--shell-nav-width) minmax(0, 1fr);
@@ -42,6 +43,64 @@
 
 .shell--nav-collapsed {
   grid-template-columns: 0px minmax(0, 1fr);
+}
+
+.shell--nav-collapsed.shell--chat {
+  grid-template-rows: 0 1fr;
+}
+
+.shell--nav-collapsed .topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  width: auto;
+  min-width: 0;
+  padding: 8px;
+}
+
+.shell--nav-collapsed .topbar .brand {
+  display: none;
+}
+
+/* Hide status pills on non-chat pages when nav is collapsed */
+.shell--nav-collapsed:not(.shell--chat) .topbar .topbar-status {
+  display: none;
+}
+
+/* In chat mode with nav collapsed, float the topbar full-width so
+   the hamburger sits left and status pills sit right */
+.shell--nav-collapsed.shell--chat .topbar {
+  right: 0;
+  pointer-events: none;
+}
+
+.shell--nav-collapsed.shell--chat .topbar > * {
+  pointer-events: auto;
+}
+
+.shell--nav-collapsed.shell--chat .topbar-status {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  padding: 4px 8px;
+}
+
+/* Push content below the floating topbar so pane headers aren't covered */
+.shell--nav-collapsed.shell--chat .content {
+  padding-top: 48px;
+}
+
+.shell--chat .content-header {
+  opacity: 0;
+  transform: translateY(-8px);
+  max-height: 0px;
+  padding: 0;
+  pointer-events: none;
 }
 
 .shell--chat-focus {
@@ -191,6 +250,43 @@
 }
 
 /* ===========================================
+   Dev Mode Indicators
+   =========================================== */
+
+/* Dev mode topbar — amber stripe */
+.shell[data-dev] .topbar {
+  border-top: 3px solid #f59e0b;
+  background: linear-gradient(to bottom, rgba(245, 158, 11, 0.06), var(--bg) 60%);
+}
+
+.dev-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+  height: 20px;
+  white-space: nowrap;
+}
+
+/* UI Dev (vite dev server) — amber */
+.dev-badge.ui-dev {
+  background: rgba(245, 158, 11, 0.18);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Gateway Dev — teal */
+.dev-badge.gw-dev {
+  background: var(--accent-2-subtle);
+  color: var(--accent-2);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+/* ===========================================
    Navigation Sidebar
    =========================================== */
 
@@ -219,6 +315,38 @@
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
+}
+
+/* Nav resize handle — overlays right edge of nav */
+.nav-resize-handle {
+  position: absolute;
+  top: var(--shell-topbar-height);
+  left: var(--shell-nav-width);
+  bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 150ms ease;
+  z-index: 20;
+}
+
+.nav-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  right: -3px;
+}
+
+.nav-resize-handle:hover,
+.nav-resize-handle:active {
+  background: var(--accent);
+}
+
+.nav-resize-handle--hidden {
+  display: none;
 }
 
 .nav--collapsed {
@@ -282,6 +410,11 @@
   margin-bottom: 20px;
   display: grid;
   gap: 2px;
+  transition: margin var(--duration-normal, 0.2s) ease;
+}
+
+.nav-group--collapsed {
+  margin-bottom: 4px;
 }
 
 .nav-group:last-child {
@@ -291,10 +424,18 @@
 .nav-group__items {
   display: grid;
   gap: 1px;
+  overflow: hidden;
+  max-height: 500px;
+  transition:
+    max-height var(--duration-normal, 0.2s) ease,
+    opacity var(--duration-normal, 0.2s) ease;
+  opacity: 1;
 }
 
 .nav-group--collapsed .nav-group__items {
-  display: none;
+  max-height: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 
 /* Nav label */
@@ -340,11 +481,11 @@
 .nav-label__chevron {
   font-size: 10px;
   opacity: 0.5;
-  transition: transform var(--duration-fast) ease;
+  transition: opacity var(--duration-fast) ease;
 }
 
-.nav-group--collapsed .nav-label__chevron {
-  transform: rotate(-90deg);
+.nav-label:hover .nav-label__chevron {
+  opacity: 0.8;
 }
 
 /* Nav items */
@@ -569,41 +710,11 @@
   .shell {
     --shell-pad: 12px;
     --shell-gap: 12px;
-    grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
-    grid-template-areas:
-      "topbar"
-      "nav"
-      "content";
-  }
-
-  .nav {
-    position: static;
-    max-height: none;
-    display: flex;
-    gap: 6px;
-    overflow-x: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border);
-    padding: 10px 14px;
-    background: var(--bg);
-  }
-
-  .nav-group {
-    grid-auto-flow: column;
-    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
-    margin-bottom: 0;
   }
 
   .grid-cols-2,
   .grid-cols-3 {
     grid-template-columns: 1fr;
-  }
-
-  .topbar {
-    position: static;
-    padding: 12px 14px;
-    gap: 10px;
   }
 
   .topbar-status {
@@ -618,4 +729,314 @@
   .list-item {
     grid-template-columns: 1fr;
   }
+}
+
+/* ===========================================
+   Models Page
+   =========================================== */
+
+.models-page {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.models-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.models-header h2 {
+  margin: 0 0 4px 0;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.models-subtitle {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+.models-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.models-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 40px;
+  color: var(--text-2);
+}
+
+.providers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.provider-card {
+  border: 1px solid var(--border-1);
+  border-radius: 8px;
+  padding: 16px;
+  background: var(--surface-1);
+}
+
+.provider-card--implicit {
+  background: var(--surface-2);
+  border-style: dashed;
+}
+
+.provider-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--accent-blue-2);
+  color: var(--text-on-accent);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.provider-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.provider-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.provider-url {
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.provider-fields {
+  margin-bottom: 16px;
+}
+
+.provider-fields .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.provider-fields .field span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.provider-fields input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: 13px;
+}
+
+.models-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.models-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-1) transparent;
+}
+
+.models-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.models-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.models-list::-webkit-scrollbar-thumb {
+  background: var(--border-1);
+  border-radius: 3px;
+}
+
+.model-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  background: var(--surface-2);
+}
+
+.model-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.model-name {
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.model-id {
+  font-size: 12px;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+}
+
+.model-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.model-meta-item {
+  font-size: 11px;
+  color: var(--text-3);
+}
+
+.model-meta-item.cost {
+  color: var(--accent-green);
+}
+
+.model-badge {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--surface-3);
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  margin-left: auto;
+}
+
+.model-badge.badge-reasoning {
+  background: var(--accent-purple-2);
+  color: var(--text-on-accent);
+}
+
+.model-badge.badge-vision {
+  background: var(--accent-blue-2);
+  color: var(--text-on-accent);
+}
+
+.add-provider-section {
+  border-top: 1px solid var(--border-1);
+  padding-top: 24px;
+}
+
+.add-provider-section h3 {
+  margin: 0 0 16px 0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.add-provider-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.form-row .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row .field span {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+
+.form-row input {
+  padding: 8px 10px;
+  border: 1px solid var(--border-1);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text-1);
+  font-size: 13px;
+}
+
+.form-row input::placeholder {
+  color: var(--text-3);
+}
+
+.models-help {
+  border-top: 1px solid var(--border-1);
+  padding-top: 24px;
+}
+
+.models-help h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.models-help p {
+  margin: 0 0 8px 0;
+  color: var(--text-2);
+}
+
+.models-help ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-2);
+}
+
+.models-help li {
+  margin: 4px 0;
+}
+
+.models-help code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  padding: 2px 6px;
+  background: var(--surface-2);
+  border-radius: 4px;
 }

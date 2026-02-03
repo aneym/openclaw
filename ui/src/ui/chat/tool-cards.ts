@@ -1,11 +1,19 @@
 import { html, nothing } from "lit";
-import type { ToolCard } from "../types/chat-types.ts";
-import { icons } from "../icons.ts";
-import { formatToolDetail, resolveToolDisplay } from "../tool-display.ts";
-import { TOOL_INLINE_THRESHOLD } from "./constants.ts";
-import { extractTextCached } from "./message-extract.ts";
-import { isToolResultMessage } from "./message-normalizer.ts";
-import { formatToolOutputForSidebar, getTruncatedPreview } from "./tool-helpers.ts";
+import type { ToolCard } from "../types/chat-types";
+import { icons } from "../icons";
+import { formatToolDetail, resolveToolDisplay } from "../tool-display";
+import { extractTextCached } from "./message-extract";
+import { isToolResultMessage } from "./message-normalizer";
+import { formatToolOutputForSidebar } from "./tool-helpers";
+
+/** Tool names that operate on files (used for file preview). */
+const FILE_TOOL_NAMES = new Set(["read", "write", "edit"]);
+
+/** Pattern to detect coding agent commands in exec tool calls. */
+const CODING_AGENT_RE = /^(claude|codex|cc|kimi)\b/;
+
+/** Tool names for exec-style tool calls. */
+const EXEC_TOOL_NAMES = new Set(["exec", "bash", "process"]);
 
 export function extractToolCards(message: unknown): ToolCard[] {
   const m = message as Record<string, unknown>;
@@ -48,33 +56,99 @@ export function extractToolCards(message: unknown): ToolCard[] {
   return cards;
 }
 
-export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: string) => void) {
-  const display = resolveToolDisplay({ name: card.name, args: card.args });
+/**
+ * Extract the file path from a tool card's args, if present.
+ */
+export function extractFilePathFromCard(card: ToolCard): string | undefined {
+  if (!card.args || typeof card.args !== "object") {
+    return undefined;
+  }
+  const args = card.args as Record<string, unknown>;
+  const filePath =
+    (typeof args.file_path === "string" && args.file_path) ||
+    (typeof args.path === "string" && args.path) ||
+    undefined;
+  return filePath || undefined;
+}
+
+/**
+ * Check if a tool card represents a file-mutating tool (write/edit).
+ */
+export function isFileMutatingTool(card: ToolCard): boolean {
+  const name = card.name.toLowerCase();
+  return name === "write" || name === "edit";
+}
+
+/**
+ * Extract the command string from an exec/bash tool card.
+ */
+export function extractCommandFromCard(card: ToolCard): string | undefined {
+  if (!card.args || typeof card.args !== "object") return undefined;
+  const args = card.args as Record<string, unknown>;
+  const cmd = typeof args.command === "string" ? args.command.trim() : undefined;
+  return cmd || undefined;
+}
+
+/**
+ * Check if a tool card is an exec call that runs a coding agent (claude/codex/cc/kimi).
+ */
+export function isCodingSessionTool(card: ToolCard): boolean {
+  const name = card.name.toLowerCase();
+  if (!EXEC_TOOL_NAMES.has(name)) return false;
+  const cmd = extractCommandFromCard(card);
+  return cmd ? CODING_AGENT_RE.test(cmd) : false;
+}
+
+export function renderToolCardSidebar(
+  card: ToolCard,
+  onOpenSidebar?: (content: string) => void,
+  onOpenFilePreview?: (filePath: string) => void,
+  onOpenCodingSession?: () => void,
+) {
+  const isCoding = isCodingSessionTool(card);
+  const display = isCoding
+    ? { ...resolveToolDisplay({ name: card.name, args: card.args }), icon: "code" as const, label: "Code Session" }
+    : resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
   const hasText = Boolean(card.text?.trim());
+  const toolName = card.name.toLowerCase();
+  const isFileTool = FILE_TOOL_NAMES.has(toolName);
+  const filePath = isFileTool ? extractFilePathFromCard(card) : undefined;
 
-  const canClick = Boolean(onOpenSidebar);
+  const canClick = Boolean(
+    (isCoding && onOpenCodingSession) || onOpenSidebar || (onOpenFilePreview && filePath),
+  );
   const handleClick = canClick
     ? () => {
-        if (hasText) {
-          onOpenSidebar!(formatToolOutputForSidebar(card.text!));
+        // Coding session exec → open coding panel
+        if (isCoding && onOpenCodingSession) {
+          onOpenCodingSession();
           return;
         }
-        const info = `## ${display.label}\n\n${
-          detail ? `**Command:** \`${detail}\`\n\n` : ""
-        }*No output — tool completed successfully.*`;
-        onOpenSidebar!(info);
+        // For file tools with a path, prefer file preview
+        if (onOpenFilePreview && filePath) {
+          onOpenFilePreview(filePath);
+          return;
+        }
+        // Fallback to legacy sidebar
+        if (onOpenSidebar) {
+          if (hasText) {
+            onOpenSidebar(formatToolOutputForSidebar(card.text!));
+            return;
+          }
+          const info = `## ${display.label}\n\n${
+            detail ? `**Command:** \`${detail}\`\n\n` : ""
+          }*No output — tool completed successfully.*`;
+          onOpenSidebar(info);
+        }
       }
     : undefined;
 
-  const isShort = hasText && (card.text?.length ?? 0) <= TOOL_INLINE_THRESHOLD;
-  const showCollapsed = hasText && !isShort;
-  const showInline = hasText && isShort;
-  const isEmpty = !hasText;
+  const chipTitle = isCoding ? "Open in Code Sessions" : (detail ?? display.label);
 
   return html`
-    <div
-      class="chat-tool-card ${canClick ? "chat-tool-card--clickable" : ""}"
+    <span
+      class="chat-tool-chip ${canClick ? "chat-tool-chip--clickable" : ""} ${isCoding ? "chat-tool-chip--coding" : ""}"
       @click=${handleClick}
       role=${canClick ? "button" : nothing}
       tabindex=${canClick ? "0" : nothing}
@@ -89,34 +163,12 @@ export function renderToolCardSidebar(card: ToolCard, onOpenSidebar?: (content: 
             }
           : nothing
       }
+      title=${chipTitle}
     >
-      <div class="chat-tool-card__header">
-        <div class="chat-tool-card__title">
-          <span class="chat-tool-card__icon">${icons[display.icon]}</span>
-          <span>${display.label}</span>
-        </div>
-        ${
-          canClick
-            ? html`<span class="chat-tool-card__action">${hasText ? "View" : ""} ${icons.check}</span>`
-            : nothing
-        }
-        ${isEmpty && !canClick ? html`<span class="chat-tool-card__status">${icons.check}</span>` : nothing}
-      </div>
-      ${detail ? html`<div class="chat-tool-card__detail">${detail}</div>` : nothing}
-      ${
-        isEmpty
-          ? html`
-              <div class="chat-tool-card__status-text muted">Completed</div>
-            `
-          : nothing
-      }
-      ${
-        showCollapsed
-          ? html`<div class="chat-tool-card__preview mono">${getTruncatedPreview(card.text!)}</div>`
-          : nothing
-      }
-      ${showInline ? html`<div class="chat-tool-card__inline mono">${card.text}</div>` : nothing}
-    </div>
+      <span class="chat-tool-chip__icon">${icons[display.icon]}</span>
+      <span class="chat-tool-chip__label">${display.label}</span>
+      ${detail ? html`<span class="chat-tool-chip__detail">${detail}</span>` : nothing}
+    </span>
   `;
 }
 

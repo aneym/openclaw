@@ -1,4 +1,5 @@
 import type { Static } from "@sinclair/typebox";
+
 import type {
   AgentEventSchema,
   AgentIdentityParamsSchema,
@@ -9,13 +10,6 @@ import type {
 } from "./agent.js";
 import type {
   AgentSummarySchema,
-  AgentsFileEntrySchema,
-  AgentsFilesGetParamsSchema,
-  AgentsFilesGetResultSchema,
-  AgentsFilesListParamsSchema,
-  AgentsFilesListResultSchema,
-  AgentsFilesSetParamsSchema,
-  AgentsFilesSetResultSchema,
   AgentsListParamsSchema,
   AgentsListResultSchema,
   ModelChoiceSchema,
@@ -56,13 +50,6 @@ import type {
   CronUpdateParamsSchema,
 } from "./cron.js";
 import type {
-  DevicePairApproveParamsSchema,
-  DevicePairListParamsSchema,
-  DevicePairRejectParamsSchema,
-  DeviceTokenRevokeParamsSchema,
-  DeviceTokenRotateParamsSchema,
-} from "./devices.js";
-import type {
   ExecApprovalsGetParamsSchema,
   ExecApprovalsNodeGetParamsSchema,
   ExecApprovalsNodeSetParamsSchema,
@@ -71,6 +58,17 @@ import type {
   ExecApprovalRequestParamsSchema,
   ExecApprovalResolveParamsSchema,
 } from "./exec-approvals.js";
+import type {
+  ToolApprovalRequestParamsSchema,
+  ToolApprovalResolveParamsSchema,
+} from "./tool-approvals.js";
+import type {
+  DevicePairApproveParamsSchema,
+  DevicePairListParamsSchema,
+  DevicePairRejectParamsSchema,
+  DeviceTokenRevokeParamsSchema,
+  DeviceTokenRotateParamsSchema,
+} from "./devices.js";
 import type {
   ConnectParamsSchema,
   ErrorShapeSchema,
@@ -86,6 +84,7 @@ import type {
   ChatAbortParamsSchema,
   ChatEventSchema,
   ChatInjectParamsSchema,
+  ChatStatusParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
 } from "./logs-chat.js";
@@ -178,13 +177,6 @@ export type ChannelsLogoutParams = Static<typeof ChannelsLogoutParamsSchema>;
 export type WebLoginStartParams = Static<typeof WebLoginStartParamsSchema>;
 export type WebLoginWaitParams = Static<typeof WebLoginWaitParamsSchema>;
 export type AgentSummary = Static<typeof AgentSummarySchema>;
-export type AgentsFileEntry = Static<typeof AgentsFileEntrySchema>;
-export type AgentsFilesListParams = Static<typeof AgentsFilesListParamsSchema>;
-export type AgentsFilesListResult = Static<typeof AgentsFilesListResultSchema>;
-export type AgentsFilesGetParams = Static<typeof AgentsFilesGetParamsSchema>;
-export type AgentsFilesGetResult = Static<typeof AgentsFilesGetResultSchema>;
-export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
-export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;
 export type AgentsListParams = Static<typeof AgentsListParamsSchema>;
 export type AgentsListResult = Static<typeof AgentsListResultSchema>;
 export type ModelChoice = Static<typeof ModelChoiceSchema>;
@@ -213,6 +205,8 @@ export type ExecApprovalsNodeSetParams = Static<typeof ExecApprovalsNodeSetParam
 export type ExecApprovalsSnapshot = Static<typeof ExecApprovalsSnapshotSchema>;
 export type ExecApprovalRequestParams = Static<typeof ExecApprovalRequestParamsSchema>;
 export type ExecApprovalResolveParams = Static<typeof ExecApprovalResolveParamsSchema>;
+export type ToolApprovalRequestParams = Static<typeof ToolApprovalRequestParamsSchema>;
+export type ToolApprovalResolveParams = Static<typeof ToolApprovalResolveParamsSchema>;
 export type DevicePairListParams = Static<typeof DevicePairListParamsSchema>;
 export type DevicePairApproveParams = Static<typeof DevicePairApproveParamsSchema>;
 export type DevicePairRejectParams = Static<typeof DevicePairRejectParamsSchema>;
@@ -220,6 +214,7 @@ export type DeviceTokenRotateParams = Static<typeof DeviceTokenRotateParamsSchem
 export type DeviceTokenRevokeParams = Static<typeof DeviceTokenRevokeParamsSchema>;
 export type ChatAbortParams = Static<typeof ChatAbortParamsSchema>;
 export type ChatInjectParams = Static<typeof ChatInjectParamsSchema>;
+export type ChatStatusParams = Static<typeof ChatStatusParamsSchema>;
 export type ChatEvent = Static<typeof ChatEventSchema>;
 export type UpdateRunParams = Static<typeof UpdateRunParamsSchema>;
 export type TickEvent = Static<typeof TickEventSchema>;

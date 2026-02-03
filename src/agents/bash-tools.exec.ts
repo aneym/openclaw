@@ -51,6 +51,7 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
+import { maybeRegisterCodingSession } from "./coding-session-detect.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 import { callGatewayTool } from "./tools/gateway.js";
@@ -597,6 +598,9 @@ async function runExecProcess(opts: {
     backgrounded: false,
   } satisfies ProcessSession;
   addSession(session);
+
+  // Auto-register coding sessions (claude/codex/cc/kimi commands)
+  maybeRegisterCodingSession(opts.command, sessionId, opts.workdir);
 
   let settled = false;
   let timeoutTimer: NodeJS.Timeout | null = null;

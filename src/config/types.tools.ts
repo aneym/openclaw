@@ -202,6 +202,8 @@ export type AgentToolsConfig = {
   /** Additional allowlist entries merged into allow and/or profile allowlist. */
   alsoAllow?: string[];
   deny?: string[];
+  /** Tool names that require user approval before execution. */
+  ask?: string[];
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
   /** Per-agent elevated exec gate (can only further restrict global tools.elevated). */
@@ -330,6 +332,8 @@ export type ToolsConfig = {
   /** Additional allowlist entries merged into allow and/or profile allowlist. */
   alsoAllow?: string[];
   deny?: string[];
+  /** Tool names that require user approval before execution. */
+  ask?: string[];
   /** Optional tool policy overrides keyed by provider id or "provider/model". */
   byProvider?: Record<string, ToolPolicyConfig>;
   web?: {

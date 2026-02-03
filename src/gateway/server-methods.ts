@@ -17,6 +17,7 @@ import { nodeHandlers } from "./server-methods/nodes.js";
 import { sendHandlers } from "./server-methods/send.js";
 import { sessionsHandlers } from "./server-methods/sessions.js";
 import { skillsHandlers } from "./server-methods/skills.js";
+import { subagentsHandlers } from "./server-methods/subagents.js";
 import { systemHandlers } from "./server-methods/system.js";
 import { talkHandlers } from "./server-methods/talk.js";
 import { ttsHandlers } from "./server-methods/tts.js";
@@ -32,7 +33,12 @@ const WRITE_SCOPE = "operator.write";
 const APPROVALS_SCOPE = "operator.approvals";
 const PAIRING_SCOPE = "operator.pairing";
 
-const APPROVAL_METHODS = new Set(["exec.approval.request", "exec.approval.resolve"]);
+const APPROVAL_METHODS = new Set([
+  "exec.approval.request",
+  "exec.approval.resolve",
+  "tool.approval.request",
+  "tool.approval.resolve",
+]);
 const NODE_ROLE_METHODS = new Set(["node.invoke.result", "node.event", "skills.bins"]);
 const PAIRING_METHODS = new Set([
   "node.pair.request",
@@ -72,6 +78,8 @@ const READ_METHODS = new Set([
   "node.list",
   "node.describe",
   "chat.history",
+  "chat.status",
+  "subagents.list",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -185,6 +193,7 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...agentHandlers,
   ...agentsHandlers,
   ...browserHandlers,
+  ...subagentsHandlers,
 };
 
 export async function handleGatewayRequest(

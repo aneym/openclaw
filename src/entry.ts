@@ -144,8 +144,9 @@ if (!ensureExperimentalWarningSuppressed()) {
     process.exit(2);
   }
 
-  if (parsed.profile) {
-    applyCliProfileEnv({ profile: parsed.profile });
+  const profile = parsed.profile ?? process.env.OPENCLAW_PROFILE?.trim() ?? null;
+  if (profile) {
+    applyCliProfileEnv({ profile });
     // Keep Commander and ad-hoc argv checks consistent.
     process.argv = parsed.argv;
   }

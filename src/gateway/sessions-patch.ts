@@ -111,6 +111,27 @@ export async function applySessionsPatchToStore(params: {
         }
       }
       next.label = parsed.label;
+      // User-set label overrides auto-title — clear the flag so
+      // server-side auto-titling never overwrites it.
+      delete next.autoTitle;
+    }
+  }
+
+  if ("icon" in patch) {
+    const raw = patch.icon;
+    if (raw === null) {
+      delete next.icon;
+    } else if (raw !== undefined) {
+      const trimmed = String(raw).trim();
+      if (!trimmed) {
+        return invalid("invalid icon: empty");
+      }
+      // Allow single emoji or short string (max 2 grapheme clusters)
+      const segments = [...new Intl.Segmenter().segment(trimmed)];
+      if (segments.length > 2) {
+        return invalid("icon must be a single emoji");
+      }
+      next.icon = trimmed;
     }
   }
 
@@ -340,6 +361,15 @@ export async function applySessionsPatchToStore(params: {
         return invalid('invalid groupActivation (use "mention"|"always")');
       }
       next.groupActivation = normalized;
+    }
+  }
+
+  if ("archived" in patch) {
+    const raw = patch.archived;
+    if (raw === true) {
+      next.archivedAt = Date.now();
+    } else if (raw === false || raw === null) {
+      delete next.archivedAt;
     }
   }
 

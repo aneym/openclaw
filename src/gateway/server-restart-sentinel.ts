@@ -1,4 +1,7 @@
+import crypto from "node:crypto";
 import type { CliDeps } from "../cli/deps.js";
+import type { ChatAbortControllerEntry } from "./chat-abort.js";
+import { resolveAgentTimeoutMs } from "../agents/timeout.js";
 import { resolveAnnounceTargetFromKey } from "../agents/tools/sessions-send-helpers.js";
 import { normalizeChannelId } from "../channels/plugins/index.js";
 import { agentCommand } from "../commands/agent.js";
@@ -12,16 +15,23 @@ import {
 import { enqueueSystemEvent } from "../infra/system-events.js";
 import { defaultRuntime } from "../runtime.js";
 import { deliveryContextFromSession, mergeDeliveryContext } from "../utils/delivery-context.js";
+import { resolveChatRunExpiresAtMs } from "./chat-abort.js";
 import { loadSessionEntry } from "./session-utils.js";
 
-export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
+export async function scheduleRestartSentinelWake(params: {
+  deps: CliDeps;
+  /** If provided, runs are registered so chat.status / chat.abort work. */
+  chatAbortControllers?: Map<string, ChatAbortControllerEntry>;
+}) {
   const sentinel = await consumeRestartSentinel();
   if (!sentinel) {
+    console.error("[restart-sentinel] no sentinel found");
     return;
   }
   const payload = sentinel.payload;
   const sessionKey = payload.sessionKey?.trim();
   const message = formatRestartSentinelMessage(payload);
+  console.error(`[restart-sentinel] found sentinel: sessionKey=${sessionKey} message=${message}`);
   const summary = summarizeRestartSentinel(payload);
 
   if (!sessionKey) {
@@ -63,7 +73,46 @@ export async function scheduleRestartSentinelWake(params: { deps: CliDeps }) {
   const channel = channelRaw ? normalizeChannelId(channelRaw) : null;
   const to = origin?.to;
   if (!channel || !to) {
-    enqueueSystemEvent(message, { sessionKey });
+    // Webchat and other sessions without external delivery context:
+    // Use agentCommand directly instead of heartbeat (which only processes
+    // the main session and can't reach webchat thread sessions).
+    console.error(
+      `[restart-sentinel] no channel/to (channel=${channel}, to=${to}), using agentCommand for sessionKey=${sessionKey}`,
+    );
+
+    const abortController = new AbortController();
+    const runId = crypto.randomUUID();
+    const now = Date.now();
+    const timeoutMs = resolveAgentTimeoutMs({ cfg });
+
+    if (params.chatAbortControllers) {
+      params.chatAbortControllers.set(runId, {
+        controller: abortController,
+        sessionId: runId,
+        sessionKey,
+        startedAtMs: now,
+        expiresAtMs: resolveChatRunExpiresAtMs({ now, timeoutMs }),
+      });
+    }
+
+    try {
+      await agentCommand(
+        {
+          message,
+          sessionKey,
+          runId,
+          abortSignal: abortController.signal,
+        },
+        defaultRuntime,
+        params.deps,
+      );
+    } catch (err) {
+      // Don't fall back to heartbeat — it's known broken for webchat threads.
+      // Log the error; the session will be woken on next user message.
+      console.error(`[restart-sentinel] agentCommand failed for ${sessionKey}: ${String(err)}`);
+    } finally {
+      params.chatAbortControllers?.delete(runId);
+    }
     return;
   }
 

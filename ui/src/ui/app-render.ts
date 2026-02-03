@@ -1,113 +1,215 @@
 import { html, nothing } from "lit";
-import type { AppViewState } from "./app-view-state.ts";
-import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { ChatHost, refreshChatAvatar } from "./app-chat.ts";
-import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers.ts";
-import { OpenClawApp } from "./app.ts";
-import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
-import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
-import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents } from "./controllers/agents.ts";
-import { loadChannels } from "./controllers/channels.ts";
-import { ChatState, loadChatHistory } from "./controllers/chat.ts";
+import type { AppViewState } from "./app-view-state";
+import type { NavSessionEntry } from "./views/thread-list";
+import { renderTab, renderThemeToggle } from "./app-render.helpers";
+import { syncUrlWithSessionKey } from "./app-settings";
+import { renderCodingPanel } from "./views/coding-panel";
+import { loadChannels } from "./controllers/channels";
+import { loadChatHistory } from "./controllers/chat";
 import {
   applyConfig,
-  ConfigState,
   loadConfig,
   runUpdate,
   saveConfig,
   updateConfigFormValue,
   removeConfigFormValue,
-} from "./controllers/config.ts";
+} from "./controllers/config";
 import {
   loadCronRuns,
   toggleCronJob,
   runCronJob,
   removeCronJob,
   addCronJob,
-} from "./controllers/cron.ts";
-import { loadDebug, callDebugMethod } from "./controllers/debug.ts";
+} from "./controllers/cron";
+import { loadDebug, callDebugMethod } from "./controllers/debug";
 import {
   approveDevicePairing,
   loadDevices,
   rejectDevicePairing,
   revokeDeviceToken,
   rotateDeviceToken,
-} from "./controllers/devices.ts";
+} from "./controllers/devices";
 import {
   loadExecApprovals,
   removeExecApprovalsFormValue,
   saveExecApprovals,
   updateExecApprovalsFormValue,
-} from "./controllers/exec-approvals.ts";
-import { loadLogs, LogsState } from "./controllers/logs.ts";
-import { loadNodes } from "./controllers/nodes.ts";
-import { loadPresence } from "./controllers/presence.ts";
-import { deleteSession, loadSessions, patchSession } from "./controllers/sessions.ts";
+} from "./controllers/exec-approvals";
+import {
+  loadGitStatus,
+  loadGitLog,
+  loadGitDiff,
+  stageFiles,
+  unstageFiles,
+  commitChanges,
+  discardFiles,
+} from "./controllers/git";
+import { loadLogs } from "./controllers/logs";
+import { loadNodes } from "./controllers/nodes";
+import { loadPresence } from "./controllers/presence";
+import { deleteSession, loadSessions, patchSession } from "./controllers/sessions";
 import {
   installSkill,
   loadSkills,
   saveSkillApiKey,
   updateSkillEdit,
   updateSkillEnabled,
-} from "./controllers/skills.ts";
-import { icons } from "./icons.ts";
-import { TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
-import { ConfigUiHints } from "./types.ts";
-import { renderAgents } from "./views/agents.ts";
-import { renderChannels } from "./views/channels.ts";
-import { renderChat } from "./views/chat.ts";
-import { renderConfig } from "./views/config.ts";
-import { renderCron } from "./views/cron.ts";
-import { renderDebug } from "./views/debug.ts";
-import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
-import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
-import { renderInstances } from "./views/instances.ts";
-import { renderLogs } from "./views/logs.ts";
-import { renderNodes } from "./views/nodes.ts";
-import { renderOverview } from "./views/overview.ts";
-import { renderSessions } from "./views/sessions.ts";
-import { renderSkills } from "./views/skills.ts";
+} from "./controllers/skills";
+import { icons } from "./icons";
+import { TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation";
+import { allLeaves } from "./split-tree";
+import "./components/resizable-divider";
+import { createThreadDescriptor, createThreadState } from "./thread-state";
+import { saveThreadDescriptors } from "./thread-storage";
+import { renderArtifactPanel } from "./views/artifact-panel";
+import { renderChannels } from "./views/channels";
+import { renderConfig } from "./views/config";
+import { renderModels } from "./views/models";
+import { renderCron } from "./views/cron";
+import { renderDebug } from "./views/debug";
+import { renderExecApprovalPrompt } from "./views/exec-approval";
+import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation";
+import { renderGit } from "./views/git";
+import { renderInstances } from "./views/instances";
+import { renderLogs } from "./views/logs";
+import { renderNodes } from "./views/nodes";
+import { renderOverview } from "./views/overview";
+import { renderSessions } from "./views/sessions";
+import { renderSkills } from "./views/skills";
+import { renderSplitPaneContainer } from "./views/split-pane-container";
+import { renderNavThreadList } from "./views/thread-list";
+import { renderToolApprovalPrompt } from "./views/tool-approval";
 
-const AVATAR_DATA_RE = /^data:/i;
-const AVATAR_HTTP_RE = /^https?:\/\//i;
 
-function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
-  const list = state.agentsList?.agents ?? [];
-  const parsed = parseAgentSessionKey(state.sessionKey);
-  const agentId = parsed?.agentId ?? state.agentsList?.defaultId ?? "main";
-  const agent = list.find((entry) => entry.id === agentId);
-  const identity = agent?.identity;
-  const candidate = identity?.avatarUrl ?? identity?.avatar;
-  if (!candidate) {
-    return undefined;
+/**
+ * Focus the chat composer textarea.
+ * Uses a short setTimeout to ensure Lit's async render cycle has flushed.
+ */
+function focusComposer() {
+  setTimeout(() => {
+    const el = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    if (el && !el.disabled) {
+      el.focus();
+    }
+  }, 50);
+}
+
+/**
+ * Create a fresh thread/session and navigate to it.
+ * Used by the sidebar "New session" button and the chat compose "New session" button.
+ */
+function startNewSession(state: AppViewState) {
+  const base = state.sessionKey.split(":thread:")[0];
+  const desc = createThreadDescriptor(base);
+  const thread = createThreadState(desc);
+  state.threads.set(desc.id, thread);
+  state.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+  saveThreadDescriptors(state.getThreadDescriptors());
+  state.threads = new Map(state.threads);
+
+  // In split mode, update the focused pane's leaf
+  if (state.splitLayout && state.focusedPaneId) {
+    state.setThreadInPane(state.focusedPaneId, desc.sessionKey);
   }
-  if (AVATAR_DATA_RE.test(candidate) || AVATAR_HTTP_RE.test(candidate)) {
-    return candidate;
+
+  state.sessionKey = desc.sessionKey;
+  state.chatMessage = "";
+  state.chatStream = null;
+  state.chatStreamStartedAt = null;
+  state.chatRunId = null;
+  state.chatMessages = [];
+  state.resetToolStream();
+  state.resetChatScroll();
+  state.applySettings({
+    ...state.settings,
+    sessionKey: desc.sessionKey,
+    lastActiveSessionKey: desc.sessionKey,
+  });
+  void state.loadAssistantIdentity();
+  syncUrlWithSessionKey(
+    state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+    desc.sessionKey,
+    true,
+  );
+  focusComposer();
+}
+
+/** Ensure the current session key is always present in the sessions list */
+/**
+ * Ensure that the active session key and all open pane keys
+ * are present in the sessions list (new threads may not have
+ * server-side entries yet).
+ */
+function ensureOpenSessions(
+  sessions: NavSessionEntry[],
+  currentKey: string,
+  openPaneKeys: Set<string>,
+): NavSessionEntry[] {
+  const existing = new Set(sessions.map((s) => s.key));
+  const missing: NavSessionEntry[] = [];
+  const allKeys = new Set([currentKey, ...openPaneKeys]);
+  for (const key of allKeys) {
+    if (!existing.has(key)) {
+      missing.push({ key, updatedAt: Date.now() });
+    }
   }
-  return identity?.avatarUrl;
+  if (missing.length === 0) {
+    return sessions;
+  }
+  return [...missing, ...sessions];
+}
+
+/** Return the set of session keys that currently have an active agent run. */
+function computeRunningSessions(state: AppViewState): Set<string> {
+  return state.runningSessions;
+}
+
+/** Return the count of active sub-agents per requester session key. */
+function computeSubagentCounts(state: AppViewState): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [key, runs] of state.subagentRuns) {
+    const active = runs.filter((r) => !r.endedAt);
+    if (active.length > 0) {
+      counts.set(key, active.length);
+    }
+  }
+  return counts;
+}
+
+/** Return session keys currently visible in any split pane. */
+function computeOpenPaneKeys(state: AppViewState): Set<string> {
+  if (!state.splitLayout) {
+    return new Set();
+  }
+  return new Set(allLeaves(state.splitLayout.root).map((l) => l.threadId));
+}
+
+type DevFlag = "ui" | "gw";
+
+/** Detect active dev environments. Vite dev always implies a local dev gateway. */
+function getDevFlags(): DevFlag[] {
+  const flags: DevFlag[] = [];
+  if (import.meta.env.DEV) {
+    // Vite dev server — always talking to a local dev gateway
+    flags.push("ui", "gw");
+  } else if ((window as unknown as Record<string, unknown>).__OPENCLAW_DEV__) {
+    // Gateway-served build in dev mode (NODE_ENV !== 'production')
+    flags.push("gw");
+  }
+  return flags;
 }
 
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
   const isChat = state.tab === "chat";
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
-  const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
-  const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
-  const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
-  const configValue =
-    state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
-  const resolvedAgentId =
-    state.agentsSelectedId ??
-    state.agentsList?.defaultId ??
-    state.agentsList?.agents?.[0]?.id ??
-    null;
+  const devFlags = getDevFlags();
+  const isDev = devFlags.length > 0;
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" data-dev="${isDev ? "true" : nothing}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -117,20 +219,34 @@ export function renderApp(state: AppViewState) {
                 ...state.settings,
                 navCollapsed: !state.settings.navCollapsed,
               })}
-            title="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
+            title="${state.settings.navCollapsed ? "Expand sidebar (⌘\\)" : "Collapse sidebar (⌘\\)"}"
             aria-label="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
           <div class="brand">
             <div class="brand-logo">
-              <img src="/favicon.svg" alt="OpenClaw" />
+              <img src="/favicon.svg" alt="kbot" />
             </div>
             <div class="brand-text">
-              <div class="brand-title">OPENCLAW</div>
+              <div class="brand-title">KBOT</div>
               <div class="brand-sub">Gateway Dashboard</div>
             </div>
           </div>
+          ${
+            devFlags.includes("ui")
+              ? html`
+                  <span class="dev-badge ui-dev">UI DEV</span>
+                `
+              : nothing
+          }
+          ${
+            devFlags.includes("gw")
+              ? html`
+                  <span class="dev-badge gw-dev">GW DEV</span>
+                `
+              : nothing
+          }
         </div>
         <div class="topbar-status">
           <div class="pill">
@@ -138,12 +254,44 @@ export function renderApp(state: AppViewState) {
             <span>Health</span>
             <span class="mono">${state.connected ? "OK" : "Offline"}</span>
           </div>
+          ${
+            isChat
+              ? html`
+            <button
+              class="pill ${state.gitPanelOpen ? "active" : ""}"
+              style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;${state.gitPanelOpen ? "background:var(--accent,#007acc);color:#fff;" : ""}"
+              @click=${() => {
+                state.gitPanelOpen = !state.gitPanelOpen;
+              }}
+              title=${state.gitPanelOpen ? "Close source control (⇧⌘G)" : "Source control (⇧⌘G)"}
+            >
+              <span style="display:inline-flex;width:14px;height:14px;">${icons.gitBranch}</span>
+              <span>Git</span>
+            </button>
+          `
+              : nothing
+          }
           ${renderThemeToggle(state)}
+          ${state.tab === "chat" ? html`
+            <button
+              class="coding-panel-toggle ${state.codingPanelOpen ? 'coding-panel-toggle--active' : ''}"
+              @click=${() => state.toggleCodingPanel()}
+              title="${state.codingPanelOpen ? 'Close code sessions' : 'Open code sessions'}"
+              style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;font-size:12px;${state.codingPanelOpen ? 'color:var(--accent);background:var(--hover);' : ''}"
+            >
+              ${icons.code}
+              <span>Code</span>
+              ${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length > 0
+                ? html`<span style="background:var(--accent);color:white;font-size:10px;padding:0 5px;border-radius:8px;font-weight:700;">${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length}</span>`
+                : nothing}
+            </button>
+          ` : nothing}
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
         ${TAB_GROUPS.map((group) => {
-          const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
+          const isGroupCollapsed =
+            state.settings.navGroupsCollapsed[group.label] ?? group.label !== "Chat";
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
           return html`
             <div class="nav-group ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
@@ -164,28 +312,149 @@ export function renderApp(state: AppViewState) {
               </button>
               <div class="nav-group__items">
                 ${group.tabs.map((tab) => renderTab(state, tab))}
+                ${
+                  group.label === "Chat" && state.tab === "chat"
+                    ? renderNavThreadList({
+                        sessions: ensureOpenSessions(
+                          state.sessionsResult?.sessions ?? [],
+                          state.sessionKey,
+                          computeOpenPaneKeys(state),
+                        ),
+                        activeSessionKey: state.sessionKey,
+                        unreadCounts: new Map(),
+                        runningSessions: computeRunningSessions(state),
+                        subagentCounts: computeSubagentCounts(state),
+                        openPaneKeys: computeOpenPaneKeys(state),
+                        onSelect: (sessionKey) => {
+                          // In split mode, also update the focused pane's leaf
+                          if (state.splitLayout && state.focusedPaneId) {
+                            state.setThreadInPane(state.focusedPaneId, sessionKey);
+                          }
+                          // Full session switch: clear state + load history
+                          state.sessionKey = sessionKey;
+                          state.chatMessage = "";
+                          state.chatMessages = [];
+                          state.chatToolMessages = [];
+                          state.chatStream = null;
+                          state.chatStreamStartedAt = null;
+                          state.chatRunId = null;
+                          state.resetToolStream();
+                          state.resetChatScroll();
+                          state.applySettings({
+                            ...state.settings,
+                            sessionKey,
+                            lastActiveSessionKey: sessionKey,
+                          });
+                          void state.loadAssistantIdentity();
+                          syncUrlWithSessionKey(
+                            state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+                            sessionKey,
+                            true,
+                          );
+                          void loadChatHistory(state);
+                          focusComposer();
+                        },
+                        onRename: (sessionKey, label) => {
+                          void patchSession(state, sessionKey, { label });
+                        },
+                        onDelete: (sessionKey) => {
+                          void deleteSession(state, sessionKey);
+                        },
+                        onArchive: (sessionKey) => {
+                          void patchSession(state, sessionKey, { archived: true });
+                          if (state.splitLayout) {
+                            const leaf = allLeaves(state.splitLayout.root).find(
+                              (l) => l.threadId === sessionKey,
+                            );
+                            if (leaf) {
+                              state.closePane(leaf.id);
+                            }
+                          }
+                          if (state.sessionKey === sessionKey) {
+                            startNewSession(state);
+                          }
+                        },
+                        onUnarchive: (sessionKey) => {
+                          void patchSession(state, sessionKey, { archived: false });
+                        },
+                        onNewSession: () => startNewSession(state),
+                        onOpenTerminal: () => state.openTerminalPane(),
+                        onRequestUpdate: () => {
+                          // Force re-render by touching a reactive property
+                          state.threads = new Map(state.threads);
+                        },
+                      })
+                    : nothing
+                }
               </div>
             </div>
           `;
         })}
-        <div class="nav-group nav-group--links">
-          <div class="nav-label nav-label--static">
-            <span class="nav-label__text">Resources</span>
-          </div>
-          <div class="nav-group__items">
-            <a
-              class="nav-item nav-item--external"
-              href="https://docs.openclaw.ai"
-              target="_blank"
-              rel="noreferrer"
-              title="Docs (opens in new tab)"
+        ${(() => {
+          const resCollapsed = state.settings.navGroupsCollapsed["Resources"] ?? true;
+          return html`
+          <div class="nav-group nav-group--links ${resCollapsed ? "nav-group--collapsed" : ""}">
+            <button
+              class="nav-label"
+              @click=${() => {
+                const next = { ...state.settings.navGroupsCollapsed };
+                next["Resources"] = !resCollapsed;
+                state.applySettings({
+                  ...state.settings,
+                  navGroupsCollapsed: next,
+                });
+              }}
+              aria-expanded=${!resCollapsed}
             >
-              <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
-              <span class="nav-item__text">Docs</span>
-            </a>
-          </div>
-        </div>
+              <span class="nav-label__text">Resources</span>
+              <span class="nav-label__chevron">${resCollapsed ? "+" : "−"}</span>
+            </button>
+            <div class="nav-group__items">
+              <a
+                class="nav-item nav-item--external"
+                href="https://docs.openclaw.ai"
+                target="_blank"
+                rel="noreferrer"
+                title="Docs (opens in new tab)"
+              >
+                <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
+                <span class="nav-item__text">Docs</span>
+              </a>
+            </div>
+          </div>`;
+        })()}
       </aside>
+      <div
+        class="nav-resize-handle ${state.settings.navCollapsed ? "nav-resize-handle--hidden" : ""}"
+        @mousedown=${(e: MouseEvent) => {
+          e.preventDefault();
+          const shell = (e.target as HTMLElement).closest(".shell") as HTMLElement;
+          if (!shell) {
+            return;
+          }
+          const startX = e.clientX;
+          const startWidth =
+            parseInt(getComputedStyle(shell).getPropertyValue("--shell-nav-width")) || 220;
+          const onMove = (me: MouseEvent) => {
+            const newWidth = Math.max(140, Math.min(500, startWidth + me.clientX - startX));
+            shell.style.setProperty("--shell-nav-width", newWidth + "px");
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            // Persist the width
+            const finalWidth =
+              parseInt(getComputedStyle(shell).getPropertyValue("--shell-nav-width")) || 220;
+            state.applySettings({ ...state.settings, navWidth: finalWidth });
+          };
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        }}
+      ></div>
       <main class="content ${isChat ? "content--chat" : ""}">
         <section class="content-header">
           <div>
@@ -194,7 +463,6 @@ export function renderApp(state: AppViewState) {
           </div>
           <div class="page-meta">
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
-            ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
 
@@ -216,7 +484,7 @@ export function renderApp(state: AppViewState) {
                 onSessionKeyChange: (next) => {
                   state.sessionKey = next;
                   state.chatMessage = "";
-                  (state as unknown as OpenClawApp).resetToolStream();
+                  state.resetToolStream();
                   state.applySettings({
                     ...state.settings,
                     sessionKey: next,
@@ -245,7 +513,7 @@ export function renderApp(state: AppViewState) {
                 configSchema: state.configSchema,
                 configSchemaLoading: state.configSchemaLoading,
                 configForm: state.configForm,
-                configUiHints: state.configUiHints as ConfigUiHints,
+                configUiHints: state.configUiHints,
                 configSaving: state.configSaving,
                 configFormDirty: state.configFormDirty,
                 nostrProfileFormState: state.nostrProfileFormState,
@@ -254,8 +522,7 @@ export function renderApp(state: AppViewState) {
                 onWhatsAppStart: (force) => state.handleWhatsAppStart(force),
                 onWhatsAppWait: () => state.handleWhatsAppWait(),
                 onWhatsAppLogout: () => state.handleWhatsAppLogout(),
-                onConfigPatch: (path, value) =>
-                  updateConfigFormValue(state as unknown as ConfigState, path, value),
+                onConfigPatch: (path, value) => updateConfigFormValue(state, path, value),
                 onConfigSave: () => state.handleChannelConfigSave(),
                 onConfigReload: () => state.handleChannelConfigReload(),
                 onNostrProfileEdit: (accountId, profile) =>
@@ -334,383 +601,6 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
-          state.tab === "agents"
-            ? renderAgents({
-                loading: state.agentsLoading,
-                error: state.agentsError,
-                agentsList: state.agentsList,
-                selectedAgentId: resolvedAgentId,
-                activePanel: state.agentsPanel,
-                configForm: configValue,
-                configLoading: state.configLoading,
-                configSaving: state.configSaving,
-                configDirty: state.configFormDirty,
-                channelsLoading: state.channelsLoading,
-                channelsError: state.channelsError,
-                channelsSnapshot: state.channelsSnapshot,
-                channelsLastSuccess: state.channelsLastSuccess,
-                cronLoading: state.cronLoading,
-                cronStatus: state.cronStatus,
-                cronJobs: state.cronJobs,
-                cronError: state.cronError,
-                agentFilesLoading: state.agentFilesLoading,
-                agentFilesError: state.agentFilesError,
-                agentFilesList: state.agentFilesList,
-                agentFileActive: state.agentFileActive,
-                agentFileContents: state.agentFileContents,
-                agentFileDrafts: state.agentFileDrafts,
-                agentFileSaving: state.agentFileSaving,
-                agentIdentityLoading: state.agentIdentityLoading,
-                agentIdentityError: state.agentIdentityError,
-                agentIdentityById: state.agentIdentityById,
-                agentSkillsLoading: state.agentSkillsLoading,
-                agentSkillsReport: state.agentSkillsReport,
-                agentSkillsError: state.agentSkillsError,
-                agentSkillsAgentId: state.agentSkillsAgentId,
-                skillsFilter: state.skillsFilter,
-                onRefresh: async () => {
-                  await loadAgents(state);
-                  const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
-                  if (agentIds.length > 0) {
-                    void loadAgentIdentities(state, agentIds);
-                  }
-                },
-                onSelectAgent: (agentId) => {
-                  if (state.agentsSelectedId === agentId) {
-                    return;
-                  }
-                  state.agentsSelectedId = agentId;
-                  state.agentFilesList = null;
-                  state.agentFilesError = null;
-                  state.agentFilesLoading = false;
-                  state.agentFileActive = null;
-                  state.agentFileContents = {};
-                  state.agentFileDrafts = {};
-                  state.agentSkillsReport = null;
-                  state.agentSkillsError = null;
-                  state.agentSkillsAgentId = null;
-                  void loadAgentIdentity(state, agentId);
-                  if (state.agentsPanel === "files") {
-                    void loadAgentFiles(state, agentId);
-                  }
-                  if (state.agentsPanel === "skills") {
-                    void loadAgentSkills(state, agentId);
-                  }
-                },
-                onSelectPanel: (panel) => {
-                  state.agentsPanel = panel;
-                  if (panel === "files" && resolvedAgentId) {
-                    if (state.agentFilesList?.agentId !== resolvedAgentId) {
-                      state.agentFilesList = null;
-                      state.agentFilesError = null;
-                      state.agentFileActive = null;
-                      state.agentFileContents = {};
-                      state.agentFileDrafts = {};
-                      void loadAgentFiles(state, resolvedAgentId);
-                    }
-                  }
-                  if (panel === "skills") {
-                    if (resolvedAgentId) {
-                      void loadAgentSkills(state, resolvedAgentId);
-                    }
-                  }
-                  if (panel === "channels") {
-                    void loadChannels(state, false);
-                  }
-                  if (panel === "cron") {
-                    void state.loadCron();
-                  }
-                },
-                onLoadFiles: (agentId) => loadAgentFiles(state, agentId),
-                onSelectFile: (name) => {
-                  state.agentFileActive = name;
-                  if (!resolvedAgentId) {
-                    return;
-                  }
-                  void loadAgentFileContent(state, resolvedAgentId, name);
-                },
-                onFileDraftChange: (name, content) => {
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
-                },
-                onFileReset: (name) => {
-                  const base = state.agentFileContents[name] ?? "";
-                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: base };
-                },
-                onFileSave: (name) => {
-                  if (!resolvedAgentId) {
-                    return;
-                  }
-                  const content =
-                    state.agentFileDrafts[name] ?? state.agentFileContents[name] ?? "";
-                  void saveAgentFile(state, resolvedAgentId, name, content);
-                },
-                onToolsProfileChange: (agentId, profile, clearAllow) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  const basePath = ["agents", "list", index, "tools"];
-                  if (profile) {
-                    updateConfigFormValue(
-                      state as unknown as ConfigState,
-                      [...basePath, "profile"],
-                      profile,
-                    );
-                  } else {
-                    removeConfigFormValue(state as unknown as ConfigState, [
-                      ...basePath,
-                      "profile",
-                    ]);
-                  }
-                  if (clearAllow) {
-                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "allow"]);
-                  }
-                },
-                onToolsOverridesChange: (agentId, alsoAllow, deny) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  const basePath = ["agents", "list", index, "tools"];
-                  if (alsoAllow.length > 0) {
-                    updateConfigFormValue(
-                      state as unknown as ConfigState,
-                      [...basePath, "alsoAllow"],
-                      alsoAllow,
-                    );
-                  } else {
-                    removeConfigFormValue(state as unknown as ConfigState, [
-                      ...basePath,
-                      "alsoAllow",
-                    ]);
-                  }
-                  if (deny.length > 0) {
-                    updateConfigFormValue(
-                      state as unknown as ConfigState,
-                      [...basePath, "deny"],
-                      deny,
-                    );
-                  } else {
-                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "deny"]);
-                  }
-                },
-                onConfigReload: () => loadConfig(state as unknown as ConfigState),
-                onConfigSave: () => saveConfig(state as unknown as ConfigState),
-                onChannelsRefresh: () => loadChannels(state, false),
-                onCronRefresh: () => state.loadCron(),
-                onSkillsFilterChange: (next) => (state.skillsFilter = next),
-                onSkillsRefresh: () => {
-                  if (resolvedAgentId) {
-                    void loadAgentSkills(state, resolvedAgentId);
-                  }
-                },
-                onAgentSkillToggle: (agentId, skillName, enabled) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  const entry = list[index] as { skills?: unknown };
-                  const normalizedSkill = skillName.trim();
-                  if (!normalizedSkill) {
-                    return;
-                  }
-                  const allSkills =
-                    state.agentSkillsReport?.skills?.map((skill) => skill.name).filter(Boolean) ??
-                    [];
-                  const existing = Array.isArray(entry.skills)
-                    ? entry.skills.map((name) => String(name).trim()).filter(Boolean)
-                    : undefined;
-                  const base = existing ?? allSkills;
-                  const next = new Set(base);
-                  if (enabled) {
-                    next.add(normalizedSkill);
-                  } else {
-                    next.delete(normalizedSkill);
-                  }
-                  updateConfigFormValue(
-                    state as unknown as ConfigState,
-                    ["agents", "list", index, "skills"],
-                    [...next],
-                  );
-                },
-                onAgentSkillsClear: (agentId) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  removeConfigFormValue(state as unknown as ConfigState, [
-                    "agents",
-                    "list",
-                    index,
-                    "skills",
-                  ]);
-                },
-                onAgentSkillsDisableAll: (agentId) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  updateConfigFormValue(
-                    state as unknown as ConfigState,
-                    ["agents", "list", index, "skills"],
-                    [],
-                  );
-                },
-                onModelChange: (agentId, modelId) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  const basePath = ["agents", "list", index, "model"];
-                  if (!modelId) {
-                    removeConfigFormValue(state as unknown as ConfigState, basePath);
-                    return;
-                  }
-                  const entry = list[index] as { model?: unknown };
-                  const existing = entry?.model;
-                  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-                    const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
-                    const next = {
-                      primary: modelId,
-                      ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
-                    };
-                    updateConfigFormValue(state as unknown as ConfigState, basePath, next);
-                  } else {
-                    updateConfigFormValue(state as unknown as ConfigState, basePath, modelId);
-                  }
-                },
-                onModelFallbacksChange: (agentId, fallbacks) => {
-                  if (!configValue) {
-                    return;
-                  }
-                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
-                  if (!Array.isArray(list)) {
-                    return;
-                  }
-                  const index = list.findIndex(
-                    (entry) =>
-                      entry &&
-                      typeof entry === "object" &&
-                      "id" in entry &&
-                      (entry as { id?: string }).id === agentId,
-                  );
-                  if (index < 0) {
-                    return;
-                  }
-                  const basePath = ["agents", "list", index, "model"];
-                  const entry = list[index] as { model?: unknown };
-                  const normalized = fallbacks.map((name) => name.trim()).filter(Boolean);
-                  const existing = entry.model;
-                  const resolvePrimary = () => {
-                    if (typeof existing === "string") {
-                      return existing.trim() || null;
-                    }
-                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
-                      const primary = (existing as { primary?: unknown }).primary;
-                      if (typeof primary === "string") {
-                        const trimmed = primary.trim();
-                        return trimmed || null;
-                      }
-                    }
-                    return null;
-                  };
-                  const primary = resolvePrimary();
-                  if (normalized.length === 0) {
-                    if (primary) {
-                      updateConfigFormValue(state as unknown as ConfigState, basePath, primary);
-                    } else {
-                      removeConfigFormValue(state as unknown as ConfigState, basePath);
-                    }
-                    return;
-                  }
-                  const next = primary
-                    ? { primary, fallbacks: normalized }
-                    : { fallbacks: normalized };
-                  updateConfigFormValue(state as unknown as ConfigState, basePath, next);
-                },
-              })
-            : nothing
-        }
-
-        ${
           state.tab === "skills"
             ? renderSkills({
                 loading: state.skillsLoading,
@@ -761,7 +651,7 @@ export function renderApp(state: AppViewState) {
                 onDeviceRotate: (deviceId, role, scopes) =>
                   rotateDeviceToken(state, { deviceId, role, scopes }),
                 onDeviceRevoke: (deviceId, role) => revokeDeviceToken(state, { deviceId, role }),
-                onLoadConfig: () => loadConfig(state as unknown as ConfigState),
+                onLoadConfig: () => loadConfig(state),
                 onLoadExecApprovals: () => {
                   const target =
                     state.execApprovalsTarget === "node" && state.execApprovalsTargetNodeId
@@ -771,28 +661,20 @@ export function renderApp(state: AppViewState) {
                 },
                 onBindDefault: (nodeId) => {
                   if (nodeId) {
-                    updateConfigFormValue(
-                      state as unknown as ConfigState,
-                      ["tools", "exec", "node"],
-                      nodeId,
-                    );
+                    updateConfigFormValue(state, ["tools", "exec", "node"], nodeId);
                   } else {
-                    removeConfigFormValue(state as unknown as ConfigState, [
-                      "tools",
-                      "exec",
-                      "node",
-                    ]);
+                    removeConfigFormValue(state, ["tools", "exec", "node"]);
                   }
                 },
                 onBindAgent: (agentIndex, nodeId) => {
                   const basePath = ["agents", "list", agentIndex, "tools", "exec", "node"];
                   if (nodeId) {
-                    updateConfigFormValue(state as unknown as ConfigState, basePath, nodeId);
+                    updateConfigFormValue(state, basePath, nodeId);
                   } else {
-                    removeConfigFormValue(state as unknown as ConfigState, basePath);
+                    removeConfigFormValue(state, basePath);
                   }
                 },
-                onSaveBindings: () => saveConfig(state as unknown as ConfigState),
+                onSaveBindings: () => saveConfig(state),
                 onExecApprovalsTargetChange: (kind, nodeId) => {
                   state.execApprovalsTarget = kind;
                   state.execApprovalsTargetNodeId = nodeId;
@@ -820,84 +702,7 @@ export function renderApp(state: AppViewState) {
 
         ${
           state.tab === "chat"
-            ? renderChat({
-                sessionKey: state.sessionKey,
-                onSessionKeyChange: (next) => {
-                  state.sessionKey = next;
-                  state.chatMessage = "";
-                  state.chatAttachments = [];
-                  state.chatStream = null;
-                  state.chatRunId = null;
-                  (state as unknown as OpenClawApp).chatStreamStartedAt = null;
-                  state.chatQueue = [];
-                  (state as unknown as OpenClawApp).resetToolStream();
-                  (state as unknown as OpenClawApp).resetChatScroll();
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: next,
-                    lastActiveSessionKey: next,
-                  });
-                  void state.loadAssistantIdentity();
-                  void loadChatHistory(state as unknown as ChatState);
-                  void refreshChatAvatar(state as unknown as ChatHost);
-                },
-                thinkingLevel: state.chatThinkingLevel,
-                showThinking,
-                loading: state.chatLoading,
-                sending: state.chatSending,
-                assistantAvatarUrl: chatAvatarUrl,
-                messages: state.chatMessages,
-                toolMessages: state.chatToolMessages,
-                stream: state.chatStream,
-                streamStartedAt: null,
-                draft: state.chatMessage,
-                queue: state.chatQueue,
-                connected: state.connected,
-                canSend: state.connected,
-                disabledReason: chatDisabledReason,
-                error: state.lastError,
-                sessions: state.sessionsResult,
-                focusMode: chatFocus,
-                onRefresh: () => {
-                  return Promise.all([
-                    loadChatHistory(state as unknown as ChatState),
-                    refreshChatAvatar(state as unknown as ChatHost),
-                  ]);
-                },
-                onToggleFocusMode: () => {
-                  if (state.onboarding) {
-                    return;
-                  }
-                  state.applySettings({
-                    ...state.settings,
-                    chatFocusMode: !state.settings.chatFocusMode,
-                  });
-                },
-                onChatScroll: (event) => (state as unknown as OpenClawApp).handleChatScroll(event),
-                onDraftChange: (next) => (state.chatMessage = next),
-                attachments: state.chatAttachments,
-                onAttachmentsChange: (next) => (state.chatAttachments = next),
-                onSend: () => (state as unknown as OpenClawApp).handleSendChat(),
-                canAbort: Boolean(state.chatRunId),
-                onAbort: () => void (state as unknown as OpenClawApp).handleAbortChat(),
-                onQueueRemove: (id) => (state as unknown as OpenClawApp).removeQueuedMessage(id),
-                onNewSession: () =>
-                  (state as unknown as OpenClawApp).handleSendChat("/new", { restoreDraft: true }),
-                showNewMessages: state.chatNewMessagesBelow,
-                onScrollToBottom: () => state.scrollToBottom(),
-                // Sidebar props for tool output viewing
-                sidebarOpen: (state as unknown as OpenClawApp).sidebarOpen,
-                sidebarContent: (state as unknown as OpenClawApp).sidebarContent,
-                sidebarError: (state as unknown as OpenClawApp).sidebarError,
-                splitRatio: (state as unknown as OpenClawApp).splitRatio,
-                onOpenSidebar: (content: string) =>
-                  (state as unknown as OpenClawApp).handleOpenSidebar(content),
-                onCloseSidebar: () => (state as unknown as OpenClawApp).handleCloseSidebar(),
-                onSplitRatioChange: (ratio: number) =>
-                  (state as unknown as OpenClawApp).handleSplitRatioChange(ratio),
-                assistantName: state.assistantName,
-                assistantAvatar: state.assistantAvatar,
-              })
+            ? renderChatWithArtifactPanel(state)
             : nothing
         }
 
@@ -915,31 +720,28 @@ export function renderApp(state: AppViewState) {
                 connected: state.connected,
                 schema: state.configSchema,
                 schemaLoading: state.configSchemaLoading,
-                uiHints: state.configUiHints as ConfigUiHints,
+                uiHints: state.configUiHints,
                 formMode: state.configFormMode,
                 formValue: state.configForm,
                 originalValue: state.configFormOriginal,
-                searchQuery: (state as unknown as OpenClawApp).configSearchQuery,
-                activeSection: (state as unknown as OpenClawApp).configActiveSection,
-                activeSubsection: (state as unknown as OpenClawApp).configActiveSubsection,
+                searchQuery: state.configSearchQuery,
+                activeSection: state.configActiveSection,
+                activeSubsection: state.configActiveSubsection,
                 onRawChange: (next) => {
                   state.configRaw = next;
                 },
                 onFormModeChange: (mode) => (state.configFormMode = mode),
-                onFormPatch: (path, value) =>
-                  updateConfigFormValue(state as unknown as OpenClawApp, path, value),
-                onSearchChange: (query) =>
-                  ((state as unknown as OpenClawApp).configSearchQuery = query),
+                onFormPatch: (path, value) => updateConfigFormValue(state, path, value),
+                onSearchChange: (query) => (state.configSearchQuery = query),
                 onSectionChange: (section) => {
-                  (state as unknown as OpenClawApp).configActiveSection = section;
-                  (state as unknown as OpenClawApp).configActiveSubsection = null;
+                  state.configActiveSection = section;
+                  state.configActiveSubsection = null;
                 },
-                onSubsectionChange: (section) =>
-                  ((state as unknown as OpenClawApp).configActiveSubsection = section),
-                onReload: () => loadConfig(state as unknown as OpenClawApp),
-                onSave: () => saveConfig(state as unknown as OpenClawApp),
-                onApply: () => applyConfig(state as unknown as OpenClawApp),
-                onUpdate: () => runUpdate(state as unknown as OpenClawApp),
+                onSubsectionChange: (section) => (state.configActiveSubsection = section),
+                onReload: () => loadConfig(state),
+                onSave: () => saveConfig(state),
+                onApply: () => applyConfig(state),
+                onUpdate: () => runUpdate(state),
               })
             : nothing
         }
@@ -981,16 +783,188 @@ export function renderApp(state: AppViewState) {
                   state.logsLevelFilters = { ...state.logsLevelFilters, [level]: enabled };
                 },
                 onToggleAutoFollow: (next) => (state.logsAutoFollow = next),
-                onRefresh: () => loadLogs(state as unknown as LogsState, { reset: true }),
-                onExport: (lines, label) =>
-                  (state as unknown as OpenClawApp).exportLogs(lines, label),
-                onScroll: (event) => (state as unknown as OpenClawApp).handleLogsScroll(event),
+                onRefresh: () => loadLogs(state, { reset: true }),
+                onExport: (lines, label) => state.exportLogs(lines, label),
+                onScroll: (event) => state.handleLogsScroll(event),
+              })
+            : nothing
+        }
+
+        ${
+          state.tab === "models"
+            ? renderModels({
+                providers: state.modelsConfig?.providers ?? [],
+                loading: state.modelsConfigLoading,
+                saving: state.modelsConfigSaving,
+                error: state.modelsConfigError,
+                connected: state.connected,
+                visibleModels: state.visibleModels,
+                onToggleModelVisibility: (modelRef, visible) => {
+                  state.handleToggleModelVisibility(modelRef, visible);
+                },
+                onAddProvider: (provider) => {
+                  // Sort the new provider's models by capability
+                  const sortedProvider = {
+                    ...provider,
+                    models: [...provider.models].sort((a, b) => {
+                      const score = (m: typeof a) => {
+                        let s = 0;
+                        if (m.reasoning) s += 1000;
+                        if (m.input?.includes("image")) s += 100;
+                        s += (m.contextWindow ?? 0) / 10000;
+                        return s;
+                      };
+                      return score(b) - score(a);
+                    }),
+                  };
+                  const providers = [...(state.modelsConfig?.providers ?? []), sortedProvider];
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onRemoveProvider: (name) => {
+                  const providers = (state.modelsConfig?.providers ?? []).filter(
+                    (p) => p.name !== name
+                  );
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onSave: () => state.handleModelsConfigSave(),
+                onReload: () => state.handleModelsConfigLoad(),
               })
             : nothing
         }
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderToolApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
+    </div>
+  `;
+}
+
+// ── Chat area + global artifact panel ──
+
+function renderChatWithArtifactPanel(state: AppViewState) {
+  const hasArtifactTabs = state.artifactTabs.length > 0;
+  const artifactOpen = state.artifactOpen && hasArtifactTabs;
+
+  // Always use split pane container - single pane is just a single-leaf layout
+  const chatContent = renderSplitPaneContainer(state);
+
+  const gitOpen = state.gitPanelOpen;
+  const codingPanelOpen = state.codingPanelOpen;
+
+  // Auto-load git status when panel opens
+  if (gitOpen && state.gitFiles.length === 0 && !state.gitLoading && !state.gitError) {
+    void loadGitStatus(state);
+  }
+
+  // No side panels open — just chat
+  if (!artifactOpen && !gitOpen && !codingPanelOpen) {
+    return chatContent;
+  }
+
+  return html`
+    <div class="chat-artifact-wrapper" style="display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;">
+      <div class="chat-artifact-wrapper__chat" style="flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;">
+        ${chatContent}
+      </div>
+      ${codingPanelOpen ? html`
+        <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);">
+          ${renderCodingPanel({
+            sessions: state.codingSessions,
+            expanded: state.codingExpanded,
+            sessionEvents: state.codingSessionEvents,
+            sessionPhases: state.codingSessionPhases,
+            terminalOpen: state.codingTerminalOpen,
+            onToggleExpand: (id: string) => state.handleCodingToggleExpand(id),
+            onKill: (id: string) => state.handleCodingKill(id),
+            onClose: () => state.toggleCodingPanel(),
+            onRefresh: () => state.fetchCodingSessions(),
+            onDismiss: (id: string) => state.handleCodingDismiss(id),
+            onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
+            onCloseTerminal: () => state.handleCloseCodingTerminal(),
+            onAttachTerminal: (id: string) => state.handleAttachCodingTerminal(id),
+            onRespond: (id: string, text: string, toolUseId?: string) => state.handleCodingRespond(id, text, toolUseId),
+            pendingQuestions: state.codingQuestions,
+          })}
+        </div>
+      ` : nothing}
+      ${
+        artifactOpen
+          ? html`
+            <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;border-left:1px solid var(--border);">
+              ${renderArtifactPanel({
+                tabs: state.artifactTabs,
+                activeTabId: state.artifactActiveTabId,
+                onTabSelect: (tabId) => state.handleArtifactTabSelect(tabId),
+                onTabClose: (tabId) => state.handleArtifactTabClose(tabId),
+                onRefresh: (tabId) => state.handleArtifactRefresh(tabId),
+                onToggleRaw: (tabId) => state.handleArtifactToggleRaw(tabId),
+                onCopy: (tabId) => state.handleArtifactCopy(tabId),
+                onSave: (tabId, content) => state.handleArtifactSave(tabId, content),
+                onAutoSave: (tabId, content) => state.handleArtifactAutoSave(tabId, content),
+                onClose: () => state.handleArtifactClose(),
+              })}
+            </div>
+          `
+          : nothing
+      }
+      ${
+        gitOpen
+          ? html`
+            <div class="chat-git-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:40%;min-width:300px;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);padding:8px 12px;">
+              ${renderGit({
+                loading: state.gitLoading,
+                error: state.gitError,
+                branch: state.gitBranch,
+                files: state.gitFiles,
+                ahead: state.gitAhead,
+                behind: state.gitBehind,
+                logEntries: state.gitLogEntries,
+                logLoading: state.gitLogLoading,
+                diff: state.gitDiff,
+                diffLoading: state.gitDiffLoading,
+                diffStaged: state.gitDiffStaged,
+                commitMessage: state.gitCommitMessage,
+                committing: state.gitCommitting,
+                selectedPath: state.gitSelectedPath,
+                stagedCollapsed: state.gitStagedCollapsed,
+                changesCollapsed: state.gitChangesCollapsed,
+                logCollapsed: state.gitLogCollapsed,
+                onRefresh: () => loadGitStatus(state),
+                onLoadLog: () => loadGitLog(state),
+                onStage: (paths) => stageFiles(state, paths),
+                onUnstage: (paths) => unstageFiles(state, paths),
+                onDiscard: (paths) => discardFiles(state, paths),
+                onCommit: () => commitChanges(state),
+                onStageAllAndCommit: async () => {
+                  const unstaged = state.gitFiles.filter(
+                    (f) => f.working !== " " || (f.index === "?" && f.working === "?"),
+                  );
+                  if (unstaged.length > 0) {
+                    await stageFiles(
+                      state,
+                      unstaged.map((f) => f.path),
+                    );
+                  }
+                  await commitChanges(state);
+                },
+                onCommitMessageChange: (next) => {
+                  state.gitCommitMessage = next;
+                },
+                onViewDiff: (staged, path) => loadGitDiff(state, staged, path),
+                onToggleStagedCollapsed: () => {
+                  state.gitStagedCollapsed = !state.gitStagedCollapsed;
+                },
+                onToggleChangesCollapsed: () => {
+                  state.gitChangesCollapsed = !state.gitChangesCollapsed;
+                },
+                onToggleLogCollapsed: () => {
+                  state.gitLogCollapsed = !state.gitLogCollapsed;
+                },
+              })}
+            </div>
+          `
+          : nothing
+      }
     </div>
   `;
 }

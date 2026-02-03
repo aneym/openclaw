@@ -43,6 +43,9 @@ function createProps(overrides: Partial<ChatProps> = {}): ChatProps {
     onDraftChange: () => undefined,
     onSend: () => undefined,
     onQueueRemove: () => undefined,
+    onQueueSendNow: () => undefined,
+    onQueueClearAll: () => undefined,
+    onSendImmediately: () => undefined,
     onNewSession: () => undefined,
     ...overrides,
   };
@@ -62,34 +65,38 @@ describe("chat view", () => {
       container,
     );
 
+    // Compose buttons are icon-only; find by title attribute
     const stopButton = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.trim() === "Stop",
+      (btn) => btn.getAttribute("title") === "Stop",
     );
     expect(stopButton).not.toBeUndefined();
     stopButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onAbort).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("New session");
   });
 
-  it("shows a new session button when aborting is unavailable", () => {
+  it("renders compose actions without send-now when not busy", () => {
     const container = document.createElement("div");
-    const onNewSession = vi.fn();
     render(
       renderChat(
         createProps({
           canAbort: false,
-          onNewSession,
+          sending: false,
+          stream: null,
         }),
       ),
       container,
     );
 
-    const newSessionButton = Array.from(container.querySelectorAll("button")).find(
-      (btn) => btn.textContent?.trim() === "New session",
+    // The send button should show "Send" title (not "Queue")
+    const sendButton = Array.from(container.querySelectorAll("button")).find(
+      (btn) => btn.getAttribute("title") === "Send",
     );
-    expect(newSessionButton).not.toBeUndefined();
-    newSessionButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(onNewSession).toHaveBeenCalledTimes(1);
-    expect(container.textContent).not.toContain("Stop");
+    expect(sendButton).not.toBeUndefined();
+
+    // No "Send Now" button when not busy
+    const sendNowButton = Array.from(container.querySelectorAll("button")).find(
+      (btn) => btn.getAttribute("title")?.includes("send now"),
+    );
+    expect(sendNowButton).toBeUndefined();
   });
 });

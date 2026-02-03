@@ -109,7 +109,17 @@ export async function consumeRestartSentinel(
 }
 
 export function formatRestartSentinelMessage(payload: RestartSentinelPayload): string {
-  return `GatewayRestart:\n${JSON.stringify(payload, null, 2)}`;
+  const status = payload.status === "ok" ? "✓" : payload.status === "error" ? "✗" : payload.status;
+  const reason = payload.message || payload.stats?.reason;
+  const mode = payload.stats?.mode;
+  const parts = [`GatewayRestart ${status}`];
+  if (mode) {
+    parts.push(mode);
+  }
+  if (reason) {
+    parts.push(`— ${reason}`);
+  }
+  return parts.join(" ");
 }
 
 export function summarizeRestartSentinel(payload: RestartSentinelPayload): string {

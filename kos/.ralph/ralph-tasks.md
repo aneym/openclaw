@@ -1,0 +1,89 @@
+# kOS Implementation Tasks
+
+## Section 1: Panel Engine (KOS-7)
+
+> Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7
+
+- [x] Build PanelContainer that recursively renders PanelLayout tree using react-resizable-panels (PanelGroup, Panel, PanelResizeHandle). Default: single chat panel placeholder.
+- [x] Build PanelToolbar with title, split right/down buttons, and close button. Show on hover, 32px height.
+- [x] Implement panel store operations: splitPanel, closePanel, updatePanelProps, resetLayout. Wire up persistence to localStorage with `kos-panels` key.
+- [x] Build PanelContent switch component that renders the correct stub for each PanelType (chat, code-editor, terminal, coding-session, linear-board, browser, preview, diff, empty).
+- [x] Wire PanelContainer into Shell.tsx — main content area renders active thread's panel layout.
+
+## Section 2: Thread System (KOS-7, KOS-13)
+
+> Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7, KOS-13
+
+- [x] Build ThreadList component for sidebar — threads grouped by project, sorted by lastMessageAt. Collapsible project sections.
+- [x] Build ThreadItem with title, relative timestamp, status dot (streaming/idle/unread).
+- [x] Wire thread switching: click thread → set active thread → load its panel layout in PanelContainer.
+- [x] Build NewThreadButton that creates a session via gateway RPC and activates it.
+- [x] Build ThreadSearch overlay (Cmd+K) with fuzzy matching on thread titles using cmdk.
+
+## Section 3: Chat UI — Core (KOS-13, KOS-8)
+
+> Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-8
+
+- [x] Install markdown dependencies: `marked`, `dompurify`, `highlight.js`. Add @types/dompurify.
+- [x] Build message normalization layer (gateway/normalize.ts) — convert raw gateway messages to ChatMessage parts model.
+- [x] Build useMessages hook — fetch history via gateway RPC on mount, subscribe to new messages via gateway events.
+- [x] Build useStreaming hook — track streaming state per session (stream.start, stream.delta, stream.end events).
+- [x] Build MessageList with auto-scroll (IntersectionObserver on sentinel element). "New messages" badge when scrolled up.
+- [x] Build MessageGroup — groups consecutive same-role messages. Avatar + grouped bubbles + timestamp footer.
+- [x] Build TextPart — markdown rendering with marked.js + DOMPurify + highlight.js syntax highlighting. Code blocks get copy button.
+- [x] Build ComposeBar — auto-resizing textarea, Enter=send, Shift+Enter=newline. Send via gateway RPC. Disable when disconnected.
+- [x] Wire ChatPanel together: MessageList + ComposeBar. Replace the chat stub in PanelContent.
+
+## Section 4: Chat UI — Advanced (KOS-13, KOS-5)
+
+> Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-5
+
+- [x] Build ToolCallChip — compact chip with icon per tool type (📖 Read, ✏️ Edit, 📝 Write, ⚡ exec, 🔍 search, 🌐 fetch, 🔧 default).
+- [x] Build ToolCallGroup — collapsed by default ("🔧 3 tool calls"), expand to show individual chips.
+- [x] Build ReasoningBlock — collapsible "Thought for Xs..." block with purple accent.
+- [x] Build ImageAttachment — inline image display, clickable for full-size.
+- [x] Build MessageQueue — shows queued messages above compose bar when agent is streaming. "Send Now" (abort + send) and "Clear All" buttons.
+- [x] Build image paste handler in ComposeBar — clipboard paste detection, compression (max 1568px, JPEG quality stepping, 4MB budget), preview thumbnails.
+- [x] Build StreamingIndicator — three-dot animated reading indicator for empty streams.
+
+## Section 5: Linear Board (KOS-2, KOS-4)
+
+> Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-2, KOS-4
+
+- [x] Build Linear GraphQL client (src/renderer/src/linear/) — fetch team issues with states, priorities, assignees, labels, relations. Use workspace config for API key.
+- [x] Build useLinearTeam hook — fetches issues for a team, caches with background refetch (60s). Returns issues + states + loading state.
+- [x] Build dependency graph (useDependencyGraph) — build DAG from `blocks` relations. Expose isBlocked, getBlockers, getUnblockedTasks, getDownstreamCount, getCriticalPath.
+- [x] Build LinearBoard kanban component — columns per Linear state, cards sorted by priority then dependency depth.
+- [x] Build LinearCard — shows identifier, title, priority icon, assignee, labels. Blocked cards get reduced opacity + "⛔ Blocked" badge. Downstream count badge.
+- [x] Build drag-and-drop between columns — optimistic state update + Linear API mutation.
+- [x] Build task→thread routing: click card → find existing thread or create new one, activate it.
+- [x] Wire LinearBoard as a panel type in PanelContent. Show when project has Linear team linked.
+
+## Section 6: Project Navigation (KOS-7, KOS-13)
+
+> Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-7, KOS-13
+
+- [x] Build ProjectList in sidebar — expandable projects with thread count badge.
+- [x] Build WorkspaceSwitcher dropdown at top of sidebar — shows active workspace, switch between workspaces.
+- [x] Build ProjectSettings modal/drawer — project name, icon, color, Linear team connection, repo path, enabled skills.
+- [x] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
+
+## Section 7: Coding Session Panel (KOS-5)
+
+> Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-5
+
+- [x] Build CodingSessionPanel — monitors agent coding sessions in real-time. Header with phase indicator + session name + duration.
+- [x] Build phase detection (useCodingSession hook) — parse tool events to detect phase: exploring (Read/search), planning (long text), building (Write/Edit/exec), testing (exec with test commands), complete, error.
+- [x] Build SessionTimeline — event timeline within a session. Each event shows tool icon + description + duration.
+- [x] Build PhaseIndicator — colored badge per phase (🔍 blue, 🧠 purple, 🔨 amber, 🧪 green, ✅ green, ❌ red).
+- [x] Wire CodingSessionPanel into PanelContent as the 'coding-session' panel type.
+
+## Section 8: Keyboard Shortcuts & Polish
+
+> PRD: KOS-7, KOS-8
+
+- [x] Implement keyboard shortcuts: Cmd+\ (toggle sidebar), Cmd+K (thread search), Cmd+N (new thread), Cmd+W (close panel), Cmd+Shift+\ (split panel right).
+- [x] Build notification toasts for important events (connection lost/restored, thread created, errors). Use shadcn toast/sonner.
+- [x] Add panel open/close animations (200ms ease-out transitions).
+- [x] Improve StatusBar — show active agent status, session info, current model.
+- [x] Polish sidebar — active states, hover effects, smooth transitions, proper spacing.

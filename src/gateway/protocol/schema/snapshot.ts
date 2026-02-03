@@ -1,6 +1,15 @@
 import { Type } from "@sinclair/typebox";
 import { NonEmptyString } from "./primitives.js";
 
+export const SlashCommandEntrySchema = Type.Object(
+  {
+    name: NonEmptyString,
+    description: Type.String(),
+    category: Type.Optional(NonEmptyString),
+  },
+  { additionalProperties: false },
+);
+
 export const PresenceEntrySchema = Type.Object(
   {
     host: Type.Optional(NonEmptyString),
@@ -52,6 +61,7 @@ export const SnapshotSchema = Type.Object(
     configPath: Type.Optional(NonEmptyString),
     stateDir: Type.Optional(NonEmptyString),
     sessionDefaults: Type.Optional(SessionDefaultsSchema),
+    slashCommands: Type.Optional(Type.Array(SlashCommandEntrySchema)),
   },
   { additionalProperties: false },
 );

@@ -43,6 +43,8 @@ import {
   type ChatInjectParams,
   ChatInjectParamsSchema,
   ChatSendParamsSchema,
+  type ChatStatusParams,
+  ChatStatusParamsSchema,
   type ConfigApplyParams,
   ConfigApplyParamsSchema,
   type ConfigGetParams,
@@ -97,6 +99,10 @@ import {
   ExecApprovalRequestParamsSchema,
   type ExecApprovalResolveParams,
   ExecApprovalResolveParamsSchema,
+  type ToolApprovalRequestParams,
+  ToolApprovalRequestParamsSchema,
+  type ToolApprovalResolveParams,
+  ToolApprovalResolveParamsSchema,
   ErrorCodes,
   type ErrorShape,
   ErrorShapeSchema,
@@ -332,11 +338,18 @@ export const validateExecApprovalsNodeGetParams = ajv.compile<ExecApprovalsNodeG
 export const validateExecApprovalsNodeSetParams = ajv.compile<ExecApprovalsNodeSetParams>(
   ExecApprovalsNodeSetParamsSchema,
 );
+export const validateToolApprovalRequestParams = ajv.compile<ToolApprovalRequestParams>(
+  ToolApprovalRequestParamsSchema,
+);
+export const validateToolApprovalResolveParams = ajv.compile<ToolApprovalResolveParams>(
+  ToolApprovalResolveParamsSchema,
+);
 export const validateLogsTailParams = ajv.compile<LogsTailParams>(LogsTailParamsSchema);
 export const validateChatHistoryParams = ajv.compile(ChatHistoryParamsSchema);
 export const validateChatSendParams = ajv.compile(ChatSendParamsSchema);
 export const validateChatAbortParams = ajv.compile<ChatAbortParams>(ChatAbortParamsSchema);
 export const validateChatInjectParams = ajv.compile<ChatInjectParams>(ChatInjectParamsSchema);
+export const validateChatStatusParams = ajv.compile<ChatStatusParams>(ChatStatusParamsSchema);
 export const validateChatEvent = ajv.compile(ChatEventSchema);
 export const validateUpdateRunParams = ajv.compile<UpdateRunParams>(UpdateRunParamsSchema);
 export const validateWebLoginStartParams =
@@ -457,6 +470,7 @@ export {
   ChatHistoryParamsSchema,
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
+  ChatStatusParamsSchema,
   UpdateRunParamsSchema,
   TickEventSchema,
   ShutdownEventSchema,
@@ -551,9 +565,12 @@ export type {
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,
+  ToolApprovalRequestParams,
+  ToolApprovalResolveParams,
   LogsTailParams,
   LogsTailResult,
   PollParams,
   UpdateRunParams,
   ChatInjectParams,
+  ChatStatusParams,
 };

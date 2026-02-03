@@ -1,18 +1,25 @@
 import { html, nothing } from "lit";
 import { ref } from "lit/directives/ref.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { SessionsListResult } from "../types.ts";
-import type { ChatItem, MessageGroup } from "../types/chat-types.ts";
-import type { ChatAttachment, ChatQueueItem } from "../ui-types.ts";
+import type { GatewaySessionRow, SessionsListResult } from "../types";
+import type { ChatItem, MessageGroup } from "../types/chat-types";
+import type { ChatAttachment, ChatQueueItem, SlashCommandEntry } from "../ui-types";
 import {
   renderMessageGroup,
   renderReadingIndicatorGroup,
   renderStreamingGroup,
-} from "../chat/grouped-render.ts";
-import { normalizeMessage, normalizeRoleForGrouping } from "../chat/message-normalizer.ts";
-import { icons } from "../icons.ts";
-import { renderMarkdownSidebar } from "./markdown-sidebar.ts";
-import "../components/resizable-divider.ts";
+} from "../chat/grouped-render";
+import {
+  isToolResultMessage,
+  normalizeMessage,
+  normalizeRoleForGrouping,
+} from "../chat/message-normalizer";
+import { extractToolCards } from "../chat/tool-cards";
+import { icons } from "../icons";
+import { renderMarkdownSidebar } from "./markdown-sidebar";
+import { humanizeSessionKey, cleanSessionTitle } from "./thread-list";
+import { renderSlashAutocomplete, getFilteredCommands } from "./slash-autocomplete";
+import "../components/resizable-divider";
 
 export type CompactionIndicatorStatus = {
   active: boolean;
@@ -43,7 +50,7 @@ export type ChatProps = {
   sessions: SessionsListResult | null;
   // Focus mode
   focusMode: boolean;
-  // Sidebar state
+  // Sidebar state (legacy — single-pane only)
   sidebarOpen?: boolean;
   sidebarContent?: string | null;
   sidebarError?: string | null;
@@ -53,6 +60,8 @@ export type ChatProps = {
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
+  /** Session keys currently visible in other panes (split mode only). */
+  openSessionKeys?: Set<string>;
   // Scroll control
   showNewMessages?: boolean;
   onScrollToBottom?: () => void;
@@ -63,14 +72,49 @@ export type ChatProps = {
   onSend: () => void;
   onAbort?: () => void;
   onQueueRemove: (id: string) => void;
+  onQueueSendNow: (id: string) => void;
+  onQueueClearAll: () => void;
+  onSendImmediately: () => void;
   onNewSession: () => void;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
   onChatScroll?: (event: Event) => void;
+  // File preview callback (opens global artifact panel)
+  onOpenFilePreview?: (filePath: string) => void;
+  // Coding session callback (opens coding sessions panel)
+  onOpenCodingSession?: () => void;
+  // Slash command autocomplete
+  slashCommands?: SlashCommandEntry[];
+  // Sub-agent status
+  subagentRuns?: import("../types").SubagentRunInfo[];
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
+
+// ── Slash autocomplete state (module-scoped, keyed by session) ──
+type AutocompleteState = {
+  visible: boolean;
+  selectedIndex: number;
+};
+
+const autocompleteStates = new Map<string, AutocompleteState>();
+
+function getAutocompleteState(sessionKey: string): AutocompleteState {
+  let state = autocompleteStates.get(sessionKey);
+  if (!state) {
+    state = { visible: false, selectedIndex: 0 };
+    autocompleteStates.set(sessionKey, state);
+  }
+  return state;
+}
+
+function getSlashFilter(draft: string): string | null {
+  if (!draft.startsWith("/")) return null;
+  const spaceIdx = draft.indexOf(" ");
+  if (spaceIdx !== -1) return null;
+  return draft.slice(1);
+}
 
 function adjustTextareaHeight(el: HTMLTextAreaElement) {
   el.style.height = "auto";
@@ -85,8 +129,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   // Show "compacting..." while active
   if (status.active) {
     return html`
-      <div class="callout info compaction-indicator compaction-indicator--active">
-        ${icons.loader} Compacting context...
+      <div class="compaction-toast compaction-toast--active">
+        ${icons.loader} Compacting context…
       </div>
     `;
   }
@@ -96,8 +140,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
     const elapsed = Date.now() - status.completedAt;
     if (elapsed < COMPACTION_TOAST_DURATION_MS) {
       return html`
-        <div class="callout success compaction-indicator compaction-indicator--complete">
-          ${icons.check} Context compacted
+        <div class="compaction-toast compaction-toast--complete">
+          ${icons.check} Compacted
         </div>
       `;
     }
@@ -106,8 +150,151 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   return nothing;
 }
 
+// Module-scoped: track whether the sub-agent banner is collapsed
+let subagentBannerCollapsed = false;
+
+function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undefined) {
+  if (!runs || runs.length === 0) return nothing;
+
+  const active = runs.filter((r) => !r.endedAt);
+  const justFinished = runs.filter(
+    (r) => r.endedAt && Date.now() - r.endedAt < 4000,
+  );
+
+  // Nothing to show
+  if (active.length === 0 && justFinished.length === 0) return nothing;
+
+  // "Done" flash for recently finished runs
+  if (active.length === 0 && justFinished.length > 0) {
+    const allOk = justFinished.every((r) => r.outcome?.status === "ok");
+    return html`
+      <div class="subagent-banner subagent-banner--done ${allOk ? "" : "subagent-banner--error"}">
+        <span class="subagent-banner__icon">${allOk ? "\u2713" : "\u2717"}</span>
+        <span class="subagent-banner__text">
+          ${allOk ? "Sub-agent done" : "Sub-agent failed"}
+        </span>
+      </div>
+    `;
+  }
+
+  // Elapsed time from the earliest active run
+  const earliest = Math.min(...active.map((r) => r.startedAt ?? r.createdAt));
+  const elapsedSec = Math.max(0, Math.round((Date.now() - earliest) / 1000));
+  const elapsedStr =
+    elapsedSec < 60
+      ? `${elapsedSec}s`
+      : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+
+  const summary =
+    active.length === 1
+      ? `Sub-agent: ${active[0].task.slice(0, 60)}${active[0].task.length > 60 ? "\u2026" : ""}`
+      : `${active.length} sub-agents working`;
+
+  return html`
+    <div
+      class="subagent-banner subagent-banner--active"
+      @click=${() => {
+        subagentBannerCollapsed = !subagentBannerCollapsed;
+      }}
+      title="Click to ${subagentBannerCollapsed ? "expand" : "collapse"}"
+    >
+      <span class="subagent-banner__icon subagent-banner__icon--pulse">\u26A1</span>
+      <span class="subagent-banner__text">${summary}</span>
+      <span class="subagent-banner__time">${elapsedStr}</span>
+    </div>
+    ${!subagentBannerCollapsed && active.length > 1
+      ? html`
+        <div class="subagent-banner__list">
+          ${active.map(
+            (r) => html`
+              <div class="subagent-banner__item">
+                <span class="subagent-banner__item-dot"></span>
+                <span class="subagent-banner__item-task">${r.label ?? r.task.slice(0, 50)}</span>
+              </div>
+            `,
+          )}
+        </div>
+      `
+      : nothing}
+  `;
+}
+
 function generateAttachmentId(): string {
   return `att-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+const MAX_IMAGE_DIMENSION = 1568;
+const JPEG_QUALITY = 0.8;
+const MAX_DATA_URL_BYTES = 4 * 1024 * 1024; // 4 MB target
+
+function canvasHasAlpha(ctx: CanvasRenderingContext2D, w: number, h: number): boolean {
+  const data = ctx.getImageData(0, 0, w, h).data;
+  for (let i = 3; i < data.length; i += 4) {
+    if (data[i] < 255) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function compressImage(
+  dataUrl: string,
+  mimeType: string,
+): Promise<{ dataUrl: string; mimeType: string }> {
+  const img = new Image();
+  await new Promise<void>((resolve, reject) => {
+    img.addEventListener("load", () => resolve());
+    img.addEventListener("error", reject);
+    img.src = dataUrl;
+  });
+
+  const { width, height } = img;
+  const needsResize = width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION;
+  const needsCompress = dataUrl.length > MAX_DATA_URL_BYTES;
+
+  if (!needsResize && !needsCompress) {
+    return { dataUrl, mimeType };
+  }
+
+  let targetW = width;
+  let targetH = height;
+  if (needsResize) {
+    const scale = MAX_IMAGE_DIMENSION / Math.max(width, height);
+    targetW = Math.round(width * scale);
+    targetH = Math.round(height * scale);
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = targetW;
+  canvas.height = targetH;
+  const ctx = canvas.getContext("2d")!;
+  ctx.drawImage(img, 0, 0, targetW, targetH);
+
+  // Only keep PNG if the image actually uses transparency; screenshots are
+  // PNG but fully opaque — JPEG compresses them far better.
+  const hasAlpha = mimeType === "image/png" && canvasHasAlpha(ctx, targetW, targetH);
+
+  if (hasAlpha) {
+    const result = canvas.toDataURL("image/png");
+    if (result.length <= MAX_DATA_URL_BYTES) {
+      return { dataUrl: result, mimeType: "image/png" };
+    }
+    // PNG still too large — fall through to JPEG (alpha will be flattened)
+  }
+
+  // JPEG with decreasing quality until under budget
+  let quality = JPEG_QUALITY;
+  while (quality >= 0.3) {
+    const result = canvas.toDataURL("image/jpeg", quality);
+    if (result.length <= MAX_DATA_URL_BYTES) {
+      return { dataUrl: result, mimeType: "image/jpeg" };
+    }
+    quality -= 0.1;
+  }
+
+  // Last resort: lowest quality JPEG
+  const fallback = canvas.toDataURL("image/jpeg", 0.2);
+  return { dataUrl: fallback, mimeType: "image/jpeg" };
 }
 
 function handlePaste(e: ClipboardEvent, props: ChatProps) {
@@ -137,12 +324,13 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
     }
 
     const reader = new FileReader();
-    reader.addEventListener("load", () => {
-      const dataUrl = reader.result as string;
+    reader.addEventListener("load", async () => {
+      const rawDataUrl = reader.result as string;
+      const { dataUrl, mimeType } = await compressImage(rawDataUrl, file.type);
       const newAttachment: ChatAttachment = {
         id: generateAttachmentId(),
         dataUrl,
-        mimeType: file.type,
+        mimeType,
       };
       const current = props.attachments ?? [];
       props.onAttachmentsChange?.([...current, newAttachment]);
@@ -171,6 +359,7 @@ function renderAttachmentPreview(props: ChatProps) {
               class="chat-attachment__remove"
               type="button"
               aria-label="Remove attachment"
+              title="Remove attachment"
               @click=${() => {
                 const next = (props.attachments ?? []).filter((a) => a.id !== att.id);
                 props.onAttachmentsChange?.(next);
@@ -183,6 +372,164 @@ function renderAttachmentPreview(props: ChatProps) {
       )}
     </div>
   `;
+}
+
+/** Friendly relative time for queue items (e.g. "just now", "2m ago") */
+function relativeQueueTime(createdAt: number): string {
+  const diff = Date.now() - createdAt;
+  if (diff < 0 || diff < 10_000) {
+    return "just now";
+  }
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) {
+    return `${sec}s ago`;
+  }
+  const min = Math.round(sec / 60);
+  if (min < 60) {
+    return `${min}m ago`;
+  }
+  const hr = Math.round(min / 60);
+  return `${hr}h ago`;
+}
+
+/** Compact relative time (e.g. "3m", "2h", "5d") */
+function compactAgo(ms?: number | null): string {
+  if (!ms) {
+    return "";
+  }
+  const diff = Date.now() - ms;
+  if (diff < 0) {
+    return "now";
+  }
+  const sec = Math.round(diff / 1000);
+  if (sec < 60) {
+    return `${sec}s`;
+  }
+  const min = Math.round(sec / 60);
+  if (min < 60) {
+    return `${min}m`;
+  }
+  const hr = Math.round(min / 60);
+  if (hr < 24) {
+    return `${hr}h`;
+  }
+  const day = Math.round(hr / 24);
+  if (day < 30) {
+    return `${day}d`;
+  }
+  const mo = Math.round(day / 30);
+  return `${mo}mo`;
+}
+
+/**
+ * Session picker shown inside an empty split pane.
+ * Lists recent sessions not already open in another pane.
+ */
+function renderSessionPicker(
+  sessions: GatewaySessionRow[],
+  openKeys: Set<string>,
+  currentKey: string,
+  onSelect: (key: string) => void,
+) {
+  // Filter: exclude sessions already visible in a pane, archived, and cron/global
+  const candidates = sessions.filter((s) => {
+    if (s.key === currentKey) {
+      return false;
+    }
+    if (openKeys.has(s.key)) {
+      return false;
+    }
+    if (s.archivedAt) {
+      return false;
+    }
+    if (s.kind === "global") {
+      return false;
+    }
+    const k = s.key.toLowerCase();
+    if (k.includes(":cron:") || k.includes(":cron-")) {
+      return false;
+    }
+    return true;
+  });
+
+  // Sort by most recently updated
+  candidates.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
+
+  // Cap at a reasonable number
+  const visible = candidates.slice(0, 12);
+
+  if (visible.length === 0) {
+    return html`
+      <div class="session-picker">
+        <div class="session-picker__header">No other sessions available</div>
+        <div class="session-picker__hint">Start a new conversation below</div>
+      </div>
+    `;
+  }
+
+  return html`
+    <div class="session-picker">
+      <div class="session-picker__header">Open a recent session</div>
+      <div class="session-picker__list">
+        ${visible.map((s) => {
+          // Smart label: prefer label > cleaned derivedTitle > cleaned displayName > humanized key
+          const derived = cleanSessionTitle(s.derivedTitle);
+          const display = cleanSessionTitle(s.displayName);
+          const title = s.label || derived || display || humanizeSessionKey(s.key);
+          // Subtitle: show derived title if label is primary, or display name
+          const subtitle =
+            s.label && derived && s.label !== derived
+              ? derived
+              : !s.label && !derived && display
+                ? display
+                : "";
+          return html`
+            <button
+              class="session-picker__item"
+              @click=${() => onSelect(s.key)}
+              title=${s.key}
+            >
+              <div class="session-picker__item-text">
+                <span class="session-picker__item-label">${title}</span>
+                ${
+                  subtitle
+                    ? html`<span class="session-picker__item-title">${subtitle}</span>`
+                    : nothing
+                }
+              </div>
+              ${
+                s.updatedAt
+                  ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
+                  : nothing
+              }
+            </button>
+          `;
+        })}
+      </div>
+      <div class="session-picker__hint">Or start a new conversation below</div>
+    </div>
+  `;
+}
+
+function renderAutocompleteOverlay(props: ChatProps) {
+  const commands = props.slashCommands ?? [];
+  if (commands.length === 0) return nothing;
+  const filter = getSlashFilter(props.draft);
+  if (filter === null) return nothing;
+  const acState = getAutocompleteState(props.sessionKey);
+  if (!acState.visible) return nothing;
+
+  return renderSlashAutocomplete({
+    visible: true,
+    commands,
+    filter,
+    selectedIndex: acState.selectedIndex,
+    onSelect: (cmd) => {
+      acState.visible = false;
+      acState.selectedIndex = 0;
+      props.onDraftChange(`/${cmd.name} `);
+    },
+  });
 }
 
 export function renderChat(props: ChatProps) {
@@ -198,21 +545,72 @@ export function renderChat(props: ChatProps) {
   };
 
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
-  const composePlaceholder = props.connected
-    ? hasAttachments
-      ? "Add a message or paste more images..."
-      : "Message (↩ to send, Shift+↩ for line breaks, paste images)"
-    : "Connect to the gateway to start chatting…";
+  const composePlaceholder = hasAttachments
+    ? "Add a message or paste more images..."
+    : props.connected
+      ? "Message (↩ to send, Shift+↩ for line breaks, paste images)"
+      : "Message (connecting…)";
 
-  const splitRatio = props.splitRatio ?? 0.6;
   const sidebarOpen = Boolean(props.sidebarOpen && props.onCloseSidebar);
+  const splitRatio = props.splitRatio ?? 0.6;
+  const handleThreadScroll = (e: Event) => {
+    props.onChatScroll?.(e);
+    const container = e.currentTarget as HTMLElement;
+    const dist = container.scrollHeight - container.scrollTop - container.clientHeight;
+    const main = container.closest(".chat-main");
+    if (main) {
+      main.classList.toggle("chat-main--scrolled-up", dist >= 200);
+    }
+  };
+
+  const handleScrollToBottom = (e: Event) => {
+    const btn = e.currentTarget as HTMLElement;
+    const thread = btn.closest(".chat-main")?.querySelector(".chat-thread");
+    if (thread) {
+      thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
+    }
+  };
+
+  // Show session picker when pane is empty and in split mode
+  const isEmpty = !props.loading && props.messages.length === 0 && props.stream === null;
+  const showPicker = isEmpty && props.openSessionKeys && props.sessions?.sessions;
+
+  const handleThreadClick = (e: Event) => {
+    const target = e.target as HTMLElement;
+    const copyBtn = target.closest(".code-block__copy") as HTMLButtonElement | null;
+    if (!copyBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (copyBtn.dataset.copied === "1") return;
+    const encoded = copyBtn.dataset.code;
+    if (!encoded) return;
+    try {
+      const text = decodeURIComponent(escape(atob(encoded)));
+      navigator.clipboard.writeText(text).then(() => {
+        copyBtn.dataset.copied = "1";
+        setTimeout(() => { delete copyBtn.dataset.copied; }, 1500);
+      }).catch(() => {});
+    } catch { /* ignore decode errors */ }
+  };
+
   const thread = html`
     <div
       class="chat-thread"
       role="log"
       aria-live="polite"
-      @scroll=${props.onChatScroll}
+      @scroll=${handleThreadScroll}
+      @click=${handleThreadClick}
     >
+      ${
+        showPicker
+          ? renderSessionPicker(
+              props.sessions!.sessions,
+              props.openSessionKeys!,
+              props.sessionKey,
+              props.onSessionKeyChange,
+            )
+          : nothing
+      }
       ${
         props.loading
           ? html`
@@ -224,6 +622,32 @@ export function renderChat(props: ChatProps) {
         buildChatItems(props),
         (item) => item.key,
         (item) => {
+          if (item.kind === "load-more") {
+            return html`<div class="chat-load-more">
+            <button
+              class="chat-load-more__btn"
+              type="button"
+              @click=${(e: Event) => {
+                const btn = e.currentTarget as HTMLElement;
+                const thread = btn.closest(".chat-thread");
+                const prevHeight = thread?.scrollHeight ?? 0;
+                item.onLoadMore();
+                // Re-render by dispatching a custom event the app-render can pick up
+                btn.dispatchEvent(
+                  new CustomEvent("chat-load-more", { bubbles: true, composed: true }),
+                );
+                // Preserve scroll position after new messages are prepended
+                requestAnimationFrame(() => {
+                  if (thread) {
+                    const newHeight = thread.scrollHeight;
+                    thread.scrollTop += newHeight - prevHeight;
+                  }
+                });
+              }}
+            >Load ${Math.min(LOAD_MORE_BATCH, item.remaining)} older messages${item.remaining > LOAD_MORE_BATCH ? ` (${item.remaining} remaining)` : ""}</button>
+          </div>`;
+          }
+
           if (item.kind === "reading-indicator") {
             return renderReadingIndicatorGroup(assistantIdentity);
           }
@@ -234,12 +658,16 @@ export function renderChat(props: ChatProps) {
               item.startedAt,
               props.onOpenSidebar,
               assistantIdentity,
+              props.onOpenFilePreview,
+              props.onOpenCodingSession,
             );
           }
 
           if (item.kind === "group") {
             return renderMessageGroup(item, {
               onOpenSidebar: props.onOpenSidebar,
+              onOpenFilePreview: props.onOpenFilePreview,
+              onOpenCodingSession: props.onOpenCodingSession,
               showReasoning,
               assistantName: props.assistantName,
               assistantAvatar: assistantIdentity.avatar,
@@ -250,6 +678,15 @@ export function renderChat(props: ChatProps) {
         },
       )}
     </div>
+    <button
+      class="chat-scroll-bottom"
+      type="button"
+      aria-label="Scroll to bottom"
+      title="Scroll to bottom"
+      @click=${handleScrollToBottom}
+    >
+      ${icons.arrowDown}
+    </button>
   `;
 
   return html`
@@ -259,6 +696,8 @@ export function renderChat(props: ChatProps) {
       ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
       ${renderCompactionIndicator(props.compactionStatus)}
+
+      ${renderSubagentBanner(props.subagentRuns)}
 
       ${
         props.focusMode
@@ -315,25 +754,57 @@ export function renderChat(props: ChatProps) {
         props.queue.length
           ? html`
             <div class="chat-queue" role="status" aria-live="polite">
-              <div class="chat-queue__title">Queued (${props.queue.length})</div>
+              <div class="chat-queue__header">
+                <span class="chat-queue__count">
+                  ${icons.listPlus} Queued · ${props.queue.length}
+                </span>
+                <button
+                  class="chat-queue__clear-all"
+                  type="button"
+                  title="Clear all queued messages"
+                  @click=${() => props.onQueueClearAll()}
+                >Clear</button>
+              </div>
               <div class="chat-queue__list">
                 ${props.queue.map(
                   (item) => html`
                     <div class="chat-queue__item">
-                      <div class="chat-queue__text">
-                        ${
-                          item.text ||
-                          (item.attachments?.length ? `Image (${item.attachments.length})` : "")
-                        }
+                      <div class="chat-queue__item-body">
+                        <div class="chat-queue__text">
+                          ${
+                            item.text ||
+                            (item.attachments?.length ? `Image (${item.attachments.length})` : "")
+                          }
+                        </div>
+                        <div class="chat-queue__meta">
+                          ${
+                            item.attachments?.length
+                              ? html`<span class="chat-queue__attachment-indicator" title="${item.attachments.length} attachment${item.attachments.length > 1 ? "s" : ""}">${icons.paperclip}</span>`
+                              : nothing
+                          }
+                          <span class="chat-queue__time">${relativeQueueTime(item.createdAt)}</span>
+                        </div>
                       </div>
-                      <button
-                        class="btn chat-queue__remove"
-                        type="button"
-                        aria-label="Remove queued message"
-                        @click=${() => props.onQueueRemove(item.id)}
-                      >
-                        ${icons.x}
-                      </button>
+                      <div class="chat-queue__actions">
+                        <button
+                          class="chat-queue__send-now"
+                          type="button"
+                          aria-label="Send this message now"
+                          title="Stop current run and send now"
+                          @click=${() => props.onQueueSendNow(item.id)}
+                        >
+                          ${icons.arrowUp}
+                        </button>
+                        <button
+                          class="chat-queue__remove"
+                          type="button"
+                          aria-label="Remove queued message"
+                          title="Remove from queue"
+                          @click=${() => props.onQueueRemove(item.id)}
+                        >
+                          ${icons.x}
+                        </button>
+                      </div>
                     </div>
                   `,
                 )}
@@ -357,20 +828,78 @@ export function renderChat(props: ChatProps) {
           : nothing
       }
 
-      <div class="chat-compose">
+      <div class="chat-compose" style="position:relative;"
+        @slash-hover=${(e: CustomEvent) => {
+          const acState = getAutocompleteState(props.sessionKey);
+          acState.selectedIndex = e.detail.index;
+        }}
+      >
         ${renderAttachmentPreview(props)}
+        ${renderAutocompleteOverlay(props)}
         <div class="chat-compose__row">
           <label class="field chat-compose__field">
             <span>Message</span>
             <textarea
               ${ref((el) => el && adjustTextareaHeight(el as HTMLTextAreaElement))}
               .value=${props.draft}
-              ?disabled=${!props.connected}
+              rows="1"
               @keydown=${(e: KeyboardEvent) => {
+                if (e.isComposing || e.keyCode === 229) {
+                  return;
+                }
+
+                // Slash autocomplete keyboard handling
+                const acState = getAutocompleteState(props.sessionKey);
+                const commands = props.slashCommands ?? [];
+                const filter = getSlashFilter(props.draft);
+
+                if (acState.visible && filter !== null && commands.length > 0) {
+                  const filtered = getFilteredCommands(commands, filter);
+                  if (filtered.length > 0) {
+                    if (e.key === "ArrowDown") {
+                      e.preventDefault();
+                      acState.selectedIndex = (acState.selectedIndex + 1) % filtered.length;
+                      // Force re-render by touching draft
+                      props.onDraftChange(props.draft);
+                      return;
+                    }
+                    if (e.key === "ArrowUp") {
+                      e.preventDefault();
+                      acState.selectedIndex =
+                        (acState.selectedIndex - 1 + filtered.length) % filtered.length;
+                      props.onDraftChange(props.draft);
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      const selected = filtered[Math.min(acState.selectedIndex, filtered.length - 1)];
+                      if (selected) {
+                        acState.visible = false;
+                        acState.selectedIndex = 0;
+                        props.onDraftChange(`/${selected.name} `);
+                      }
+                      return;
+                    }
+                  }
+                }
+
+                if (e.key === "Escape" && acState.visible) {
+                  e.preventDefault();
+                  acState.visible = false;
+                  acState.selectedIndex = 0;
+                  props.onDraftChange(props.draft);
+                  return;
+                }
+
                 if (e.key !== "Enter") {
                   return;
                 }
-                if (e.isComposing || e.keyCode === 229) {
+                // Cmd+Shift+Enter (Mac) or Ctrl+Shift+Enter = send immediately when busy
+                if (e.shiftKey && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  if (props.connected && isBusy) {
+                    props.onSendImmediately();
+                  }
                   return;
                 }
                 if (e.shiftKey) {
@@ -387,27 +916,55 @@ export function renderChat(props: ChatProps) {
               @input=${(e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
                 adjustTextareaHeight(target);
-                props.onDraftChange(target.value);
+                const value = target.value;
+                props.onDraftChange(value);
+
+                // Update autocomplete visibility
+                const acState = getAutocompleteState(props.sessionKey);
+                const filter = getSlashFilter(value);
+                const commands = props.slashCommands ?? [];
+                if (filter !== null && commands.length > 0) {
+                  const filtered = getFilteredCommands(commands, filter);
+                  acState.visible = filtered.length > 0;
+                  // Reset index when filter changes
+                  if (acState.selectedIndex >= filtered.length) {
+                    acState.selectedIndex = 0;
+                  }
+                } else {
+                  acState.visible = false;
+                  acState.selectedIndex = 0;
+                }
               }}
               @paste=${(e: ClipboardEvent) => handlePaste(e, props)}
               placeholder=${composePlaceholder}
             ></textarea>
           </label>
           <div class="chat-compose__actions">
+            ${
+              canAbort
+                ? html`<button
+                  class="btn chat-compose__icon-btn chat-compose__icon-btn--stop"
+                  title="Stop"
+                  @click=${props.onAbort}
+                >${icons.square}</button>`
+                : nothing
+            }
             <button
-              class="btn"
-              ?disabled=${!props.connected || (!canAbort && props.sending)}
-              @click=${canAbort ? props.onAbort : props.onNewSession}
-            >
-              ${canAbort ? "Stop" : "New session"}
-            </button>
-            <button
-              class="btn primary"
+              class="btn primary chat-compose__icon-btn"
               ?disabled=${!props.connected}
+              title="${isBusy ? "Queue" : "Send"}"
               @click=${props.onSend}
-            >
-              ${isBusy ? "Queue" : "Send"}<kbd class="btn-kbd">↵</kbd>
-            </button>
+            >${isBusy ? icons.listPlus : icons.arrowUp}</button>
+            ${
+              isBusy
+                ? html`<button
+                  class="btn chat-compose__icon-btn chat-compose__icon-btn--send-now"
+                  ?disabled=${!props.connected}
+                  title="Stop current run and send now (⇧⌘↩)"
+                  @click=${props.onSendImmediately}
+                >${icons.arrowUp}</button>`
+                : nothing
+            }
           </div>
         </div>
       </div>
@@ -415,7 +972,20 @@ export function renderChat(props: ChatProps) {
   `;
 }
 
-const CHAT_HISTORY_RENDER_LIMIT = 200;
+const CHAT_HISTORY_RENDER_LIMIT = 50;
+const LOAD_MORE_BATCH = 50;
+
+/** Per-session state tracking how many messages to render. */
+const sessionRenderLimits = new Map<string, number>();
+
+function getSessionRenderLimit(sessionKey: string): number {
+  return sessionRenderLimits.get(sessionKey) ?? CHAT_HISTORY_RENDER_LIMIT;
+}
+
+function expandSessionRenderLimit(sessionKey: string, total: number): void {
+  const current = getSessionRenderLimit(sessionKey);
+  sessionRenderLimits.set(sessionKey, Math.min(current + LOAD_MORE_BATCH, total));
+}
 
 function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   const result: Array<ChatItem | MessageGroup> = [];
@@ -435,7 +1005,14 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
     const role = normalizeRoleForGrouping(normalized.role);
     const timestamp = normalized.timestamp || Date.now();
 
-    if (!currentGroup || currentGroup.role !== role) {
+    // Fold chip-only tool results into the preceding assistant group
+    // so consecutive tool calls render inline instead of as separate groups.
+    const isChipOnly =
+      role === "tool" && currentGroup?.role === "assistant" && isChipOnlyMessage(item.message);
+
+    if (isChipOnly) {
+      currentGroup!.messages.push({ message: item.message, key: item.key });
+    } else if (!currentGroup || currentGroup.role !== role) {
       if (currentGroup) {
         result.push(currentGroup);
       }
@@ -458,37 +1035,64 @@ function groupMessages(items: ChatItem[]): Array<ChatItem | MessageGroup> {
   return result;
 }
 
+/** Hide internal system plumbing (e.g. GatewayRestart) from chat UI. */
+function isInternalSystemMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  const content = m.content;
+  let text: string | null = null;
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
+    for (const block of content) {
+      if (
+        typeof block === "object" &&
+        block !== null &&
+        (block as Record<string, unknown>).type === "text"
+      ) {
+        text = (block as Record<string, unknown>).text as string;
+        break;
+      }
+    }
+  } else if (typeof m.text === "string") {
+    text = m.text;
+  }
+  if (!text) {
+    return false;
+  }
+  return /^(System:\s*\[.*?\]\s*)?GatewayRestart[\s:]/.test(text.trimStart());
+}
+
 function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   const items: ChatItem[] = [];
   const history = Array.isArray(props.messages) ? props.messages : [];
   const tools = Array.isArray(props.toolMessages) ? props.toolMessages : [];
-  const historyStart = Math.max(0, history.length - CHAT_HISTORY_RENDER_LIMIT);
+  const limit = getSessionRenderLimit(props.sessionKey);
+  const historyStart = Math.max(0, history.length - limit);
   if (historyStart > 0) {
     items.push({
-      kind: "message",
-      key: "chat:history:notice",
-      message: {
-        role: "system",
-        content: `Showing last ${CHAT_HISTORY_RENDER_LIMIT} messages (${historyStart} hidden).`,
-        timestamp: Date.now(),
+      kind: "load-more",
+      key: "chat:history:load-more",
+      remaining: historyStart,
+      onLoadMore: () => {
+        expandSessionRenderLimit(props.sessionKey, history.length);
       },
     });
   }
   for (let i = historyStart; i < history.length; i++) {
     const msg = history[i];
-    const normalized = normalizeMessage(msg);
-
-    if (!props.showThinking && normalized.role.toLowerCase() === "toolresult") {
+    if (isInternalSystemMessage(msg)) {
       continue;
     }
-
     items.push({
       kind: "message",
       key: messageKey(msg, i),
       message: msg,
     });
   }
-  if (props.showThinking) {
+  // Always show tool activity chips during an active run (stream non-null).
+  // When not streaming, only show if showThinking is enabled.
+  const showTools = props.showThinking || (props.stream !== null && tools.length > 0);
+  if (showTools) {
     for (let i = 0; i < tools.length; i++) {
       items.push({
         kind: "message",
@@ -513,6 +1117,19 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
 
   return groupMessages(items);
+}
+
+/** A tool-result message that should render as compact chips. */
+function isChipOnlyMessage(message: unknown): boolean {
+  if (!isToolResultMessage(message)) {
+    const m = message as Record<string, unknown>;
+    const role = typeof m.role === "string" ? m.role.toLowerCase() : "";
+    if (role !== "toolresult" && role !== "tool_result") {
+      return false;
+    }
+  }
+  const cards = extractToolCards(message);
+  return cards.length > 0;
 }
 
 function messageKey(message: unknown, index: number): string {

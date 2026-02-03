@@ -13,7 +13,13 @@ import { resolveAgentAvatar } from "../agents/identity-avatar.js";
 import { handleA2uiHttpRequest } from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
-import { handleControlUiAvatarRequest, handleControlUiHttpRequest } from "./control-ui.js";
+import { handleCodingSessionsRequest } from "./coding-sessions-http.js";
+import {
+  handleControlUiAvatarRequest,
+  handleControlUiHttpRequest,
+  handleWebUiHttpRequest,
+} from "./control-ui.js";
+import { handleFileHttpRequest } from "./file-http.js";
 import { applyHookMappings } from "./hooks-mapping.js";
 import {
   extractHookToken,
@@ -27,8 +33,11 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
+import { handleMediaHttpRequest } from "./media-http.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
+import { handleTerminalHttpRequest } from "./terminal-http.js";
+import { handleTitleHttpRequest } from "./title-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -246,7 +255,23 @@ export function createGatewayHttpServer(opts: {
         return;
       }
       if (
+        await handleTerminalHttpRequest(req, res, {
+          auth: resolvedAuth,
+          trustedProxies,
+        })
+      ) {
+        return;
+      }
+      if (
         await handleToolsInvokeHttpRequest(req, res, {
+          auth: resolvedAuth,
+          trustedProxies,
+        })
+      ) {
+        return;
+      }
+      if (
+        await handleMediaHttpRequest(req, res, {
           auth: resolvedAuth,
           trustedProxies,
         })
@@ -270,6 +295,15 @@ export function createGatewayHttpServer(opts: {
           return;
         }
       }
+      // Coding sessions API
+      if (
+        handleCodingSessionsRequest(req, res, new URL(req.url ?? "/", "http://localhost").pathname)
+      )
+        return;
+      // Lightweight title generation — always available (no session creation)
+      if (await handleTitleHttpRequest(req, res, { auth: resolvedAuth, trustedProxies })) {
+        return;
+      }
       if (openAiChatCompletionsEnabled) {
         if (
           await handleOpenAiHttpRequest(req, res, {
@@ -287,6 +321,10 @@ export function createGatewayHttpServer(opts: {
         if (await canvasHost.handleHttpRequest(req, res)) {
           return;
         }
+      }
+      // Web UI (React chat) at /app/ — check before control UI since it's more specific.
+      if (handleWebUiHttpRequest(req, res)) {
+        return;
       }
       if (controlUiEnabled) {
         if (
@@ -323,10 +361,54 @@ export function createGatewayHttpServer(opts: {
 export function attachGatewayUpgradeHandler(opts: {
   httpServer: HttpServer;
   wss: WebSocketServer;
+  terminalWss: WebSocketServer;
   canvasHost: CanvasHostHandler | null;
+  resolvedAuth: import("./auth.js").ResolvedGatewayAuth;
 }) {
-  const { httpServer, wss, canvasHost } = opts;
+  const { httpServer, wss, terminalWss, canvasHost, resolvedAuth } = opts;
   httpServer.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+
+    // Terminal WebSocket: /ws/terminal?id=xxx
+    if (url.pathname === "/ws/terminal") {
+      const token = url.searchParams.get("token") ?? url.searchParams.get("password") ?? undefined;
+      void (async () => {
+        const { authorizeGatewayConnect } = await import("./auth.js");
+        const { loadConfig } = await import("../config/config.js");
+        const cfg = loadConfig();
+        const authResult = await authorizeGatewayConnect({
+          auth: resolvedAuth,
+          connectAuth: token ? { token, password: token } : null,
+          req,
+          trustedProxies: cfg.gateway?.trustedProxies,
+        });
+        if (!authResult.ok) {
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        terminalWss.handleUpgrade(req, socket, head, async (ws) => {
+          const { createTerminalSession, attachWebSocket, getTerminalSession } =
+            await import("./terminal-pty.js");
+          let terminalId = url.searchParams.get("id") ?? undefined;
+
+          if (!terminalId) {
+            const result = await createTerminalSession();
+            terminalId = result.id;
+          }
+
+          if (!getTerminalSession(terminalId)) {
+            ws.close(1008, "Terminal session not found");
+            return;
+          }
+
+          ws.send(JSON.stringify({ type: "connected", id: terminalId }));
+          attachWebSocket(terminalId, ws);
+        });
+      })();
+      return;
+    }
+
     if (canvasHost?.handleUpgrade(req, socket, head)) {
       return;
     }

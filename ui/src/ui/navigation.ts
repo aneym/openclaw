@@ -8,6 +8,7 @@ export const TAB_GROUPS = [
   },
   { label: "Agent", tabs: ["agents", "skills", "nodes"] },
   { label: "Settings", tabs: ["config", "debug", "logs"] },
+  { label: "Custom", tabs: ["models"] },
 ] as const;
 
 export type Tab =
@@ -20,9 +21,11 @@ export type Tab =
   | "skills"
   | "nodes"
   | "chat"
+  | "models"
   | "config"
   | "debug"
-  | "logs";
+  | "logs"
+  | "git";
 
 const TAB_PATHS: Record<Tab, string> = {
   agents: "/agents",
@@ -34,9 +37,11 @@ const TAB_PATHS: Record<Tab, string> = {
   skills: "/skills",
   nodes: "/nodes",
   chat: "/chat",
+  models: "/models",
   config: "/config",
   debug: "/debug",
   logs: "/logs",
+  git: "/git",
 };
 
 const PATH_TO_TAB = new Map(Object.entries(TAB_PATHS).map(([tab, path]) => [path, tab as Tab]));
@@ -140,12 +145,16 @@ export function iconForTab(tab: Tab): IconName {
       return "zap";
     case "nodes":
       return "monitor";
+    case "models":
+      return "brain";
     case "config":
       return "settings";
     case "debug":
       return "bug";
     case "logs":
       return "scrollText";
+    case "git":
+      return "gitBranch";
     default:
       return "folder";
   }
@@ -171,12 +180,16 @@ export function titleForTab(tab: Tab) {
       return "Nodes";
     case "chat":
       return "Chat";
+    case "models":
+      return "Models";
     case "config":
       return "Config";
     case "debug":
       return "Debug";
     case "logs":
       return "Logs";
+    case "git":
+      return "Git";
     default:
       return "Control";
   }
@@ -208,6 +221,8 @@ export function subtitleForTab(tab: Tab) {
       return "Gateway snapshots, events, and manual RPC calls.";
     case "logs":
       return "Live tail of the gateway file logs.";
+    case "git":
+      return "Git status, staging, commits, and log for the workspace.";
     default:
       return "";
   }

@@ -1,32 +1,62 @@
-import type { EventLogEntry } from "./app-events.ts";
-import type { OpenClawApp } from "./app.ts";
-import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
-import type { GatewayEventFrame, GatewayHelloOk } from "./gateway.ts";
-import type { Tab } from "./navigation.ts";
-import type { UiSettings } from "./storage.ts";
-import type { AgentsListResult, PresenceEntry, HealthSnapshot, StatusSummary } from "./types.ts";
-import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat.ts";
+import type { OpenClawApp } from "./app";
+import type { EventLogEntry } from "./app-events";
+import type { ExecApprovalRequest } from "./controllers/exec-approval";
+import type { ToolApprovalRequest } from "./controllers/tool-approval";
+import type { GatewayEventFrame, GatewayHelloOk } from "./gateway";
+import type { Tab } from "./navigation";
+import type { PaneState } from "./pane-state";
+import type { SplitPaneLayout } from "./split-tree";
+import type { UiSettings } from "./storage";
+import type { ThreadState } from "./thread-state";
+import type {
+  AgentsListResult,
+  PresenceEntry,
+  HealthSnapshot,
+  StatusSummary,
+  SubagentRunInfo,
+  SubagentEventPayload,
+} from "./types";
+import type { SlashCommandEntry } from "./ui-types";
+import { CHAT_SESSIONS_ACTIVE_MINUTES, flushChatQueueForEvent } from "./app-chat";
+import { applySettings, loadCron, refreshActiveTab, setLastActiveSessionKey } from "./app-settings";
 import {
-  applySettings,
-  loadCron,
-  refreshActiveTab,
-  setLastActiveSessionKey,
-} from "./app-settings.ts";
-import { handleAgentEvent, resetToolStream, type AgentEventPayload } from "./app-tool-stream.ts";
-import { loadAgents } from "./controllers/agents.ts";
-import { loadAssistantIdentity } from "./controllers/assistant-identity.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
-import { handleChatEvent, type ChatEventPayload } from "./controllers/chat.ts";
-import { loadDevices } from "./controllers/devices.ts";
+  handleAgentEvent,
+  handleAgentEventForThread,
+  resetToolStream,
+  resetToolStreamForThread,
+  type AgentEventPayload,
+} from "./app-tool-stream";
+import { loadAgents } from "./controllers/agents";
+import { loadAssistantIdentity } from "./controllers/assistant-identity";
+import {
+  abortChatRun,
+  clearAbortPending,
+  hasPendingAbort,
+  loadChatHistory,
+} from "./controllers/chat";
+import {
+  handleChatEvent,
+  handleChatEventForThread,
+  type ChatEventPayload,
+} from "./controllers/chat";
+import { loadDevices } from "./controllers/devices";
 import {
   addExecApproval,
   parseExecApprovalRequested,
   parseExecApprovalResolved,
   removeExecApproval,
-} from "./controllers/exec-approval.ts";
-import { loadNodes } from "./controllers/nodes.ts";
-import { loadSessions } from "./controllers/sessions.ts";
-import { GatewayBrowserClient } from "./gateway.ts";
+} from "./controllers/exec-approval";
+import { loadNodes } from "./controllers/nodes";
+import { loadSessions } from "./controllers/sessions";
+import {
+  addToolApproval,
+  parseToolApprovalRequested,
+  parseToolApprovalResolved,
+  removeToolApproval,
+} from "./controllers/tool-approval";
+import { GatewayBrowserClient } from "./gateway";
+import { playNotificationSound, shouldPlaySound } from "./notification-sound";
+import { allLeaves } from "./split-tree";
 
 type GatewayHost = {
   settings: UiSettings;
@@ -54,6 +84,22 @@ type GatewayHost = {
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
+  toolApprovalQueue: ToolApprovalRequest[];
+  toolApprovalError: string | null;
+  threads: Map<string, ThreadState>;
+  activeThreadId: string | null;
+  sessionKeyToThreadId: Map<string, string>;
+  chatMessages: unknown[];
+  runningSessions: Set<string>;
+  subagentRuns: Map<string, SubagentRunInfo[]>;
+  initDefaultThread: () => void;
+  renameThread: (threadId: string, label: string) => void;
+  slashCommands: SlashCommandEntry[];
+  // Split pane state
+  splitLayout: SplitPaneLayout | null;
+  paneStates: Map<string, PaneState>;
+  loadAllPaneHistories: () => Promise<void>;
+  scrollAllPanesToBottom: () => void;
 };
 
 type SessionDefaultsSnapshot = {
@@ -69,12 +115,8 @@ function normalizeSessionKeyForDefaults(
 ): string {
   const raw = (value ?? "").trim();
   const mainSessionKey = defaults.mainSessionKey?.trim();
-  if (!mainSessionKey) {
-    return raw;
-  }
-  if (!raw) {
-    return mainSessionKey;
-  }
+  if (!mainSessionKey) return raw;
+  if (!raw) return mainSessionKey;
   const mainKey = defaults.mainKey?.trim() || "main";
   const defaultAgentId = defaults.defaultAgentId?.trim();
   const isAlias =
@@ -86,9 +128,7 @@ function normalizeSessionKeyForDefaults(
 }
 
 function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnapshot) {
-  if (!defaults?.mainSessionKey) {
-    return;
-  }
+  if (!defaults?.mainSessionKey) return;
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
   const resolvedSettingsSessionKey = normalizeSessionKeyForDefaults(
     host.settings.sessionKey,
@@ -121,6 +161,8 @@ export function connectGateway(host: GatewayHost) {
   host.connected = false;
   host.execApprovalQueue = [];
   host.execApprovalError = null;
+  host.toolApprovalQueue = [];
+  host.toolApprovalError = null;
 
   host.client?.stop();
   host.client = new GatewayBrowserClient({
@@ -134,17 +176,114 @@ export function connectGateway(host: GatewayHost) {
       host.lastError = null;
       host.hello = hello;
       applySnapshot(host, hello);
-      // Reset orphaned chat run state from before disconnect.
-      // Any in-flight run's final event was lost during the disconnect window.
+
+      // ── Reconnect state reset ──────────────────────────────────────
+      // On reconnect (especially after gateway restart), stale client-side
+      // state must be cleared so the UI accurately reflects the new gateway.
+
+      // 1. Clear runningSessions — the old gateway's runs are gone.
+      //    queryChatStatus below will re-populate for any truly active runs.
+      host.runningSessions = new Set();
+
+      // 2. Clear chatSending — if a send was in-flight when the WS dropped,
+      //    the promise rejected without reaching the finally block, leaving
+      //    chatSending=true forever. This unblocks isChatBusy() → queue flush.
+      (host as unknown as { chatSending: boolean }).chatSending = false;
+
+      // 3. Clear chatRunId — if a run was active when the WS dropped, the
+      //    "final" lifecycle event was lost, leaving chatRunId stale forever.
+      //    queryChatStatus below will re-set it if the run is still active.
+      //    Without this, isChatBusy() stays true and queued messages freeze.
       host.chatRunId = null;
-      (host as unknown as { chatStream: string | null }).chatStream = null;
-      (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
-      resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+
+      // 4. Clear per-thread chatSending and chatRunId for the same reasons.
+      for (const thread of host.threads.values()) {
+        thread.chatSending = false;
+        thread.chatRunId = null;
+      }
+
+      // 5. Clear compaction toast — the "end" event will never arrive from
+      //    the old process.
+      (host as unknown as { compactionStatus: unknown }).compactionStatus = null;
+
+      // 6. Clear subagent runs — will be re-fetched below.
+      host.subagentRuns = new Map();
+      // ──────────────────────────────────────────────────────────────
+
+      // ── Restore active runs IMMEDIATELY ────────────────────────────
+      // queryChatStatus is the fastest path to restoring the stop button
+      // after reconnect. Run it FIRST, before any slow history/session loads.
+      // Incoming delta events also adopt runId (see handleChatEvent), but
+      // queryChatStatus is proactive — it works even if no chunks arrive yet.
+      void queryChatStatus(host).then(() => {
+        // Clear main session stream/tool state only if no active run was restored
+        if (!host.chatRunId) {
+          (host as unknown as { chatStream: string | null }).chatStream = null;
+          (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
+          resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
+        }
+        // Clear per-thread state only for threads without an active run
+        for (const thread of host.threads.values()) {
+          if (!thread.chatRunId) {
+            thread.chatStream = null;
+            thread.chatStreamStartedAt = null;
+            resetToolStreamForThread(thread);
+          }
+        }
+
+        // ── Retry pending aborts ──────────────────────────────────────
+        // If the user clicked stop while disconnected (or the abort RPC
+        // failed mid-flight), the intent was queued. Now that we're
+        // reconnected and know which runs are active, retry the abort.
+        if (hasPendingAbort(host.sessionKey) && host.chatRunId) {
+          clearAbortPending(host.sessionKey);
+          void abortChatRun(host as unknown as OpenClawApp);
+        }
+        // Also check visible split-pane threads
+        for (const thread of host.threads.values()) {
+          const threadSessionKey = thread.descriptor?.sessionKey;
+          if (threadSessionKey && hasPendingAbort(threadSessionKey) && thread.chatRunId) {
+            clearAbortPending(threadSessionKey);
+            if (host.client && host.connected) {
+              void host.client
+                .request("chat.abort", {
+                  sessionKey: threadSessionKey,
+                  runId: thread.chatRunId,
+                })
+                .catch(() => {});
+            }
+          }
+        }
+        // ──────────────────────────────────────────────────────────────
+
+        // Flush queued messages — after reconnect, if no run is active,
+        // queued messages would sit forever without this explicit flush.
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      });
+      // ──────────────────────────────────────────────────────────────
+
       void loadAssistantIdentity(host as unknown as OpenClawApp);
       void loadAgents(host as unknown as OpenClawApp);
       void loadNodes(host as unknown as OpenClawApp, { quiet: true });
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
-      void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]);
+      void fetchSubagentRuns(host);
+      // Initialize default thread if none exist yet
+      host.initDefaultThread();
+      // Mark all threads (and host) as loading before async history fetch
+      // so the session picker doesn't flash while history loads.
+      (host as unknown as { chatLoading: boolean }).chatLoading = true;
+      for (const thread of host.threads.values()) {
+        thread.chatLoading = true;
+      }
+      void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]).then(() => {
+        // Load history for all visible split panes (non-focused panes need data)
+        void host.loadAllPaneHistories().then(() => {
+          // Force all panes to bottom after history loads
+          host.scrollAllPanesToBottom();
+        });
+      });
     },
     onClose: ({ code, reason }) => {
       host.connected = false;
@@ -155,7 +294,9 @@ export function connectGateway(host: GatewayHost) {
     },
     onEvent: (evt) => handleGatewayEvent(host, evt),
     onGap: ({ expected, received }) => {
-      host.lastError = `event gap detected (expected seq ${expected}, got ${received}); refresh recommended`;
+      // Seq gaps are harmless for chat events (keyed by runId, not global seq).
+      // Log for debugging but don't surface to the user.
+      console.warn(`[gateway] seq gap: expected ${expected}, got ${received}`);
     },
   });
   host.client.start();
@@ -179,18 +320,142 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "agent") {
-    if (host.onboarding) {
-      return;
+    if (host.onboarding) return;
+    const agentPayload = evt.payload as AgentEventPayload | undefined;
+    const agentSessionKey = agentPayload?.sessionKey;
+
+    // In split-pane mode, check if any visible pane matches the session key
+    if (host.splitLayout && agentSessionKey) {
+      const visibleKeys = new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId));
+      if (!visibleKeys.has(agentSessionKey)) {
+        // Route to background thread: skip tool stream processing
+        const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+        if (bgThreadId && bgThreadId !== host.activeThreadId) {
+          return;
+        }
+      } else if (agentSessionKey !== host.sessionKey) {
+        // Visible-but-not-focused pane: route to per-thread tool stream
+        const paneThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+        const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
+        if (paneThread) {
+          handleAgentEventForThread(paneThread, agentPayload);
+          host.threads = new Map(host.threads);
+        }
+        return;
+      }
+    } else if (agentSessionKey && agentSessionKey !== host.sessionKey) {
+      // Single pane mode: existing background thread logic
+      const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+      if (bgThreadId && bgThreadId !== host.activeThreadId) {
+        return;
+      }
     }
-    handleAgentEvent(
-      host as unknown as Parameters<typeof handleAgentEvent>[0],
-      evt.payload as AgentEventPayload | undefined,
-    );
+
+    // Focused session: use host-level tool stream
+    handleAgentEvent(host as unknown as Parameters<typeof handleAgentEvent>[0], agentPayload);
     return;
   }
 
   if (evt.event === "chat") {
     const payload = evt.payload as ChatEventPayload | undefined;
+    const eventSessionKey = payload?.sessionKey;
+
+    // Track global running-sessions state (before any early returns)
+    if (eventSessionKey && payload) {
+      if (payload.state === "delta") {
+        if (!host.runningSessions.has(eventSessionKey)) {
+          host.runningSessions = new Set([...host.runningSessions, eventSessionKey]);
+        }
+      } else if (
+        payload.state === "final" ||
+        payload.state === "error" ||
+        payload.state === "aborted"
+      ) {
+        if (host.runningSessions.has(eventSessionKey)) {
+          const next = new Set(host.runningSessions);
+          next.delete(eventSessionKey);
+          host.runningSessions = next;
+        }
+      }
+    }
+
+    // In split-pane mode, visible pane sessions should not be treated as background
+    const visibleSessionKeys = host.splitLayout
+      ? new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId))
+      : null;
+
+    // Check if this event is for a background thread
+    const isVisibleInPane = visibleSessionKeys?.has(eventSessionKey ?? "");
+    if (eventSessionKey && eventSessionKey !== host.sessionKey && !isVisibleInPane) {
+      const bgThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
+      if (bgThreadId && bgThreadId !== host.activeThreadId) {
+        const bgThread = host.threads.get(bgThreadId);
+        if (bgThread) {
+          bgThread.unreadCount++;
+          bgThread.hasNewMessages = true;
+          bgThread.descriptor.lastActivityAt = Date.now();
+          if (
+            payload?.state === "final" ||
+            payload?.state === "error" ||
+            payload?.state === "aborted"
+          ) {
+            bgThread.chatRunId = null;
+            bgThread.chatStream = null;
+            bgThread.chatStreamStartedAt = null;
+          }
+          // Trigger re-render for thread list unread dots
+          host.threads = new Map(host.threads);
+        }
+        return;
+      }
+    }
+
+    // Route chat events for visible-but-not-focused panes to their thread state.
+    // Full lifecycle: state machine, tool stream reset, queue flush, auto-rename.
+    if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
+      const paneThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
+      const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
+      if (paneThread && payload) {
+        const threadState = handleChatEventForThread(paneThread, payload);
+
+        if (threadState === "final" || threadState === "error" || threadState === "aborted") {
+          resetToolStreamForThread(paneThread);
+          const runId = payload.runId;
+          if (runId && host.refreshSessionsAfterChat.has(runId)) {
+            host.refreshSessionsAfterChat.delete(runId);
+            if (threadState === "final") {
+              void loadSessions(host as unknown as OpenClawApp, {
+                activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+              });
+              // Delayed refresh to pick up server-side auto-title
+              setTimeout(() => {
+                void loadSessions(host as unknown as OpenClawApp, {
+                  activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+                });
+              }, 3000);
+            }
+          }
+
+          if (threadState === "final" && eventSessionKey && paneThreadId) {
+            void loadChatHistoryForThread(host, eventSessionKey, paneThreadId).then(() => {
+              // Flush queued messages for this thread's session
+              void flushChatQueueForEvent(
+                host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+              );
+            });
+          } else {
+            void flushChatQueueForEvent(
+              host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+            );
+          }
+        }
+
+        paneThread.descriptor.lastActivityAt = Date.now();
+        host.threads = new Map(host.threads);
+      }
+      return;
+    }
+
     if (payload?.sessionKey) {
       setLastActiveSessionKey(
         host as unknown as Parameters<typeof setLastActiveSessionKey>[0],
@@ -200,7 +465,6 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     const state = handleChatEvent(host as unknown as OpenClawApp, payload);
     if (state === "final" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
-      void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
       const runId = payload?.runId;
       if (runId && host.refreshSessionsAfterChat.has(runId)) {
         host.refreshSessionsAfterChat.delete(runId);
@@ -208,11 +472,36 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           void loadSessions(host as unknown as OpenClawApp, {
             activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
           });
+          // Delayed refresh to pick up server-side auto-title
+          setTimeout(() => {
+            void loadSessions(host as unknown as OpenClawApp, {
+              activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+            });
+          }, 3000);
         }
       }
-    }
-    if (state === "final") {
-      void loadChatHistory(host as unknown as OpenClawApp);
+      if (state === "final") {
+        // Play notification sound if enabled and user isn't watching
+        if (host.settings.notificationSound) {
+          const tabFocused = document.hasFocus();
+          const chatVisible = host.tab === "chat";
+          if (shouldPlaySound(tabFocused, chatVisible)) {
+            playNotificationSound();
+          }
+        }
+        // Load history before flushing the queue so the optimistic user
+        // message appended by sendChatMessage isn't overwritten by the
+        // history reload.
+        void loadChatHistory(host as unknown as OpenClawApp).then(() => {
+          void flushChatQueueForEvent(
+            host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+          );
+        });
+      } else {
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      }
     }
     return;
   }
@@ -254,6 +543,133 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       host.execApprovalQueue = removeExecApproval(host.execApprovalQueue, resolved.id);
     }
   }
+
+  if (evt.event === "tool.approval.requested") {
+    const entry = parseToolApprovalRequested(evt.payload);
+    if (entry) {
+      host.toolApprovalQueue = addToolApproval(host.toolApprovalQueue, entry);
+      host.toolApprovalError = null;
+      const delay = Math.max(0, entry.expiresAtMs - Date.now() + 500);
+      window.setTimeout(() => {
+        host.toolApprovalQueue = removeToolApproval(host.toolApprovalQueue, entry.id);
+      }, delay);
+    }
+    return;
+  }
+
+  if (evt.event === "tool.approval.resolved") {
+    const resolved = parseToolApprovalResolved(evt.payload);
+    if (resolved) {
+      host.toolApprovalQueue = removeToolApproval(host.toolApprovalQueue, resolved.id);
+    }
+  }
+
+  if (evt.event === "subagent") {
+    applySubagentEvent(host, evt.payload as SubagentEventPayload | undefined);
+    return;
+  }
+}
+
+/**
+ * Load chat history into a specific (non-active) thread state.
+ * Used when a visible-but-not-focused pane's run completes.
+ */
+async function loadChatHistoryForThread(host: GatewayHost, sessionKey: string, threadId: string) {
+  if (!host.connected || !host.client) {
+    return;
+  }
+  const thread = host.threads.get(threadId);
+  if (!thread) {
+    return;
+  }
+  thread._historyLoading = true;
+  try {
+    const res = await host.client.request("chat.history", {
+      sessionKey,
+      limit: 200,
+    });
+    thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+    thread.chatThinkingLevel = res.thinkingLevel ?? null;
+    host.threads = new Map(host.threads);
+  } catch {
+    // Non-critical
+  } finally {
+    thread._historyLoading = false;
+  }
+}
+
+/**
+ * Query chat.status for the current session (and visible split panes)
+ * to restore the stop button after reconnect.
+ */
+async function queryChatStatus(host: GatewayHost) {
+  if (!host.connected || !host.client) {
+    return;
+  }
+
+  // Collect session keys that have an active run so we can rebuild runningSessions
+  const activeSessionKeys: string[] = [];
+
+  try {
+    const res = await host.client.request("chat.status", {
+      sessionKey: host.sessionKey,
+    });
+    if (res?.activeRun?.runId) {
+      host.chatRunId = res.activeRun.runId;
+      activeSessionKeys.push(host.sessionKey);
+      // Restore stream state so the UI shows the correct visual:
+      // - If streamText has content → show the streamed text
+      // - If streamText is empty/null → show the three-dot reading indicator
+      // Either way, chatStream must be non-null to signal "active run".
+      const streamText =
+        typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+      (host as unknown as { chatStream: string | null }).chatStream = streamText;
+      if (!(host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt) {
+        (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt =
+          Date.now();
+      }
+    }
+  } catch {
+    // Graceful degradation: older gateways may not support chat.status
+  }
+  // Also check visible split panes
+  if (host.splitLayout) {
+    const leaves = allLeaves(host.splitLayout.root);
+    for (const leaf of leaves) {
+      if (leaf.threadId === host.sessionKey) {
+        continue;
+      }
+      try {
+        const res = await host.client.request("chat.status", {
+          sessionKey: leaf.threadId,
+        });
+        if (res?.activeRun?.runId) {
+          activeSessionKeys.push(leaf.threadId);
+          const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
+          const thread = threadMapId ? host.threads.get(threadMapId) : null;
+          if (thread) {
+            thread.chatRunId = res.activeRun.runId;
+            // Restore stream state: non-null chatStream signals "active run"
+            const paneStreamText =
+              typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
+            thread.chatStream = paneStreamText;
+            if (!thread.chatStreamStartedAt) {
+              thread.chatStreamStartedAt = Date.now();
+            }
+            host.threads = new Map(host.threads);
+          }
+        }
+      } catch {
+        // Ignore per-pane failures
+      }
+    }
+  }
+
+  // Rebuild runningSessions from verified active runs.
+  // We cleared runningSessions on reconnect; now restore only confirmed-active ones.
+  if (activeSessionKeys.length > 0) {
+    host.runningSessions = new Set(activeSessionKeys);
+  }
 }
 
 export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
@@ -262,6 +678,7 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
         presence?: PresenceEntry[];
         health?: HealthSnapshot;
         sessionDefaults?: SessionDefaultsSnapshot;
+        slashCommands?: SlashCommandEntry[];
       }
     | undefined;
   if (snapshot?.presence && Array.isArray(snapshot.presence)) {
@@ -273,4 +690,83 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
   if (snapshot?.sessionDefaults) {
     applySessionDefaults(host, snapshot.sessionDefaults);
   }
+  if (snapshot?.slashCommands && Array.isArray(snapshot.slashCommands)) {
+    host.slashCommands = snapshot.slashCommands;
+  }
+}
+
+// ── Sub-agent status ──────────────────────────────────────────────
+
+/** Stale run removal delay (ms) — keep completed runs briefly for the "done" flash. */
+const SUBAGENT_DONE_LINGER_MS = 5_000;
+
+async function fetchSubagentRuns(host: GatewayHost) {
+  if (!host.connected || !host.client) return;
+  try {
+    const res = await host.client.request("subagents.list", {});
+    const runs = (res as { runs?: SubagentRunInfo[] }).runs;
+    if (!Array.isArray(runs)) return;
+    const map = new Map<string, SubagentRunInfo[]>();
+    for (const r of runs) {
+      const key = r.requesterSessionKey;
+      const list = map.get(key) ?? [];
+      list.push(r);
+      map.set(key, list);
+    }
+    host.subagentRuns = map;
+  } catch {
+    // Graceful degradation: older gateways may not support subagents.list
+  }
+}
+
+function applySubagentEvent(host: GatewayHost, payload: SubagentEventPayload | undefined) {
+  if (!payload?.runId || !payload.requesterSessionKey) return;
+
+  const map = new Map(host.subagentRuns);
+  const key = payload.requesterSessionKey;
+  const existing = (map.get(key) ?? []).slice();
+
+  if (payload.phase === "start") {
+    // Add or update
+    const idx = existing.findIndex((r) => r.runId === payload.runId);
+    const info: SubagentRunInfo = {
+      runId: payload.runId,
+      childSessionKey: payload.childSessionKey,
+      requesterSessionKey: payload.requesterSessionKey,
+      task: payload.task,
+      label: payload.label,
+      createdAt: payload.startedAt ?? Date.now(),
+      startedAt: payload.startedAt,
+    };
+    if (idx >= 0) {
+      existing[idx] = info;
+    } else {
+      existing.push(info);
+    }
+    map.set(key, existing);
+  } else {
+    // end or error — update with outcome, then schedule removal
+    const idx = existing.findIndex((r) => r.runId === payload.runId);
+    if (idx >= 0) {
+      existing[idx] = {
+        ...existing[idx],
+        endedAt: payload.endedAt ?? Date.now(),
+        outcome: payload.outcome,
+      };
+      map.set(key, existing);
+    }
+    // Schedule removal after linger
+    window.setTimeout(() => {
+      const current = new Map(host.subagentRuns);
+      const list = (current.get(key) ?? []).filter((r) => r.runId !== payload.runId);
+      if (list.length > 0) {
+        current.set(key, list);
+      } else {
+        current.delete(key);
+      }
+      host.subagentRuns = current;
+    }, SUBAGENT_DONE_LINGER_MS);
+  }
+
+  host.subagentRuns = map;
 }

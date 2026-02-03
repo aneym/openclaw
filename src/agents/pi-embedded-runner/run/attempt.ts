@@ -7,6 +7,7 @@ import os from "node:os";
 import type { EmbeddedRunAttemptParams, EmbeddedRunAttemptResult } from "./types.js";
 import { resolveHeartbeatPrompt } from "../../../auto-reply/heartbeat.js";
 import { resolveChannelCapabilities } from "../../../config/channel-capabilities.js";
+import { emitAgentEvent } from "../../../infra/agent-events.js";
 import { getMachineDisplayName } from "../../../infra/machine-name.js";
 import { MAX_IMAGE_BYTES } from "../../../media/constants.js";
 import { getGlobalHookRunner } from "../../../plugins/hook-runner-global.js";
@@ -855,6 +856,24 @@ export async function runEmbeddedAttempt(
             .catch((err) => {
               log.warn(`agent_end hook failed: ${err}`);
             });
+        }
+
+        // Emit lifecycle error event when there's a prompt error
+        // This ensures WebChat UI shows error messages instead of blank responses
+        if (promptError) {
+          const errorMsg = describeUnknownError(promptError);
+          console.log(
+            `[ATTEMPT] Emitting lifecycle error for runId=${params.runId}: ${errorMsg.substring(0, 100)}`,
+          );
+          emitAgentEvent({
+            runId: params.runId,
+            stream: "lifecycle",
+            data: {
+              phase: "error",
+              error: errorMsg,
+            },
+          });
+          console.log(`[ATTEMPT] Lifecycle error event emitted for runId=${params.runId}`);
         }
       } finally {
         clearTimeout(abortTimer);

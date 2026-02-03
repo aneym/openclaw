@@ -1,16 +1,17 @@
-import type { OpenClawApp } from "./app.ts";
-import type { GatewayHelloOk } from "./gateway.ts";
-import type { ChatAttachment, ChatQueueItem } from "./ui-types.ts";
+import type { OpenClawApp } from "./app";
+import type { GatewayHelloOk } from "./gateway";
+import type { ChatAttachment, ChatQueueItem } from "./ui-types";
 import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js";
-import { scheduleChatScroll } from "./app-scroll.ts";
-import { setLastActiveSessionKey } from "./app-settings.ts";
-import { resetToolStream } from "./app-tool-stream.ts";
-import { abortChatRun, loadChatHistory, sendChatMessage } from "./controllers/chat.ts";
-import { loadSessions } from "./controllers/sessions.ts";
-import { normalizeBasePath } from "./navigation.ts";
-import { generateUUID } from "./uuid.ts";
+import { scheduleChatScroll, schedulePaneChatScroll } from "./app-scroll";
+import { setLastActiveSessionKey } from "./app-settings";
+import { resetToolStream } from "./app-tool-stream";
+import { abortChatRun, loadChatHistory, markAbortPending, sendChatMessage } from "./controllers/chat";
+import { loadSessions } from "./controllers/sessions";
+import { clearDraft, clearAttachments, saveQueue } from "./draft-storage";
+import { normalizeBasePath } from "./navigation";
+import { generateUUID } from "./uuid";
 
-export type ChatHost = {
+type ChatHost = {
   connected: boolean;
   chatMessage: string;
   chatAttachments: ChatAttachment[];
@@ -22,9 +23,24 @@ export type ChatHost = {
   hello: GatewayHelloOk | null;
   chatAvatarUrl: string | null;
   refreshSessionsAfterChat: Set<string>;
+  splitLayout: unknown | null;
+  focusedPaneId: string | null;
 };
 
-export const CHAT_SESSIONS_ACTIVE_MINUTES = 120;
+/** Schedule a chat scroll, scoping to the focused pane in split-pane mode. */
+function scrollChat(host: ChatHost, force: boolean) {
+  if (host.splitLayout && host.focusedPaneId) {
+    schedulePaneChatScroll(
+      host as unknown as Parameters<typeof schedulePaneChatScroll>[0],
+      host.focusedPaneId,
+      force,
+    );
+  } else {
+    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0], force);
+  }
+}
+
+export const CHAT_SESSIONS_ACTIVE_MINUTES = 0; // 0 = no filter, fetch all sessions
 
 export function isChatBusy(host: ChatHost) {
   return host.chatSending || Boolean(host.chatRunId);
@@ -61,10 +77,12 @@ function isChatResetCommand(text: string) {
 }
 
 export async function handleAbortChat(host: ChatHost) {
+  host.chatMessage = "";
   if (!host.connected) {
+    // Connection is down — queue the abort for retry after reconnect.
+    markAbortPending(host.sessionKey);
     return;
   }
-  host.chatMessage = "";
   await abortChatRun(host as unknown as OpenClawApp);
 }
 
@@ -79,16 +97,25 @@ function enqueueChatMessage(
   if (!trimmed && !hasAttachments) {
     return;
   }
+  const id = generateUUID();
+  console.log(
+    "[CHAT-QUEUE] Enqueuing message: id=%s, text=%s, chatRunId=%s, chatSending=%s",
+    id,
+    trimmed.substring(0, 60),
+    host.chatRunId,
+    host.chatSending,
+  );
   host.chatQueue = [
     ...host.chatQueue,
     {
-      id: generateUUID(),
+      id,
       text: trimmed,
       createdAt: Date.now(),
       attachments: hasAttachments ? attachments?.map((att) => ({ ...att })) : undefined,
       refreshSessions,
     },
   ];
+  saveQueue(host.sessionKey, host.chatQueue);
 }
 
 async function sendChatMessageNow(
@@ -124,7 +151,7 @@ async function sendChatMessageNow(
   if (ok && opts?.restoreAttachments && opts.previousAttachments?.length) {
     host.chatAttachments = opts.previousAttachments;
   }
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  scrollChat(host, true);
   if (ok && !host.chatRunId) {
     void flushChatQueue(host);
   }
@@ -136,30 +163,107 @@ async function sendChatMessageNow(
 
 async function flushChatQueue(host: ChatHost) {
   if (!host.connected || isChatBusy(host)) {
+    if (host.chatQueue.length > 0) {
+      console.log(
+        "[CHAT-QUEUE] flushChatQueue skipped: connected=%s, chatSending=%s, chatRunId=%s, queueLen=%d",
+        host.connected,
+        host.chatSending,
+        host.chatRunId,
+        host.chatQueue.length,
+      );
+    }
     return;
   }
   const [next, ...rest] = host.chatQueue;
   if (!next) {
     return;
   }
+  console.log("[CHAT-QUEUE] Flushing queued message: id=%s, text=%s", next.id, next.text.substring(0, 60));
   host.chatQueue = rest;
+  saveQueue(host.sessionKey, host.chatQueue);
   const ok = await sendChatMessageNow(host, next.text, {
     attachments: next.attachments,
     refreshSessions: next.refreshSessions,
   });
   if (!ok) {
     host.chatQueue = [next, ...host.chatQueue];
+    saveQueue(host.sessionKey, host.chatQueue);
   }
 }
 
 export function removeQueuedMessage(host: ChatHost, id: string) {
   host.chatQueue = host.chatQueue.filter((item) => item.id !== id);
+  saveQueue(host.sessionKey, host.chatQueue);
+}
+
+export function clearAllQueuedMessages(host: ChatHost) {
+  host.chatQueue = [];
+  saveQueue(host.sessionKey, host.chatQueue);
+}
+
+/**
+ * Poll until `host.chatRunId` clears (abort completed) or timeout.
+ * Returns true if abort completed, false on timeout.
+ */
+export async function waitForAbortComplete(
+  host: ChatHost,
+  timeoutMs = 5000,
+): Promise<boolean> {
+  if (!host.chatRunId) return true;
+  const start = Date.now();
+  return new Promise((resolve) => {
+    const check = () => {
+      if (!host.chatRunId) {
+        resolve(true);
+        return;
+      }
+      if (Date.now() - start > timeoutMs) {
+        resolve(false);
+        return;
+      }
+      setTimeout(check, 50);
+    };
+    check();
+  });
+}
+
+/**
+ * Abort current run, wait for it to clear, then send a message immediately.
+ */
+export async function sendChatImmediately(
+  host: ChatHost,
+  message: string,
+  attachments?: ChatAttachment[],
+) {
+  await abortChatRun(host as unknown as OpenClawApp);
+  const cleared = await waitForAbortComplete(host);
+  if (!cleared) {
+    // Timeout — enqueue as fallback so the message isn't lost
+    enqueueChatMessage(host, message, attachments);
+    return;
+  }
+  // Reload history so the aborted partial response is visible
+  await loadChatHistory(host as unknown as OpenClawApp);
+  await sendChatMessageNow(host, message, {
+    attachments: attachments?.length ? attachments : undefined,
+  });
+}
+
+/**
+ * Pull a specific queued message out and send it immediately (abort first).
+ */
+export async function sendQueuedMessageNow(host: ChatHost, id: string) {
+  const item = host.chatQueue.find((q) => q.id === id);
+  if (!item) return;
+  host.chatQueue = host.chatQueue.filter((q) => q.id !== id);
+  saveQueue(host.sessionKey, host.chatQueue);
+  await sendChatImmediately(host, item.text, item.attachments);
 }
 
 export async function handleSendChat(
   host: ChatHost,
   messageOverride?: string,
-  opts?: { restoreDraft?: boolean },
+  opts?: { restoreDraft?: boolean; sendImmediately?: boolean },
 ) {
   if (!host.connected) {
     return;
@@ -185,9 +289,18 @@ export async function handleSendChat(
     host.chatMessage = "";
     // Clear attachments when sending
     host.chatAttachments = [];
+    clearDraft(host.sessionKey);
+    clearAttachments(host.sessionKey);
   }
 
+  // Scroll to bottom immediately so the user sees their message
+  scrollChat(host, true);
+
   if (isChatBusy(host)) {
+    if (opts?.sendImmediately) {
+      await sendChatImmediately(host, message, attachmentsToSend);
+      return;
+    }
     enqueueChatMessage(host, message, attachmentsToSend, refreshSessions);
     return;
   }

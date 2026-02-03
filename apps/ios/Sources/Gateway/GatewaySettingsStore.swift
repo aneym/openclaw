@@ -83,6 +83,14 @@ enum GatewaySettingsStore {
         let token = KeychainStore.loadString(service: self.gatewayService, account: account)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         if token?.isEmpty == false { return token }
+        #if targetEnvironment(simulator)
+        // Allow injecting token via environment for simulator testing.
+        if let envToken = ProcessInfo.processInfo.environment["OPENCLAW_GATEWAY_TOKEN"],
+           !envToken.isEmpty
+        {
+            return envToken
+        }
+        #endif
         return nil
     }
 

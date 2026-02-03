@@ -60,6 +60,10 @@ export type CronJobState = {
   lastStatus?: "ok" | "error" | "skipped";
   lastError?: string;
   lastDurationMs?: number;
+  /** Number of consecutive failures for exponential backoff calculation. */
+  consecutiveFailures?: number;
+  /** The reason for the last failure (rate_limit, overloaded, etc.). */
+  lastFailureReason?: string;
 };
 
 export type CronJob = {
@@ -73,6 +77,8 @@ export type CronJob = {
   updatedAtMs: number;
   schedule: CronSchedule;
   sessionTarget: CronSessionTarget;
+  /** Override the resolved session key (e.g. target a specific thread). */
+  sessionKey?: string;
   wakeMode: CronWakeMode;
   payload: CronPayload;
   isolation?: CronIsolation;
@@ -86,9 +92,11 @@ export type CronStoreFile = {
 
 export type CronJobCreate = Omit<CronJob, "id" | "createdAtMs" | "updatedAtMs" | "state"> & {
   state?: Partial<CronJobState>;
+  sessionKey?: string;
 };
 
 export type CronJobPatch = Partial<Omit<CronJob, "id" | "createdAtMs" | "state" | "payload">> & {
   payload?: CronPayloadPatch;
   state?: Partial<CronJobState>;
+  sessionKey?: string;
 };

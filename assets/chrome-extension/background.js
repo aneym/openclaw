@@ -1,4 +1,4 @@
-const DEFAULT_PORT = 18792
+const DEFAULT_PORTS = [18792]
 
 const BADGE = {
   on: { text: 'ON', color: '#FF5A36' },
@@ -7,24 +7,26 @@ const BADGE = {
   error: { text: '!', color: '#B91C1C' },
 }
 
-/** @type {WebSocket|null} */
-let relayWs = null
-/** @type {Promise<void>|null} */
-let relayConnectPromise = null
+// ── Per-relay state ──────────────────────────────────────────────────
+// Each relay port gets its own WebSocket and pending-response map.
+// Tabs are shared across all relays.
+
+/** @type {Map<number, {ws: WebSocket|null, connectPromise: Promise<void>|null, pending: Map<number, {resolve:(v:any)=>void, reject:(e:Error)=>void}>}>} */
+const relays = new Map()
+
+// ── Shared tab state ─────────────────────────────────────────────────
 
 let debuggerListenersInstalled = false
-
 let nextSession = 1
 
-/** @type {Map<number, {state:'connecting'|'connected', sessionId?:string, targetId?:string, attachOrder?:number}>} */
+/** @type {Map<number, {state:'connecting'|'connected', sessionId?:string, targetId?:string, attachOrder?:number, targetInfo?:any}>} */
 const tabs = new Map()
 /** @type {Map<string, number>} */
 const tabBySession = new Map()
 /** @type {Map<string, number>} */
 const childSessionToTab = new Map()
 
-/** @type {Map<number, {resolve:(v:any)=>void, reject:(e:Error)=>void}>} */
-const pending = new Map()
+// ── Helpers ──────────────────────────────────────────────────────────
 
 function nowStack() {
   try {
@@ -34,12 +36,28 @@ function nowStack() {
   }
 }
 
-async function getRelayPort() {
-  const stored = await chrome.storage.local.get(['relayPort'])
-  const raw = stored.relayPort
-  const n = Number.parseInt(String(raw || ''), 10)
-  if (!Number.isFinite(n) || n <= 0 || n > 65535) return DEFAULT_PORT
-  return n
+async function getRelayPorts() {
+  const stored = await chrome.storage.local.get(['relayPort', 'relayPorts'])
+  // Prefer relayPorts array (new format)
+  if (Array.isArray(stored.relayPorts) && stored.relayPorts.length > 0) {
+    const ports = stored.relayPorts
+      .map((p) => Number.parseInt(String(p), 10))
+      .filter((n) => Number.isFinite(n) && n > 0 && n <= 65535)
+    if (ports.length > 0) return ports
+  }
+  // Backward compat: single relayPort
+  const n = Number.parseInt(String(stored.relayPort || ''), 10)
+  if (Number.isFinite(n) && n > 0 && n <= 65535) return [n]
+  return [...DEFAULT_PORTS]
+}
+
+function getRelay(port) {
+  let r = relays.get(port)
+  if (!r) {
+    r = { ws: null, connectPromise: null, pending: new Map() }
+    relays.set(port, r)
+  }
+  return r
 }
 
 function setBadge(tabId, kind) {
@@ -49,12 +67,55 @@ function setBadge(tabId, kind) {
   void chrome.action.setBadgeTextColor({ tabId, color: '#FFFFFF' }).catch(() => {})
 }
 
-async function ensureRelayConnection() {
-  if (relayWs && relayWs.readyState === WebSocket.OPEN) return
-  if (relayConnectPromise) return await relayConnectPromise
+function sendToRelay(relay, payload) {
+  const ws = relay.ws
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    throw new Error('Relay not connected')
+  }
+  ws.send(JSON.stringify(payload))
+}
 
-  relayConnectPromise = (async () => {
-    const port = await getRelayPort()
+/** Send a payload to every connected relay. */
+function broadcastToAllRelays(payload) {
+  const msg = JSON.stringify(payload)
+  for (const relay of relays.values()) {
+    if (relay.ws && relay.ws.readyState === WebSocket.OPEN) {
+      try {
+        relay.ws.send(msg)
+      } catch {
+        // ignore – relay will be cleaned up on close
+      }
+    }
+  }
+}
+
+/** True if at least one relay WebSocket is open. */
+function anyRelayConnected() {
+  for (const relay of relays.values()) {
+    if (relay.ws && relay.ws.readyState === WebSocket.OPEN) return true
+  }
+  return false
+}
+
+async function maybeOpenHelpOnce() {
+  try {
+    const stored = await chrome.storage.local.get(['helpOnErrorShown'])
+    if (stored.helpOnErrorShown === true) return
+    await chrome.storage.local.set({ helpOnErrorShown: true })
+    await chrome.runtime.openOptionsPage()
+  } catch {
+    // ignore
+  }
+}
+
+// ── Relay connections ────────────────────────────────────────────────
+
+async function ensureRelayConnection(port) {
+  const relay = getRelay(port)
+  if (relay.ws && relay.ws.readyState === WebSocket.OPEN) return
+  if (relay.connectPromise) return await relay.connectPromise
+
+  relay.connectPromise = (async () => {
     const httpBase = `http://127.0.0.1:${port}`
     const wsUrl = `ws://127.0.0.1:${port}/extension`
 
@@ -66,7 +127,7 @@ async function ensureRelayConnection() {
     }
 
     const ws = new WebSocket(wsUrl)
-    relayWs = ws
+    relay.ws = ws
 
     await new Promise((resolve, reject) => {
       const t = setTimeout(() => reject(new Error('WebSocket connect timeout')), 5000)
@@ -84,77 +145,97 @@ async function ensureRelayConnection() {
       }
     })
 
-    ws.onmessage = (event) => void onRelayMessage(String(event.data || ''))
-    ws.onclose = () => onRelayClosed('closed')
-    ws.onerror = () => onRelayClosed('error')
+    ws.onmessage = (event) => void onRelayMessage(port, String(event.data || ''))
+    ws.onclose = () => onRelayClosed(port, 'closed')
+    ws.onerror = () => onRelayClosed(port, 'error')
 
     if (!debuggerListenersInstalled) {
       debuggerListenersInstalled = true
       chrome.debugger.onEvent.addListener(onDebuggerEvent)
       chrome.debugger.onDetach.addListener(onDebuggerDetach)
     }
+
+    // Announce any already-attached tabs to the newly connected relay
+    announceExistingTabsToRelay(relay)
   })()
 
   try {
-    await relayConnectPromise
+    await relay.connectPromise
   } finally {
-    relayConnectPromise = null
+    relay.connectPromise = null
   }
 }
 
-function onRelayClosed(reason) {
-  relayWs = null
-  for (const [id, p] of pending.entries()) {
-    pending.delete(id)
-    p.reject(new Error(`Relay disconnected (${reason})`))
-  }
-
-  for (const tabId of tabs.keys()) {
-    void chrome.debugger.detach({ tabId }).catch(() => {})
-    setBadge(tabId, 'connecting')
-    void chrome.action.setTitle({
-      tabId,
-      title: 'OpenClaw Browser Relay: disconnected (click to re-attach)',
-    })
-  }
-  tabs.clear()
-  tabBySession.clear()
-  childSessionToTab.clear()
-}
-
-function sendToRelay(payload) {
-  const ws = relayWs
-  if (!ws || ws.readyState !== WebSocket.OPEN) {
-    throw new Error('Relay not connected')
-  }
-  ws.send(JSON.stringify(payload))
-}
-
-async function maybeOpenHelpOnce() {
-  try {
-    const stored = await chrome.storage.local.get(['helpOnErrorShown'])
-    if (stored.helpOnErrorShown === true) return
-    await chrome.storage.local.set({ helpOnErrorShown: true })
-    await chrome.runtime.openOptionsPage()
-  } catch {
-    // ignore
-  }
-}
-
-function requestFromRelay(command) {
-  const id = command.id
-  return new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject })
+/** When a relay (re)connects, replay Target.attachedToTarget for every attached tab. */
+function announceExistingTabsToRelay(relay) {
+  for (const tab of tabs.values()) {
+    if (tab.state !== 'connected' || !tab.sessionId || !tab.targetId) continue
     try {
-      sendToRelay(command)
-    } catch (err) {
-      pending.delete(id)
-      reject(err instanceof Error ? err : new Error(String(err)))
+      sendToRelay(relay, {
+        method: 'forwardCDPEvent',
+        params: {
+          method: 'Target.attachedToTarget',
+          params: {
+            sessionId: tab.sessionId,
+            targetInfo: tab.targetInfo
+              ? { ...tab.targetInfo, attached: true }
+              : { targetId: tab.targetId, type: 'page', attached: true },
+            waitingForDebugger: false,
+          },
+        },
+      })
+    } catch {
+      // ignore – will be handled on next command
     }
-  })
+  }
 }
 
-async function onRelayMessage(text) {
+/**
+ * Connect to all configured relay ports. Succeeds if at least one connects.
+ * Non-reachable ports are silently skipped.
+ */
+async function ensureAllRelayConnections() {
+  const ports = await getRelayPorts()
+  const results = await Promise.allSettled(ports.map((p) => ensureRelayConnection(p)))
+  const anySuccess = results.some((r) => r.status === 'fulfilled')
+  if (!anySuccess) {
+    const errors = results
+      .filter((r) => r.status === 'rejected')
+      .map((r) => r.reason?.message || String(r.reason))
+    throw new Error(`No relay servers reachable: ${errors.join('; ')}`)
+  }
+}
+
+function onRelayClosed(port, reason) {
+  const relay = getRelay(port)
+  relay.ws = null
+
+  // Reject any pending requests for this relay
+  for (const [id, p] of relay.pending.entries()) {
+    relay.pending.delete(id)
+    p.reject(new Error(`Relay :${port} disconnected (${reason})`))
+  }
+
+  // Only tear down tabs if NO relays remain connected
+  if (!anyRelayConnected()) {
+    for (const tabId of tabs.keys()) {
+      void chrome.debugger.detach({ tabId }).catch(() => {})
+      setBadge(tabId, 'connecting')
+      void chrome.action.setTitle({
+        tabId,
+        title: 'OpenClaw Browser Relay: all relays disconnected (click to re-attach)',
+      })
+    }
+    tabs.clear()
+    tabBySession.clear()
+    childSessionToTab.clear()
+  }
+}
+
+// ── Relay message handling ───────────────────────────────────────────
+
+async function onRelayMessage(port, text) {
+  const relay = getRelay(port)
   /** @type {any} */
   let msg
   try {
@@ -163,33 +244,38 @@ async function onRelayMessage(text) {
     return
   }
 
+  // Ping/pong keepalive
   if (msg && msg.method === 'ping') {
     try {
-      sendToRelay({ method: 'pong' })
+      sendToRelay(relay, { method: 'pong' })
     } catch {
       // ignore
     }
     return
   }
 
+  // Response to a request we made to the relay (currently unused, kept for future)
   if (msg && typeof msg.id === 'number' && (msg.result !== undefined || msg.error !== undefined)) {
-    const p = pending.get(msg.id)
+    const p = relay.pending.get(msg.id)
     if (!p) return
-    pending.delete(msg.id)
+    relay.pending.delete(msg.id)
     if (msg.error) p.reject(new Error(String(msg.error)))
     else p.resolve(msg.result)
     return
   }
 
+  // CDP command the relay wants us to forward to a tab
   if (msg && typeof msg.id === 'number' && msg.method === 'forwardCDPCommand') {
     try {
       const result = await handleForwardCdpCommand(msg)
-      sendToRelay({ id: msg.id, result })
+      sendToRelay(relay, { id: msg.id, result })
     } catch (err) {
-      sendToRelay({ id: msg.id, error: err instanceof Error ? err.message : String(err) })
+      sendToRelay(relay, { id: msg.id, error: err instanceof Error ? err.message : String(err) })
     }
   }
 }
+
+// ── Tab routing ──────────────────────────────────────────────────────
 
 function getTabBySessionId(sessionId) {
   const direct = tabBySession.get(sessionId)
@@ -206,6 +292,8 @@ function getTabByTargetId(targetId) {
   return null
 }
 
+// ── Tab attach / detach ──────────────────────────────────────────────
+
 async function attachTab(tabId, opts = {}) {
   const debuggee = { tabId }
   await chrome.debugger.attach(debuggee, '1.3')
@@ -221,15 +309,16 @@ async function attachTab(tabId, opts = {}) {
   const sessionId = `cb-tab-${nextSession++}`
   const attachOrder = nextSession
 
-  tabs.set(tabId, { state: 'connected', sessionId, targetId, attachOrder })
+  tabs.set(tabId, { state: 'connected', sessionId, targetId, attachOrder, targetInfo })
   tabBySession.set(sessionId, tabId)
   void chrome.action.setTitle({
     tabId,
     title: 'OpenClaw Browser Relay: attached (click to detach)',
   })
 
+  // Announce to ALL connected relays
   if (!opts.skipAttachedEvent) {
-    sendToRelay({
+    broadcastToAllRelays({
       method: 'forwardCDPEvent',
       params: {
         method: 'Target.attachedToTarget',
@@ -248,18 +337,16 @@ async function attachTab(tabId, opts = {}) {
 
 async function detachTab(tabId, reason) {
   const tab = tabs.get(tabId)
+
+  // Announce detach to ALL relays
   if (tab?.sessionId && tab?.targetId) {
-    try {
-      sendToRelay({
-        method: 'forwardCDPEvent',
-        params: {
-          method: 'Target.detachedFromTarget',
-          params: { sessionId: tab.sessionId, targetId: tab.targetId, reason },
-        },
-      })
-    } catch {
-      // ignore
-    }
+    broadcastToAllRelays({
+      method: 'forwardCDPEvent',
+      params: {
+        method: 'Target.detachedFromTarget',
+        params: { sessionId: tab.sessionId, targetId: tab.targetId, reason },
+      },
+    })
   }
 
   if (tab?.sessionId) tabBySession.delete(tab.sessionId)
@@ -282,40 +369,7 @@ async function detachTab(tabId, reason) {
   })
 }
 
-async function connectOrToggleForActiveTab() {
-  const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
-  const tabId = active?.id
-  if (!tabId) return
-
-  const existing = tabs.get(tabId)
-  if (existing?.state === 'connected') {
-    await detachTab(tabId, 'toggle')
-    return
-  }
-
-  tabs.set(tabId, { state: 'connecting' })
-  setBadge(tabId, 'connecting')
-  void chrome.action.setTitle({
-    tabId,
-    title: 'OpenClaw Browser Relay: connecting to local relay…',
-  })
-
-  try {
-    await ensureRelayConnection()
-    await attachTab(tabId)
-  } catch (err) {
-    tabs.delete(tabId)
-    setBadge(tabId, 'error')
-    void chrome.action.setTitle({
-      tabId,
-      title: 'OpenClaw Browser Relay: relay not running (open options for setup)',
-    })
-    void maybeOpenHelpOnce()
-    // Extra breadcrumbs in chrome://extensions service worker logs.
-    const message = err instanceof Error ? err.message : String(err)
-    console.warn('attach failed', message, nowStack())
-  }
-}
+// ── CDP command forwarding ───────────────────────────────────────────
 
 async function handleForwardCdpCommand(msg) {
   const method = String(msg?.params?.method || '').trim()
@@ -376,10 +430,10 @@ async function handleForwardCdpCommand(msg) {
     const target = typeof params?.targetId === 'string' ? params.targetId : ''
     const toActivate = target ? getTabByTargetId(target) : tabId
     if (!toActivate) return {}
-    const tab = await chrome.tabs.get(toActivate).catch(() => null)
-    if (!tab) return {}
-    if (tab.windowId) {
-      await chrome.windows.update(tab.windowId, { focused: true }).catch(() => {})
+    const activateTab = await chrome.tabs.get(toActivate).catch(() => null)
+    if (!activateTab) return {}
+    if (activateTab.windowId) {
+      await chrome.windows.update(activateTab.windowId, { focused: true }).catch(() => {})
     }
     await chrome.tabs.update(toActivate, { active: true }).catch(() => {})
     return {}
@@ -395,6 +449,44 @@ async function handleForwardCdpCommand(msg) {
   return await chrome.debugger.sendCommand(debuggerSession, method, params)
 }
 
+// ── Toolbar click ────────────────────────────────────────────────────
+
+async function connectOrToggleForActiveTab() {
+  const [active] = await chrome.tabs.query({ active: true, currentWindow: true })
+  const tabId = active?.id
+  if (!tabId) return
+
+  const existing = tabs.get(tabId)
+  if (existing?.state === 'connected') {
+    await detachTab(tabId, 'toggle')
+    return
+  }
+
+  tabs.set(tabId, { state: 'connecting' })
+  setBadge(tabId, 'connecting')
+  void chrome.action.setTitle({
+    tabId,
+    title: 'OpenClaw Browser Relay: connecting to relay servers…',
+  })
+
+  try {
+    await ensureAllRelayConnections()
+    await attachTab(tabId)
+  } catch (err) {
+    tabs.delete(tabId)
+    setBadge(tabId, 'error')
+    void chrome.action.setTitle({
+      tabId,
+      title: 'OpenClaw Browser Relay: no relay servers reachable (open options for setup)',
+    })
+    void maybeOpenHelpOnce()
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn('attach failed', message, nowStack())
+  }
+}
+
+// ── Debugger event listeners ─────────────────────────────────────────
+
 function onDebuggerEvent(source, method, params) {
   const tabId = source.tabId
   if (!tabId) return
@@ -409,18 +501,15 @@ function onDebuggerEvent(source, method, params) {
     childSessionToTab.delete(String(params.sessionId))
   }
 
-  try {
-    sendToRelay({
-      method: 'forwardCDPEvent',
-      params: {
-        sessionId: source.sessionId || tab.sessionId,
-        method,
-        params,
-      },
-    })
-  } catch {
-    // ignore
-  }
+  // Broadcast CDP events to ALL relays
+  broadcastToAllRelays({
+    method: 'forwardCDPEvent',
+    params: {
+      sessionId: source.sessionId || tab.sessionId,
+      method,
+      params,
+    },
+  })
 }
 
 function onDebuggerDetach(source, reason) {
@@ -429,6 +518,8 @@ function onDebuggerDetach(source, reason) {
   if (!tabs.has(tabId)) return
   void detachTab(tabId, reason)
 }
+
+// ── Lifecycle ────────────────────────────────────────────────────────
 
 chrome.action.onClicked.addListener(() => void connectOrToggleForActiveTab())
 

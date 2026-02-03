@@ -1,4 +1,5 @@
-import { truncateText } from "./format.ts";
+import type { ThreadState } from "./thread-state";
+import { truncateText } from "./format";
 
 const TOOL_STREAM_LIMIT = 50;
 const TOOL_STREAM_THROTTLE_MS = 80;
@@ -35,39 +36,25 @@ type ToolStreamHost = {
 };
 
 function extractToolOutputText(value: unknown): string | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
+  if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  if (typeof record.text === "string") {
-    return record.text;
-  }
+  if (typeof record.text === "string") return record.text;
   const content = record.content;
-  if (!Array.isArray(content)) {
-    return null;
-  }
+  if (!Array.isArray(content)) return null;
   const parts = content
     .map((item) => {
-      if (!item || typeof item !== "object") {
-        return null;
-      }
+      if (!item || typeof item !== "object") return null;
       const entry = item as Record<string, unknown>;
-      if (entry.type === "text" && typeof entry.text === "string") {
-        return entry.text;
-      }
+      if (entry.type === "text" && typeof entry.text === "string") return entry.text;
       return null;
     })
     .filter((part): part is string => Boolean(part));
-  if (parts.length === 0) {
-    return null;
-  }
+  if (parts.length === 0) return null;
   return parts.join("\n");
 }
 
 function formatToolOutput(value: unknown): string | null {
-  if (value === null || value === undefined) {
-    return null;
-  }
+  if (value === null || value === undefined) return null;
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
@@ -81,14 +68,11 @@ function formatToolOutput(value: unknown): string | null {
     try {
       text = JSON.stringify(value, null, 2);
     } catch {
-      // oxlint-disable typescript/no-base-to-string
       text = String(value);
     }
   }
   const truncated = truncateText(text, TOOL_OUTPUT_CHAR_LIMIT);
-  if (!truncated.truncated) {
-    return truncated.text;
-  }
+  if (!truncated.truncated) return truncated.text;
   return `${truncated.text}\n\n… truncated (${truncated.total} chars, showing first ${truncated.text.length}).`;
 }
 
@@ -116,14 +100,10 @@ function buildToolStreamMessage(entry: ToolStreamEntry): Record<string, unknown>
 }
 
 function trimToolStream(host: ToolStreamHost) {
-  if (host.toolStreamOrder.length <= TOOL_STREAM_LIMIT) {
-    return;
-  }
+  if (host.toolStreamOrder.length <= TOOL_STREAM_LIMIT) return;
   const overflow = host.toolStreamOrder.length - TOOL_STREAM_LIMIT;
   const removed = host.toolStreamOrder.splice(0, overflow);
-  for (const id of removed) {
-    host.toolStreamById.delete(id);
-  }
+  for (const id of removed) host.toolStreamById.delete(id);
 }
 
 function syncToolStreamMessages(host: ToolStreamHost) {
@@ -145,9 +125,7 @@ export function scheduleToolStreamSync(host: ToolStreamHost, force = false) {
     flushToolStreamSync(host);
     return;
   }
-  if (host.toolStreamSyncTimer != null) {
-    return;
-  }
+  if (host.toolStreamSyncTimer != null) return;
   host.toolStreamSyncTimer = window.setTimeout(
     () => flushToolStreamSync(host),
     TOOL_STREAM_THROTTLE_MS,
@@ -205,9 +183,7 @@ export function handleCompactionEvent(host: CompactionHost, payload: AgentEventP
 }
 
 export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPayload) {
-  if (!payload) {
-    return;
-  }
+  if (!payload) return;
 
   // Handle compaction events
   if (payload.stream === "compaction") {
@@ -215,21 +191,141 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     return;
   }
 
+  if (payload.stream !== "tool") return;
+  const sessionKey =
+    typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
+  if (sessionKey && sessionKey !== host.sessionKey) return;
+  // Fallback: only accept session-less events for the active run.
+  if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) return;
+  if (host.chatRunId && payload.runId !== host.chatRunId) return;
+  if (!host.chatRunId) return;
+
+  const data = payload.data ?? {};
+  const toolCallId = typeof data.toolCallId === "string" ? data.toolCallId : "";
+  if (!toolCallId) return;
+  const name = typeof data.name === "string" ? data.name : "tool";
+  const phase = typeof data.phase === "string" ? data.phase : "";
+  const args = phase === "start" ? data.args : undefined;
+  const output =
+    phase === "update"
+      ? (formatToolOutput(data.partialResult) ?? undefined)
+      : phase === "result"
+        ? (formatToolOutput(data.result) ?? undefined)
+        : undefined;
+
+  applyToolEvent(host, {
+    toolCallId,
+    runId: payload.runId,
+    sessionKey,
+    name,
+    args,
+    output,
+    ts: payload.ts,
+    phase,
+  });
+}
+
+/** Shared core that applies a parsed tool event to any ToolStreamHost. */
+function applyToolEvent(
+  host: ToolStreamHost,
+  evt: {
+    toolCallId: string;
+    runId: string;
+    sessionKey?: string;
+    name: string;
+    args?: unknown;
+    output?: string;
+    ts: number;
+    phase: string;
+  },
+) {
+  const now = Date.now();
+  let entry = host.toolStreamById.get(evt.toolCallId);
+  if (!entry) {
+    entry = {
+      toolCallId: evt.toolCallId,
+      runId: evt.runId,
+      sessionKey: evt.sessionKey,
+      name: evt.name,
+      args: evt.args,
+      output: evt.output,
+      startedAt: typeof evt.ts === "number" ? evt.ts : now,
+      updatedAt: now,
+      message: {},
+    };
+    host.toolStreamById.set(evt.toolCallId, entry);
+    host.toolStreamOrder.push(evt.toolCallId);
+  } else {
+    entry.name = evt.name;
+    if (evt.args !== undefined) entry.args = evt.args;
+    if (evt.output !== undefined) entry.output = evt.output;
+    entry.updatedAt = now;
+  }
+
+  entry.message = buildToolStreamMessage(entry);
+  trimToolStream(host);
+  scheduleToolStreamSync(host, evt.phase === "result");
+}
+
+// ---------------------------------------------------------------------------
+// Thread-scoped tool stream helpers
+// ---------------------------------------------------------------------------
+
+/** Adapter that wraps a ThreadState as a ToolStreamHost for shared helpers. */
+function threadAsToolStreamHost(thread: ThreadState): ToolStreamHost {
+  return {
+    sessionKey: thread.descriptor.sessionKey,
+    chatRunId: thread.chatRunId,
+    toolStreamById: thread.toolStreamById,
+    toolStreamOrder: thread.toolStreamOrder,
+    chatToolMessages: thread.chatToolMessages as Record<string, unknown>[],
+    toolStreamSyncTimer: thread.toolStreamSyncTimer,
+  };
+}
+
+/** Write back any scalar fields that the adapter may have replaced. */
+function syncBackFromHost(thread: ThreadState, host: ToolStreamHost) {
+  thread.chatToolMessages = host.chatToolMessages;
+  thread.toolStreamSyncTimer = host.toolStreamSyncTimer;
+}
+
+/** Reset tool stream state for a specific thread. */
+export function resetToolStreamForThread(thread: ThreadState) {
+  thread.toolStreamById.clear();
+  thread.toolStreamOrder = [];
+  thread.chatToolMessages = [];
+  if (thread.toolStreamSyncTimer != null) {
+    clearTimeout(thread.toolStreamSyncTimer);
+    thread.toolStreamSyncTimer = null;
+  }
+}
+
+/** Handle an agent event for a non-focused thread's tool stream. */
+export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEventPayload) {
+  if (!payload) {
+    return;
+  }
+
+  // Compaction events are host-level only (UI toast); skip for threads
+  if (payload.stream === "compaction") {
+    return;
+  }
+
   if (payload.stream !== "tool") {
     return;
   }
   const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
-  if (sessionKey && sessionKey !== host.sessionKey) {
+  // Only accept events for this thread's session (or session-less for active run)
+  if (sessionKey && sessionKey !== thread.descriptor.sessionKey) {
     return;
   }
-  // Fallback: only accept session-less events for the active run.
-  if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
+  if (!sessionKey && thread.chatRunId && payload.runId !== thread.chatRunId) {
     return;
   }
-  if (host.chatRunId && payload.runId !== host.chatRunId) {
+  if (thread.chatRunId && payload.runId !== thread.chatRunId) {
     return;
   }
-  if (!host.chatRunId) {
+  if (!thread.chatRunId) {
     return;
   }
 
@@ -243,39 +339,21 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   const args = phase === "start" ? data.args : undefined;
   const output =
     phase === "update"
-      ? formatToolOutput(data.partialResult)
+      ? (formatToolOutput(data.partialResult) ?? undefined)
       : phase === "result"
-        ? formatToolOutput(data.result)
+        ? (formatToolOutput(data.result) ?? undefined)
         : undefined;
 
-  const now = Date.now();
-  let entry = host.toolStreamById.get(toolCallId);
-  if (!entry) {
-    entry = {
-      toolCallId,
-      runId: payload.runId,
-      sessionKey,
-      name,
-      args,
-      output: output || undefined,
-      startedAt: typeof payload.ts === "number" ? payload.ts : now,
-      updatedAt: now,
-      message: {},
-    };
-    host.toolStreamById.set(toolCallId, entry);
-    host.toolStreamOrder.push(toolCallId);
-  } else {
-    entry.name = name;
-    if (args !== undefined) {
-      entry.args = args;
-    }
-    if (output !== undefined) {
-      entry.output = output || undefined;
-    }
-    entry.updatedAt = now;
-  }
-
-  entry.message = buildToolStreamMessage(entry);
-  trimToolStream(host);
-  scheduleToolStreamSync(host, phase === "result");
+  const host = threadAsToolStreamHost(thread);
+  applyToolEvent(host, {
+    toolCallId,
+    runId: payload.runId,
+    sessionKey,
+    name,
+    args,
+    output,
+    ts: payload.ts,
+    phase,
+  });
+  syncBackFromHost(thread, host);
 }

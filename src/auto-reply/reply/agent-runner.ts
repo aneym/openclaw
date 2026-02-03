@@ -19,6 +19,7 @@ import {
   updateSessionStoreEntry,
 } from "../../config/sessions.js";
 import { emitDiagnosticEvent, isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
+import { clearSessionRunning, markSessionRunning } from "../../infra/running-sessions.js";
 import { defaultRuntime } from "../../runtime.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../../utils/usage-format.js";
 import { resolveResponseUsageMode, type VerboseLevel } from "../thinking.js";
@@ -38,6 +39,7 @@ import { resolveBlockStreamingCoalescing } from "./block-streaming.js";
 import { createFollowupRunner } from "./followup-runner.js";
 import { enqueueFollowupRun, type FollowupRun, type QueueSettings } from "./queue.js";
 import { createReplyToModeFilterForChannel, resolveReplyToMode } from "./reply-threading.js";
+import { maybeAutoTitleSession } from "./session-auto-title.js";
 import { incrementCompactionCount } from "./session-updates.js";
 import { persistSessionUsageUpdate } from "./session-usage.js";
 import { createTypingSignaler } from "./typing-mode.js";
@@ -68,7 +70,6 @@ export async function runReplyAgent(params: {
     minChars: number;
     maxChars: number;
     breakPreference: "paragraph" | "newline" | "sentence";
-    flushOnParagraph?: boolean;
   };
   resolvedBlockStreamingBreak: "text_end" | "message_end";
   sessionCtx: TemplateContext;
@@ -105,6 +106,7 @@ export async function runReplyAgent(params: {
   let activeSessionEntry = sessionEntry;
   const activeSessionStore = sessionStore;
   let activeIsNewSession = isNewSession;
+  let runCompletedSuccessfully = false;
 
   const isHeartbeat = opts?.isHeartbeat === true;
   const typingSignals = createTypingSignaler({
@@ -305,6 +307,14 @@ export async function runReplyAgent(params: {
         `Role ordering conflict (${reason}). Restarting session ${sessionKey} -> ${nextSessionId}.`,
       cleanupTranscripts: true,
     });
+  if (sessionKey) {
+    markSessionRunning({
+      sessionKey,
+      sessionId: followupRun.run.sessionId,
+      runId: followupRun.run.sessionId,
+    });
+  }
+
   try {
     const runStartedAt = Date.now();
     const runOutcome = await runAgentTurnWithFallback({
@@ -513,13 +523,29 @@ export async function runReplyAgent(params: {
       finalPayloads = appendUsageLine(finalPayloads, responseUsageLine);
     }
 
+    runCompletedSuccessfully = true;
     return finalizeWithFollowup(
       finalPayloads.length === 1 ? finalPayloads[0] : finalPayloads,
       queueKey,
       runFollowupTurn,
     );
   } finally {
+    if (sessionKey) {
+      clearSessionRunning(sessionKey);
+    }
     blockReplyPipeline?.stop();
     typing.markRunComplete();
+
+    // Fire-and-forget auto-title (never blocks reply)
+    if (runCompletedSuccessfully && !isHeartbeat && sessionKey && storePath && activeSessionEntry) {
+      void maybeAutoTitleSession({
+        sessionKey,
+        storePath,
+        sessionEntry: activeSessionEntry,
+        sessionId: followupRun.run.sessionId,
+        sessionFile: activeSessionEntry.sessionFile,
+        config: cfg,
+      }).catch(() => {}); // swallow errors
+    }
   }
 }

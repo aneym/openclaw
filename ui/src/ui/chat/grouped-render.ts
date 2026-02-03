@@ -1,16 +1,30 @@
 import { html, nothing } from "lit";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import type { AssistantIdentity } from "../assistant-identity.ts";
-import type { MessageGroup } from "../types/chat-types.ts";
-import { toSanitizedMarkdownHtml } from "../markdown.ts";
-import { renderCopyAsMarkdownButton } from "./copy-as-markdown.ts";
+import type { AssistantIdentity } from "../assistant-identity";
+import type { MessageGroup } from "../types/chat-types";
+import { icons } from "../icons";
+import { toSanitizedMarkdownHtml } from "../markdown";
+import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
 import {
   extractTextCached,
   extractThinkingCached,
   formatReasoningMarkdown,
-} from "./message-extract.ts";
-import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer.ts";
-import { extractToolCards, renderToolCardSidebar } from "./tool-cards.ts";
+} from "./message-extract";
+import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer";
+import {
+  extractToolCards,
+  renderToolCardSidebar,
+  extractFilePathFromCard,
+  isFileMutatingTool,
+} from "./tool-cards";
+
+/** Track which file paths have already been auto-opened to avoid re-render loops. */
+const autoOpenedPaths = new Set<string>();
+
+/** Clear auto-opened tracking (call on new user message to allow re-opens). */
+export function resetAutoOpenedPaths() {
+  autoOpenedPaths.clear();
+}
 
 type ImageBlock = {
   url: string;
@@ -24,16 +38,14 @@ function extractImages(message: unknown): ImageBlock[] {
 
   if (Array.isArray(content)) {
     for (const block of content) {
-      if (typeof block !== "object" || block === null) {
-        continue;
-      }
+      if (typeof block !== "object" || block === null) continue;
       const b = block as Record<string, unknown>;
 
       if (b.type === "image") {
         // Handle source object format (from sendChatMessage)
         const source = b.source as Record<string, unknown> | undefined;
         if (source?.type === "base64" && typeof source.data === "string") {
-          const data = source.data;
+          const data = source.data as string;
           const mediaType = (source.media_type as string) || "image/png";
           // If data is already a data URL, use it directly
           const url = data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
@@ -52,6 +64,78 @@ function extractImages(message: unknown): ImageBlock[] {
   }
 
   return images;
+}
+
+type AudioBlock = {
+  filename: string;
+  url: string;
+};
+
+type AudioExtraction = {
+  audioFiles: AudioBlock[];
+  cleanedText: string;
+};
+
+const AUDIO_EXTS = new Set([".ogg", ".mp3", ".m4a", ".wav", ".aac", ".opus", ".flac", ".oga"]);
+
+// Match <file name="..." mime="...">BINARY</file> — binary can be anything
+const FILE_TAG_RE = /<file\s+name="([^"]+)"\s+mime="([^"]*)">\s*[\s\S]*?<\/file>/gi;
+const MEDIA_AUDIO_RE = /^<media:audio>\s*/i;
+const TRANSCRIPT_RE = /^\s*Transcript:\s*/i;
+
+function hasAudioExtension(filename: string): boolean {
+  const dotIdx = filename.lastIndexOf(".");
+  if (dotIdx === -1) {
+    return false;
+  }
+  return AUDIO_EXTS.has(filename.slice(dotIdx).toLowerCase());
+}
+
+/**
+ * Extract audio file references from message text that contains
+ * `<file name="..." mime="...">BINARY</file>` tags.
+ * Returns the audio files and text with binary stripped out.
+ */
+function extractAudioFromText(text: string): AudioExtraction {
+  const audioFiles: AudioBlock[] = [];
+  let cleaned = text;
+
+  cleaned = cleaned.replace(FILE_TAG_RE, (_match, name: string, mime: string) => {
+    const isAudio =
+      (typeof mime === "string" && mime.startsWith("audio/")) || hasAudioExtension(name);
+    if (isAudio) {
+      audioFiles.push({
+        filename: name,
+        url: `/api/media/${encodeURIComponent(name)}`,
+      });
+      return "";
+    }
+    return _match;
+  });
+
+  // Strip <media:audio> prefix
+  cleaned = cleaned.replace(MEDIA_AUDIO_RE, "");
+  // Strip "Transcript:" label
+  cleaned = cleaned.replace(TRANSCRIPT_RE, "");
+
+  return { audioFiles, cleanedText: cleaned.trim() };
+}
+
+function renderAudioPlayers(audioFiles: AudioBlock[]) {
+  if (audioFiles.length === 0) {
+    return nothing;
+  }
+  return html`
+    <div class="chat-audio-players">
+      ${audioFiles.map(
+        (af) => html`
+          <div class="chat-audio-player">
+            <audio controls preload="metadata" src=${af.url}></audio>
+          </div>
+        `,
+      )}
+    </div>
+  `;
 }
 
 export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
@@ -74,6 +158,8 @@ export function renderStreamingGroup(
   startedAt: number,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
+  onOpenFilePreview?: (filePath: string) => void,
+  onOpenCodingSession?: () => void,
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
@@ -93,6 +179,8 @@ export function renderStreamingGroup(
           },
           { isStreaming: true, showReasoning: false },
           onOpenSidebar,
+          onOpenFilePreview,
+          onOpenCodingSession,
         )}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
@@ -107,6 +195,8 @@ export function renderMessageGroup(
   group: MessageGroup,
   opts: {
     onOpenSidebar?: (content: string) => void;
+    onOpenFilePreview?: (filePath: string) => void;
+    onOpenCodingSession?: () => void;
     showReasoning: boolean;
     assistantName?: string;
     assistantAvatar?: string | null;
@@ -127,6 +217,25 @@ export function renderMessageGroup(
     minute: "2-digit",
   });
 
+  // Auto-open: scan for completed Write/Edit tool results with file paths
+  // Only opens each path once per session (until resetAutoOpenedPaths is called)
+  if (opts.onOpenFilePreview) {
+    for (const item of group.messages) {
+      const cards = extractToolCards(item.message);
+      for (const card of cards) {
+        if (card.kind === "result" && isFileMutatingTool(card)) {
+          const filePath = extractFilePathFromCard(card);
+          if (filePath && !autoOpenedPaths.has(filePath)) {
+            autoOpenedPaths.add(filePath);
+            // Schedule auto-open (non-blocking, after render)
+            const open = opts.onOpenFilePreview;
+            queueMicrotask(() => open(filePath));
+          }
+        }
+      }
+    }
+  }
+
   return html`
     <div class="chat-group ${roleClass}">
       ${renderAvatar(group.role, {
@@ -134,16 +243,7 @@ export function renderMessageGroup(
         avatar: opts.assistantAvatar ?? null,
       })}
       <div class="chat-group-messages">
-        ${group.messages.map((item, index) =>
-          renderGroupedMessage(
-            item.message,
-            {
-              isStreaming: group.isStreaming && index === group.messages.length - 1,
-              showReasoning: opts.showReasoning,
-            },
-            opts.onOpenSidebar,
-          ),
-        )}
+        ${renderGroupedMessages(group, opts)}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -190,14 +290,12 @@ function renderAvatar(role: string, assistant?: Pick<AssistantIdentity, "name" |
 
 function isAvatarUrl(value: string): boolean {
   return (
-    /^https?:\/\//i.test(value) || /^data:image\//i.test(value) || value.startsWith("/") // Relative paths from avatar endpoint
+    /^https?:\/\//i.test(value) || /^data:image\//i.test(value) || /^\//.test(value) // Relative paths from avatar endpoint
   );
 }
 
 function renderMessageImages(images: ImageBlock[]) {
-  if (images.length === 0) {
-    return nothing;
-  }
+  if (images.length === 0) return nothing;
 
   return html`
     <div class="chat-message-images">
@@ -215,10 +313,152 @@ function renderMessageImages(images: ImageBlock[]) {
   `;
 }
 
+/** Check if a message will render as chip-only (no bubble/markdown). */
+/** A message that renders only as compact chip(s) — no text bubble. */
+function isChipOnlyMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  const role = typeof m.role === "string" ? m.role : "unknown";
+
+  const cards = extractToolCards(message);
+  if (cards.length === 0) {
+    return false;
+  }
+
+  const isToolResult =
+    isToolResultMessage(message) ||
+    role.toLowerCase() === "toolresult" ||
+    role.toLowerCase() === "tool_result" ||
+    typeof m.toolCallId === "string" ||
+    typeof m.tool_call_id === "string";
+  if (isToolResult) {
+    return true;
+  }
+
+  // Assistant message with only tool_calls (no text content)
+  if (role === "assistant") {
+    const text = extractTextCached(message);
+    return !text?.trim();
+  }
+
+  return false;
+}
+
+/**
+ * Render all messages in a group, batching consecutive chip-only messages
+ * into a single flex row so they display inline.
+ */
+function renderGroupedMessages(
+  group: MessageGroup,
+  opts: {
+    onOpenSidebar?: (content: string) => void;
+    onOpenFilePreview?: (filePath: string) => void;
+    onOpenCodingSession?: () => void;
+    showReasoning: boolean;
+  },
+) {
+  const results: unknown[] = [];
+  let chipBatch: unknown[] = [];
+  let chipCount = 0;
+
+  /** Collect file paths from Write/Edit results in the current chip batch */
+  let batchFilePaths: string[] = [];
+
+  const flushChips = () => {
+    if (chipBatch.length === 0) {
+      return;
+    }
+    const count = chipCount;
+    const chips = chipBatch;
+    const filePaths = [...batchFilePaths];
+    results.push(
+      html`<details class="chat-tool-collapse">
+        <summary class="chat-tool-collapse__summary">
+          ${icons.wrench}
+          <span>${count} tool call${count !== 1 ? "s" : ""}</span>
+        </summary>
+        <div class="chat-tool-chips">${chips}</div>
+      </details>`,
+    );
+    // Render prominent file action buttons after the tool collapse
+    if (filePaths.length > 0 && opts.onOpenFilePreview) {
+      const openPreview = opts.onOpenFilePreview;
+      const uniquePaths = [...new Set(filePaths)];
+      results.push(
+        html`<div class="chat-file-actions">
+          ${uniquePaths.map(
+            (fp) => html`
+              <button
+                class="chat-file-action-btn"
+                @click=${() => openPreview(fp)}
+                title="Preview ${fp}"
+              >
+                ${icons.fileText}
+                <span class="chat-file-action-btn__label">${fp.split("/").pop()}</span>
+                <span class="chat-file-action-btn__action">View file</span>
+              </button>
+            `,
+          )}
+        </div>`,
+      );
+    }
+    chipBatch = [];
+    chipCount = 0;
+    batchFilePaths = [];
+  };
+
+  for (let i = 0; i < group.messages.length; i++) {
+    const item = group.messages[i];
+    if (isChipOnlyMessage(item.message)) {
+      const cards = extractToolCards(item.message);
+      chipCount += cards.length;
+      // Track .md file paths from Write/Edit tool calls
+      for (const card of cards) {
+        if (isFileMutatingTool(card)) {
+          const fp = extractFilePathFromCard(card);
+          if (fp && fp.endsWith(".md")) {
+            batchFilePaths.push(fp);
+          }
+        }
+      }
+      chipBatch.push(
+        renderGroupedMessage(
+          item.message,
+          {
+            isStreaming: group.isStreaming && i === group.messages.length - 1,
+            showReasoning: opts.showReasoning,
+          },
+          opts.onOpenSidebar,
+          opts.onOpenFilePreview,
+          opts.onOpenCodingSession,
+        ),
+      );
+    } else {
+      flushChips();
+      results.push(
+        renderGroupedMessage(
+          item.message,
+          {
+            isStreaming: group.isStreaming && i === group.messages.length - 1,
+            showReasoning: opts.showReasoning,
+          },
+          opts.onOpenSidebar,
+          opts.onOpenFilePreview,
+          opts.onOpenCodingSession,
+        ),
+      );
+    }
+  }
+
+  flushChips();
+  return results;
+}
+
 function renderGroupedMessage(
   message: unknown,
   opts: { isStreaming: boolean; showReasoning: boolean },
   onOpenSidebar?: (content: string) => void,
+  onOpenFilePreview?: (filePath: string) => void,
+  onOpenCodingSession?: () => void,
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -237,7 +477,14 @@ function renderGroupedMessage(
   const extractedText = extractTextCached(message);
   const extractedThinking =
     opts.showReasoning && role === "assistant" ? extractThinkingCached(message) : null;
-  const markdownBase = extractedText?.trim() ? extractedText : null;
+
+  // Extract audio files from text and strip binary content
+  const audioExtraction = extractedText ? extractAudioFromText(extractedText) : null;
+  const audioFiles = audioExtraction?.audioFiles ?? [];
+  const hasAudio = audioFiles.length > 0;
+  const textAfterAudio = hasAudio ? audioExtraction!.cleanedText : extractedText;
+
+  const markdownBase = textAfterAudio?.trim() ? textAfterAudio : null;
   const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
@@ -251,18 +498,30 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
-  if (!markdown && hasToolCards && isToolResult) {
-    return html`${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}`;
+  // Tool-result messages always render as compact chips (text via sidebar)
+  if (hasToolCards && isToolResult) {
+    return html`${toolCards.map((card) =>
+      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
+    )}`;
   }
 
-  if (!markdown && !hasToolCards && !hasImages) {
-    return nothing;
+  // Assistant messages with text: suppress tool_call chips (result chips follow).
+  // Assistant messages with ONLY tool_calls (no text): render as chips.
+  const isAssistantCallOnly = role === "assistant" && hasToolCards && !markdown;
+  if (isAssistantCallOnly) {
+    return html`${toolCards.map((card) =>
+      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
+    )}`;
   }
+  const showInlineChips = hasToolCards && role !== "assistant";
+
+  if (!markdown && !showInlineChips && !hasImages && !hasAudio) return nothing;
 
   return html`
     <div class="${bubbleClasses}">
       ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
       ${renderMessageImages(images)}
+      ${renderAudioPlayers(audioFiles)}
       ${
         reasoningMarkdown
           ? html`<div class="chat-thinking">${unsafeHTML(
@@ -275,7 +534,13 @@ function renderGroupedMessage(
           ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`
           : nothing
       }
-      ${toolCards.map((card) => renderToolCardSidebar(card, onOpenSidebar))}
+      ${
+        showInlineChips
+          ? html`<div class="chat-tool-chips">${toolCards.map((card) =>
+              renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
+            )}</div>`
+          : nothing
+      }
     </div>
   `;
 }

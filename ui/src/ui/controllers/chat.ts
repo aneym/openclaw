@@ -1,7 +1,26 @@
-import type { GatewayBrowserClient } from "../gateway.ts";
-import type { ChatAttachment } from "../ui-types.ts";
-import { extractText } from "../chat/message-extract.ts";
-import { generateUUID } from "../uuid.ts";
+import type { GatewayBrowserClient } from "../gateway";
+import type { ThreadState } from "../thread-state";
+import type { ChatAttachment } from "../ui-types";
+import { extractText } from "../chat/message-extract";
+import { generateUUID } from "../uuid";
+
+// ── Pending abort tracking ──────────────────────────────────────────
+// When the user clicks stop while disconnected (or the abort RPC fails),
+// the intent is preserved here and retried after reconnect.
+const pendingAbortSessionKeys = new Set<string>();
+
+export function markAbortPending(sessionKey: string) {
+  pendingAbortSessionKeys.add(sessionKey);
+}
+
+export function clearAbortPending(sessionKey: string) {
+  pendingAbortSessionKeys.delete(sessionKey);
+}
+
+export function hasPendingAbort(sessionKey: string): boolean {
+  return pendingAbortSessionKeys.has(sessionKey);
+}
+// ─────────────────────────────────────────────────────────────────────
 
 export type ChatState = {
   client: GatewayBrowserClient | null;
@@ -34,13 +53,10 @@ export async function loadChatHistory(state: ChatState) {
   state.chatLoading = true;
   state.lastError = null;
   try {
-    const res = await state.client.request<{ messages?: Array<unknown>; thinkingLevel?: string }>(
-      "chat.history",
-      {
-        sessionKey: state.sessionKey,
-        limit: 200,
-      },
-    );
+    const res = await state.client.request("chat.history", {
+      sessionKey: state.sessionKey,
+      limit: 200,
+    });
     state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     state.chatThinkingLevel = res.thinkingLevel ?? null;
   } catch (err) {
@@ -153,6 +169,8 @@ export async function sendChatMessage(
 
 export async function abortChatRun(state: ChatState): Promise<boolean> {
   if (!state.client || !state.connected) {
+    // Connection is down — queue the abort intent for retry after reconnect.
+    markAbortPending(state.sessionKey);
     return false;
   }
   const runId = state.chatRunId;
@@ -161,9 +179,12 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
       "chat.abort",
       runId ? { sessionKey: state.sessionKey, runId } : { sessionKey: state.sessionKey },
     );
+    clearAbortPending(state.sessionKey);
     return true;
   } catch (err) {
     state.lastError = String(err);
+    // RPC failed (e.g. WS dropped mid-request) — queue for retry.
+    markAbortPending(state.sessionKey);
     return false;
   }
 }
@@ -186,6 +207,16 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   }
 
   if (payload.state === "delta") {
+    // Adopt the runId from incoming deltas when chatRunId is null (e.g. after
+    // page reload / reconnect). This makes the stop button appear instantly
+    // as soon as the first streaming chunk arrives, rather than waiting for
+    // the slower queryChatStatus round-trip.
+    if (!state.chatRunId && payload.runId) {
+      state.chatRunId = payload.runId;
+      if (!state.chatStreamStartedAt) {
+        state.chatStreamStartedAt = Date.now();
+      }
+    }
     const next = extractText(payload.message);
     if (typeof next === "string") {
       const current = state.chatStream ?? "";
@@ -197,15 +228,67 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    clearAbortPending(state.sessionKey);
   } else if (payload.state === "aborted") {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    clearAbortPending(state.sessionKey);
   } else if (payload.state === "error") {
+    console.log('[UI-CHAT] Received error state:', payload.errorMessage);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     state.lastError = payload.errorMessage ?? "chat error";
+    clearAbortPending(state.sessionKey);
+  }
+  return payload.state;
+}
+
+/**
+ * Thread-scoped variant of handleChatEvent.
+ * Operates on a ThreadState instead of the host, so it works for
+ * visible-but-not-focused panes without the sessionKey guard.
+ */
+export function handleChatEventForThread(
+  thread: ThreadState,
+  payload: ChatEventPayload,
+): string | null {
+  // Sub-agent final from a different run: signal history reload
+  if (payload.runId && thread.chatRunId && payload.runId !== thread.chatRunId) {
+    if (payload.state === "final") {
+      return "final";
+    }
+    return null;
+  }
+
+  if (payload.state === "delta") {
+    // Adopt runId from incoming deltas when chatRunId is null (reconnect).
+    if (!thread.chatRunId && payload.runId) {
+      thread.chatRunId = payload.runId;
+      if (!thread.chatStreamStartedAt) {
+        thread.chatStreamStartedAt = Date.now();
+      }
+    }
+    const next = extractText(payload.message);
+    if (typeof next === "string") {
+      const current = thread.chatStream ?? "";
+      if (!current || next.length >= current.length) {
+        thread.chatStream = next;
+      }
+    }
+  } else if (payload.state === "final") {
+    thread.chatStream = null;
+    thread.chatRunId = null;
+    thread.chatStreamStartedAt = null;
+  } else if (payload.state === "aborted") {
+    thread.chatStream = null;
+    thread.chatRunId = null;
+    thread.chatStreamStartedAt = null;
+  } else if (payload.state === "error") {
+    thread.chatStream = null;
+    thread.chatRunId = null;
+    thread.chatStreamStartedAt = null;
   }
   return payload.state;
 }

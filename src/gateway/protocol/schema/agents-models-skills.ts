@@ -1,4 +1,4 @@
-import { Type } from "@sinclair/typebox";
+import { type Static, Type } from "@sinclair/typebox";
 import { NonEmptyString } from "./primitives.js";
 
 export const ModelChoiceSchema = Type.Object(
@@ -151,3 +151,12 @@ export const SkillsUpdateParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+// Type exports for TypeBox schemas
+export type AgentsFileEntry = Static<typeof AgentsFileEntrySchema>;
+export type AgentsFilesListParams = Static<typeof AgentsFilesListParamsSchema>;
+export type AgentsFilesListResult = Static<typeof AgentsFilesListResultSchema>;
+export type AgentsFilesGetParams = Static<typeof AgentsFilesGetParamsSchema>;
+export type AgentsFilesGetResult = Static<typeof AgentsFilesGetResultSchema>;
+export type AgentsFilesSetParams = Static<typeof AgentsFilesSetParamsSchema>;
+export type AgentsFilesSetResult = Static<typeof AgentsFilesSetResultSchema>;

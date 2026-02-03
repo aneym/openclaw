@@ -1,6 +1,7 @@
 import type { CliDeps } from "../cli/deps.js";
 import type { loadConfig } from "../config/config.js";
 import type { loadOpenClawPlugins } from "../plugins/loader.js";
+import type { ChatAbortControllerEntry } from "./chat-abort.js";
 import { DEFAULT_MODEL, DEFAULT_PROVIDER } from "../agents/defaults.js";
 import { loadModelCatalog } from "../agents/model-catalog.js";
 import {
@@ -19,6 +20,10 @@ import { isTruthyEnvValue } from "../infra/env.js";
 import { type PluginServicesHandle, startPluginServices } from "../plugins/services.js";
 import { startBrowserControlServerIfEnabled } from "./server-browser.js";
 import {
+  shouldWakeInterruptedSessions,
+  wakeInterruptedSessions,
+} from "./server-interrupted-sessions.js";
+import {
   scheduleRestartSentinelWake,
   shouldWakeFromRestartSentinel,
 } from "./server-restart-sentinel.js";
@@ -29,6 +34,7 @@ export async function startGatewaySidecars(params: {
   defaultWorkspaceDir: string;
   deps: CliDeps;
   startChannels: () => Promise<void>;
+  chatAbortControllers?: Map<string, ChatAbortControllerEntry>;
   log: { warn: (msg: string) => void };
   logHooks: {
     info: (msg: string) => void;
@@ -150,9 +156,24 @@ export async function startGatewaySidecars(params: {
     params.log.warn(`plugin services failed to start: ${String(err)}`);
   }
 
+  // Wake sessions that were mid-turn when the previous gateway process died.
+  // Runs before the sentinel wake so we can peek at the sentinel file to
+  // avoid duplicate notifications.
+  if (shouldWakeInterruptedSessions()) {
+    setTimeout(() => {
+      void wakeInterruptedSessions({
+        deps: params.deps,
+        chatAbortControllers: params.chatAbortControllers,
+      });
+    }, 500);
+  }
+
   if (shouldWakeFromRestartSentinel()) {
     setTimeout(() => {
-      void scheduleRestartSentinelWake({ deps: params.deps });
+      void scheduleRestartSentinelWake({
+        deps: params.deps,
+        chatAbortControllers: params.chatAbortControllers,
+      });
     }, 750);
   }
 

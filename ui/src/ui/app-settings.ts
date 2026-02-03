@@ -1,26 +1,24 @@
-import type { OpenClawApp } from "./app.ts";
-import { refreshChat } from "./app-chat.ts";
+import type { OpenClawApp } from "./app";
+import type { SplitPaneLayout } from "./split-tree";
+import { refreshChat } from "./app-chat";
 import {
   startLogsPolling,
   stopLogsPolling,
   startDebugPolling,
   stopDebugPolling,
-} from "./app-polling.ts";
-import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
-import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
-import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents } from "./controllers/agents.ts";
-import { loadChannels } from "./controllers/channels.ts";
-import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
-import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
-import { loadDebug } from "./controllers/debug.ts";
-import { loadDevices } from "./controllers/devices.ts";
-import { loadExecApprovals } from "./controllers/exec-approvals.ts";
-import { loadLogs } from "./controllers/logs.ts";
-import { loadNodes } from "./controllers/nodes.ts";
-import { loadPresence } from "./controllers/presence.ts";
-import { loadSessions } from "./controllers/sessions.ts";
-import { loadSkills } from "./controllers/skills.ts";
+} from "./app-polling";
+import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll";
+import { loadChannels } from "./controllers/channels";
+import { loadConfig, loadConfigSchema } from "./controllers/config";
+import { loadCronJobs, loadCronStatus } from "./controllers/cron";
+import { loadDebug } from "./controllers/debug";
+import { loadDevices } from "./controllers/devices";
+import { loadExecApprovals } from "./controllers/exec-approvals";
+import { loadLogs } from "./controllers/logs";
+import { loadNodes } from "./controllers/nodes";
+import { loadPresence } from "./controllers/presence";
+import { loadSessions } from "./controllers/sessions";
+import { loadSkills } from "./controllers/skills";
 import {
   inferBasePathFromPathname,
   normalizeBasePath,
@@ -28,10 +26,11 @@ import {
   pathForTab,
   tabFromPath,
   type Tab,
-} from "./navigation.ts";
-import { saveSettings, type UiSettings } from "./storage.ts";
-import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
-import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
+} from "./navigation";
+import { allLeaves, allLeafIds, reconcileTreeWithPanes, deserializeLayout } from "./split-tree";
+import { saveSettings, type UiSettings } from "./storage";
+import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme";
+import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition";
 
 type SettingsHost = {
   settings: UiSettings;
@@ -76,7 +75,11 @@ export function setLastActiveSessionKey(host: SettingsHost, next: string) {
   applySettings(host, { ...host.settings, lastActiveSessionKey: trimmed });
 }
 
-export function applySettingsFromUrl(host: SettingsHost) {
+export function applySettingsFromUrl(
+  host: SettingsHost & {
+    urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
+  },
+) {
   if (!window.location.search) {
     return;
   }
@@ -99,7 +102,7 @@ export function applySettingsFromUrl(host: SettingsHost) {
   if (passwordRaw != null) {
     const password = passwordRaw.trim();
     if (password) {
-      (host as unknown as { password: string }).password = password;
+      (host as { password: string }).password = password;
     }
     params.delete("password");
     shouldCleanUrl = true;
@@ -125,6 +128,9 @@ export function applySettingsFromUrl(host: SettingsHost) {
     params.delete("gatewayUrl");
     shouldCleanUrl = true;
   }
+
+  // Read pane keys from URL for later restoration in handleConnected
+  host.urlPanes = readPanesFromUrl();
 
   if (!shouldCleanUrl) {
     return;
@@ -188,29 +194,6 @@ export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "skills") {
     await loadSkills(host as unknown as OpenClawApp);
   }
-  if (host.tab === "agents") {
-    const app = host as unknown as OpenClawApp;
-    await loadAgents(app);
-    await loadConfig(app);
-    const agentIds = app.agentsList?.agents?.map((entry) => entry.id) ?? [];
-    if (agentIds.length > 0) {
-      void loadAgentIdentities(app, agentIds);
-    }
-    const agentId =
-      app.agentsSelectedId ?? app.agentsList?.defaultId ?? app.agentsList?.agents?.[0]?.id;
-    if (agentId) {
-      void loadAgentIdentity(app, agentId);
-      if (app.agentsPanel === "skills") {
-        void loadAgentSkills(app, agentId);
-      }
-      if (app.agentsPanel === "channels") {
-        void loadChannels(app, false);
-      }
-      if (app.agentsPanel === "cron") {
-        void loadCron(host);
-      }
-    }
-  }
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as OpenClawApp);
     await loadDevices(host as unknown as OpenClawApp);
@@ -237,6 +220,10 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadLogs(host as unknown as OpenClawApp, { reset: true });
     scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
   }
+  if (host.tab === "models") {
+    await (host as unknown as OpenClawApp).handleModelsConfigLoad();
+  }
+  // Git panel loads via side panel, not tab
 }
 
 export function inferBasePath() {
@@ -311,7 +298,14 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   syncUrlWithTab(host, resolved, replace);
 }
 
-export function onPopState(host: SettingsHost) {
+export function onPopState(
+  host: SettingsHost & {
+    splitLayout: SplitPaneLayout | null;
+    focusedPaneId: string | null;
+    syncPaneStatesFromLayout?: () => void;
+    restoreSplitLayout?: () => void;
+  },
+) {
   if (typeof window === "undefined") {
     return;
   }
@@ -329,6 +323,26 @@ export function onPopState(host: SettingsHost) {
       sessionKey: session,
       lastActiveSessionKey: session,
     });
+  }
+
+  // Restore split pane state from URL
+  const urlPanes = readPanesFromUrl();
+  if (urlPanes && urlPanes.paneKeys.length > 1) {
+    const layout = restoreSplitLayoutFromUrl(
+      urlPanes.paneKeys,
+      urlPanes.focusIndex,
+      host.settings.splitLayout,
+    );
+    if (layout) {
+      host.splitLayout = layout;
+      host.focusedPaneId = layout.focusedPaneId;
+      host.syncPaneStatesFromLayout?.();
+    }
+  } else if (!urlPanes && host.splitLayout) {
+    // No panes in URL → exit split mode
+    host.splitLayout = null;
+    host.focusedPaneId = null;
+    host.syncPaneStatesFromLayout?.();
   }
 
   setTabFromRoute(host, resolved);
@@ -381,7 +395,7 @@ export function syncUrlWithTab(host: SettingsHost, tab: Tab, replace: boolean) {
   }
 }
 
-export function syncUrlWithSessionKey(sessionKey: string, replace: boolean) {
+export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, replace: boolean) {
   if (typeof window === "undefined") {
     return;
   }
@@ -392,6 +406,85 @@ export function syncUrlWithSessionKey(sessionKey: string, replace: boolean) {
   } else {
     window.history.pushState({}, "", url.toString());
   }
+}
+
+type PanesSyncHost = SettingsHost & {
+  splitLayout: SplitPaneLayout | null;
+  focusedPaneId: string | null;
+};
+
+export function syncUrlWithPanes(host: PanesSyncHost, replace: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+
+  if (host.splitLayout) {
+    const leaves = allLeaves(host.splitLayout.root);
+    const paneKeys = leaves.map((l) => l.threadId);
+    url.searchParams.set("panes", paneKeys.join(","));
+
+    const focusIdx = host.focusedPaneId ? leaves.findIndex((l) => l.id === host.focusedPaneId) : 0;
+    if (focusIdx > 0) {
+      url.searchParams.set("focus", String(focusIdx));
+    } else {
+      url.searchParams.delete("focus");
+    }
+
+    // Keep session= in sync with focused pane
+    const focusedKey = paneKeys[Math.max(0, focusIdx)];
+    if (focusedKey) {
+      url.searchParams.set("session", focusedKey);
+    }
+  } else {
+    url.searchParams.delete("panes");
+    url.searchParams.delete("focus");
+  }
+
+  if (replace) {
+    window.history.replaceState({}, "", url.toString());
+  } else {
+    window.history.pushState({}, "", url.toString());
+  }
+}
+
+/** Read panes from the current URL. Returns null if no panes param present. */
+export function readPanesFromUrl(): { paneKeys: string[]; focusIndex: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const panesRaw = params.get("panes");
+  if (!panesRaw) {
+    return null;
+  }
+  const paneKeys = panesRaw
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (paneKeys.length === 0) {
+    return null;
+  }
+  const focusRaw = params.get("focus");
+  const focusIndex = focusRaw ? Math.max(0, parseInt(focusRaw, 10) || 0) : 0;
+  return { paneKeys, focusIndex };
+}
+
+/** Restore a split layout from URL pane keys, reconciling with localStorage tree structure. */
+export function restoreSplitLayoutFromUrl(
+  paneKeys: string[],
+  focusIndex: number,
+  existingLayoutJson: string | null,
+): SplitPaneLayout | null {
+  if (paneKeys.length <= 1) {
+    return null;
+  }
+  const existingLayout = existingLayoutJson ? deserializeLayout(existingLayoutJson) : null;
+  const root = reconcileTreeWithPanes(existingLayout?.root ?? null, paneKeys);
+  const leaves = allLeaves(root);
+  const clampedFocus = Math.min(focusIndex, leaves.length - 1);
+  const focusedPaneId = leaves[clampedFocus]?.id ?? allLeafIds(root)[0];
+  return { root, focusedPaneId };
 }
 
 export async function loadOverview(host: SettingsHost) {

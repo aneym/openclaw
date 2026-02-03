@@ -12,6 +12,7 @@ export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
+  icon?: string;
   displayName?: string;
   derivedTitle?: string;
   lastMessagePreview?: string;
@@ -41,6 +42,7 @@ export type GatewaySessionRow = {
   lastChannel?: SessionEntry["lastChannel"];
   lastTo?: string;
   lastAccountId?: string;
+  archivedAt?: number;
 };
 
 export type GatewayAgentRow = {

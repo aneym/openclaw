@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "OpenClaw",
+    "slug": "openclaw-expo",
+    "version": "0.0.1",
+    "scheme": "openclaw",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "ai.openclaw.expo"
+    },
+    "android": {
+      "package": "ai.openclaw.expo",
+      "softwareKeyboardLayoutMode": "resize"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-sqlite"
+    ]
+  }
+}

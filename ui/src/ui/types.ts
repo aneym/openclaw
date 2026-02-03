@@ -302,20 +302,18 @@ export type ConfigSchemaResponse = {
 };
 
 export type PresenceEntry = {
-  deviceFamily?: string | null;
-  host?: string | null;
   instanceId?: string | null;
+  host?: string | null;
   ip?: string | null;
-  lastInputSeconds?: number | null;
-  mode?: string | null;
-  modelIdentifier?: string | null;
+  version?: string | null;
   platform?: string | null;
+  deviceFamily?: string | null;
+  modelIdentifier?: string | null;
+  mode?: string | null;
+  lastInputSeconds?: number | null;
   reason?: string | null;
-  roles?: Array<string | null> | null;
-  scopes?: Array<string | null> | null;
   text?: string | null;
   ts?: number | null;
-  version?: string | null;
 };
 
 export type GatewaySessionsDefaults = {
@@ -342,50 +340,18 @@ export type AgentsListResult = {
   agents: GatewayAgentRow[];
 };
 
-export type AgentIdentityResult = {
-  agentId: string;
-  name: string;
-  avatar: string;
-  emoji?: string;
-};
-
-export type AgentFileEntry = {
-  name: string;
-  path: string;
-  missing: boolean;
-  size?: number;
-  updatedAtMs?: number;
-  content?: string;
-};
-
-export type AgentsFilesListResult = {
-  agentId: string;
-  workspace: string;
-  files: AgentFileEntry[];
-};
-
-export type AgentsFilesGetResult = {
-  agentId: string;
-  workspace: string;
-  file: AgentFileEntry;
-};
-
-export type AgentsFilesSetResult = {
-  ok: true;
-  agentId: string;
-  workspace: string;
-  file: AgentFileEntry;
-};
-
 export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
+  icon?: string;
   displayName?: string;
   surface?: string;
+  channel?: string;
   subject?: string;
   room?: string;
   space?: string;
+  origin?: { surface?: string; provider?: string; label?: string };
   updatedAt: number | null;
   sessionId?: string;
   systemSent?: boolean;
@@ -400,6 +366,8 @@ export type GatewaySessionRow = {
   model?: string;
   modelProvider?: string;
   contextTokens?: number;
+  derivedTitle?: string;
+  archivedAt?: number;
 };
 
 export type SessionsListResult = {
@@ -560,4 +528,58 @@ export type LogEntry = {
   subsystem?: string | null;
   message?: string | null;
   meta?: Record<string, unknown> | null;
+};
+
+// ── Git ──
+
+export type GitFileStatus = {
+  path: string;
+  index: string;
+  working: string;
+};
+
+export type GitStatusResult = {
+  branch: string;
+  files: GitFileStatus[];
+  ahead: number;
+  behind: number;
+};
+
+export type GitLogEntry = {
+  hash: string;
+  hashShort: string;
+  author: string;
+  date: string;
+  message: string;
+};
+
+export type GitRepoEntry = {
+  path: string;
+  name: string;
+};
+
+// ── Sub-agent status ──
+
+export type SubagentRunInfo = {
+  runId: string;
+  childSessionKey: string;
+  requesterSessionKey: string;
+  task: string;
+  label?: string;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
+};
+
+export type SubagentEventPayload = {
+  phase: "start" | "end" | "error";
+  runId: string;
+  requesterSessionKey: string;
+  childSessionKey: string;
+  task: string;
+  label?: string;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
 };

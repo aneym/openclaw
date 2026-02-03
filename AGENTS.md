@@ -53,6 +53,60 @@
 - Lint/format: `pnpm check`
 - Tests: `pnpm test` (vitest); coverage: `pnpm test:coverage`
 
+## Dev Environment
+
+When running `pnpm dev:all`, the gateway uses `~/.openclaw-dev/` as the state directory. Key things to know:
+
+### Auth Profile Locations
+
+Auth profiles are stored per-agent:
+
+- Main agent: `~/.openclaw-dev/agents/main/agent/auth-profiles.json`
+- Dev agent: `~/.openclaw-dev/agents/dev/agent/auth-profiles.json`
+
+**Important:** The gateway uses the `main` agent by default, not `dev`. When adding/updating auth tokens for dev, update `agents/main/agent/auth-profiles.json`.
+
+### `lastGood` Controls Profile Selection
+
+The profile marked as `lastGood` in `auth-profiles.json` is used first:
+
+```json
+"lastGood": {
+  "anthropic": "anthropic:manual"
+}
+```
+
+Even with multiple profiles available, only `lastGood` is used unless it fails.
+
+### dev-all.sh Syncs Prod → Dev
+
+`scripts/dev-all.sh` syncs `~/.openclaw/openclaw.json` (prod) → `~/.openclaw-dev/openclaw.json` (dev) when prod is newer. This can overwrite dev-specific settings like:
+
+- `gateway.http.endpoints.chatCompletions.enabled`
+- Custom auth profiles in the config (not auth-profiles.json)
+
+To preserve dev auth profiles after a sync, ensure they are in `auth-profiles.json` (not inline in `openclaw.json`).
+
+### Updating Auth Tokens in Dev
+
+```bash
+# Add token to dev main agent (recommended)
+openclaw models auth paste-token --provider anthropic
+
+# Or edit directly and set lastGood
+# ~/.openclaw-dev/agents/main/agent/auth-profiles.json
+```
+
+### Testing Auth Changes
+
+Use the test gateway to verify auth works before relying on it:
+
+```bash
+OPENCLAW_STATE_DIR=~/.openclaw-dev pnpm agent:start
+# Test with curl...
+pnpm agent:stop -- <AGENT_ID>
+```
+
 ## Coding Style & Naming Conventions
 
 - Language: TypeScript (ESM). Prefer strict typing; avoid `any`.
@@ -61,6 +115,24 @@
 - Keep files concise; extract helpers instead of “V2” copies. Use existing patterns for CLI options and dependency injection via `createDefaultDeps`.
 - Aim to keep files under ~700 LOC; guideline only (not a hard guardrail). Split/refactor when it improves clarity or testability.
 - Naming: use **OpenClaw** for product/app/docs headings; use `openclaw` for CLI command, package/binary, paths, and config keys.
+
+## UI And React Best Practices
+
+- Web UI, React, and Next.js: follow Vercel React Best Practices, prioritizing CRITICAL/HIGH rules (waterfall elimination, bundle size, server performance) before lower-impact optimizations.
+- Component architecture and reusable UI APIs: follow Vercel Composition Patterns (avoid boolean prop proliferation, prefer compound components, lift state into providers, explicit variants, compose children over render props).
+- React Native and Expo: follow Vercel React Native Skills (list performance, animation constraints, navigation choices, UI patterns, and state guidance).
+- React 19 specific guidance applies only when the codebase is on React 19+; otherwise skip React 19 rules.
+- If a rule implies adding a new dependency (e.g. SWR, better-all, expo-image, Galeria, native menus), confirm the stack and scope before introducing it.
+- Web UI reviews: use the `web-design-guidelines` skill to fetch the latest Vercel Web Interface Guidelines and report findings in the required `file:line` format.
+
+### kOS (Electron App) Constraints
+
+- **Never use native browser dialogs** in kOS (`kos/`) — they're not supported in Electron's renderer:
+  - `prompt()` → use shadcn `<Dialog>` with `<Input>`
+  - `confirm()` → use shadcn `<AlertDialog>`
+  - `alert()` → use shadcn `<Dialog>` or toast notifications
+- **File/directory selection**: Use Electron's native dialog via `window.api.openDirectoryDialog()` when available, with a shadcn Dialog fallback for manual path entry.
+- See `kos/CLAUDE.md` for full kOS-specific guidance.
 
 ## Release Channels (Naming)
 

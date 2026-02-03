@@ -1,15 +1,16 @@
 import { html } from "lit";
 import { repeat } from "lit/directives/repeat.js";
-import type { AppViewState } from "./app-view-state.ts";
-import type { ThemeTransitionContext } from "./theme-transition.ts";
-import type { ThemeMode } from "./theme.ts";
-import type { SessionsListResult } from "./types.ts";
-import { refreshChat } from "./app-chat.ts";
-import { syncUrlWithSessionKey } from "./app-settings.ts";
-import { OpenClawApp } from "./app.ts";
-import { ChatState, loadChatHistory } from "./controllers/chat.ts";
-import { icons } from "./icons.ts";
-import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
+import type { AppViewState } from "./app-view-state";
+import type { ThemeMode } from "./theme";
+import type { ThemeTransitionContext } from "./theme-transition";
+import type { SessionsListResult } from "./types";
+import type { ModelCatalogEntry } from "./ui-types";
+import { refreshChat } from "./app-chat";
+import { syncUrlWithSessionKey } from "./app-settings";
+import { loadChatHistory } from "./controllers/chat";
+import { icons } from "./icons";
+import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation";
+import { humanizeSessionKey } from "./views/thread-list";
 
 export function renderTab(state: AppViewState, tab: Tab) {
   const href = pathForTab(tab, state.basePath);
@@ -48,8 +49,10 @@ export function renderChatControls(state: AppViewState) {
   );
   const disableThinkingToggle = state.onboarding;
   const disableFocusToggle = state.onboarding;
+  const disableSoundToggle = state.onboarding;
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const focusActive = state.onboarding ? true : state.settings.chatFocusMode;
+  const soundEnabled = state.onboarding ? false : state.settings.notificationSound;
   // Refresh icon
   const refreshIcon = html`
     <svg
@@ -84,6 +87,25 @@ export function renderChatControls(state: AppViewState) {
       <circle cx="12" cy="12" r="3"></circle>
     </svg>
   `;
+  // Split is "active" when we have multiple panes (root is a branch, not a leaf)
+  const splitActive = state.splitLayout?.root?.kind === "branch";
+  const disableSplitToggle = state.onboarding;
+  // Split pane icon (columns)
+  const splitIcon = html`
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    >
+      <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+      <line x1="12" y1="3" x2="12" y2="21"></line>
+    </svg>
+  `;
   return html`
     <div class="chat-controls">
       <label class="field chat-controls__session">
@@ -95,18 +117,18 @@ export function renderChatControls(state: AppViewState) {
             state.sessionKey = next;
             state.chatMessage = "";
             state.chatStream = null;
-            (state as unknown as OpenClawApp).chatStreamStartedAt = null;
+            state.chatStreamStartedAt = null;
             state.chatRunId = null;
-            (state as unknown as OpenClawApp).resetToolStream();
-            (state as unknown as OpenClawApp).resetChatScroll();
+            state.resetToolStream();
+            state.resetChatScroll();
             state.applySettings({
               ...state.settings,
               sessionKey: next,
               lastActiveSessionKey: next,
             });
             void state.loadAssistantIdentity();
-            syncUrlWithSessionKey(next, true);
-            void loadChatHistory(state as unknown as ChatState);
+            syncUrlWithSessionKey(state, next, true);
+            void loadChatHistory(state);
           }}
         >
           ${repeat(
@@ -114,16 +136,17 @@ export function renderChatControls(state: AppViewState) {
             (entry) => entry.key,
             (entry) =>
               html`<option value=${entry.key}>
-                ${entry.displayName ?? entry.key}
+                ${entry.displayName || humanizeSessionKey(entry.key)}
               </option>`,
           )}
         </select>
       </label>
+      ${renderModelPicker(state)}
       <button
         class="btn btn--sm btn--icon"
         ?disabled=${state.chatLoading || !state.connected}
         @click=${() => {
-          (state as unknown as OpenClawApp).resetToolStream();
+          state.resetToolStream();
           void refreshChat(state as unknown as Parameters<typeof refreshChat>[0]);
         }}
         title="Refresh chat data"
@@ -153,6 +176,25 @@ export function renderChatControls(state: AppViewState) {
         ${icons.brain}
       </button>
       <button
+        class="btn btn--sm btn--icon ${soundEnabled ? "active" : ""}"
+        ?disabled=${disableSoundToggle}
+        @click=${() => {
+          if (disableSoundToggle) {
+            return;
+          }
+          state.applySettings({
+            ...state.settings,
+            notificationSound: !state.settings.notificationSound,
+          });
+        }}
+        aria-pressed=${soundEnabled}
+        title=${
+          disableSoundToggle ? "Disabled during onboarding" : "Play sound when response completes"
+        }
+      >
+        ${icons.bell}
+      </button>
+      <button
         class="btn btn--sm btn--icon ${focusActive ? "active" : ""}"
         ?disabled=${disableFocusToggle}
         @click=${() => {
@@ -168,11 +210,108 @@ export function renderChatControls(state: AppViewState) {
         title=${
           disableFocusToggle
             ? "Disabled during onboarding"
-            : "Toggle focus mode (hide sidebar + page header)"
+            : "Toggle focus mode — hide sidebar + header"
         }
       >
         ${focusIcon}
       </button>
+      <button
+        class="btn btn--sm btn--icon ${splitActive ? "active" : ""}"
+        ?disabled=${disableSplitToggle}
+        @click=${async () => {
+          if (disableSplitToggle) {
+            return;
+          }
+          if (splitActive) {
+            await state.exitSplitMode();
+          } else {
+            state.splitPane("horizontal");
+          }
+        }}
+        aria-pressed=${splitActive}
+        title=${
+          disableSplitToggle
+            ? "Disabled during onboarding"
+            : splitActive
+              ? "Exit split view (⌘D)"
+              : "Split horizontal (⌘D) · vertical (⇧⌘D)"
+        }
+      >
+        ${splitIcon}
+      </button>
+      <button
+        class="btn btn--sm btn--icon ${state.gitPanelOpen ? "active" : ""}"
+        @click=${() => {
+          state.gitPanelOpen = !state.gitPanelOpen;
+        }}
+        aria-pressed=${state.gitPanelOpen}
+        title=${state.gitPanelOpen ? "Close source control (⇧⌘G)" : "Source control (⇧⌘G)"}
+      >
+        ${icons.gitBranch}
+      </button>
+    </div>
+  `;
+}
+
+export function renderModelPicker(state: AppViewState) {
+  const models = state.modelsList;
+  const selected = state.settings.selectedModel;
+
+  // Get default models from config snapshot (agents.defaults.models)
+  const snapshot = state.hello?.snapshot as
+    | { agentDefaults?: { models?: Record<string, unknown> } }
+    | undefined;
+  const defaultModels = snapshot?.agentDefaults?.models;
+  const defaultModelIds = defaultModels ? Object.keys(defaultModels) : [];
+
+  // Filter to only show models that are in the user's default models config
+  const availableModels = defaultModelIds.length
+    ? models.filter((entry) => {
+        const modelRef = `${entry.provider}/${entry.id}`;
+        return defaultModelIds.some((id) => {
+          // Match by exact ref or by alias value
+          if (id === modelRef) return true;
+          const config = defaultModels?.[id] as
+            | { alias?: string; provider?: string; model?: string }
+            | undefined;
+          if (!config) return false;
+          // Check if the alias points to this model
+          const aliasRef = config.alias;
+          if (aliasRef === modelRef) return true;
+          // Check if provider/model matches
+          if (config.provider === entry.provider && config.model === entry.id) return true;
+          return false;
+        });
+      })
+    : models; // Fallback to all models if no defaults configured
+
+  // Format model ref for display
+  const formatModelRef = (entry: ModelCatalogEntry) => {
+    return `${entry.provider}/${entry.id}`;
+  };
+
+  return html`
+    <div class="model-picker">
+      <label class="field model-picker__field">
+        <select
+          .value=${selected}
+          ?disabled=${!state.connected || state.modelsLoading}
+          @change=${(e: Event) => {
+            const next = (e.target as HTMLSelectElement).value;
+            void state.handleModelSelect(next);
+          }}
+        >
+          <option value="">Default Model</option>
+          ${repeat(
+            availableModels,
+            (entry) => formatModelRef(entry),
+            (entry) =>
+              html`<option value=${formatModelRef(entry)}>
+                ${entry.name} (${entry.provider})
+              </option>`,
+          )}
+        </select>
+      </label>
     </div>
   `;
 }
@@ -201,18 +340,6 @@ function resolveMainSessionKey(
   return null;
 }
 
-function resolveSessionDisplayName(key: string, row?: SessionsListResult["sessions"][number]) {
-  const label = row?.label?.trim();
-  if (label) {
-    return `${label} (${key})`;
-  }
-  const displayName = row?.displayName?.trim();
-  if (displayName) {
-    return displayName;
-  }
-  return key;
-}
-
 function resolveSessionOptions(
   sessionKey: string,
   sessions: SessionsListResult | null,
@@ -229,7 +356,7 @@ function resolveSessionOptions(
     seen.add(mainSessionKey);
     options.push({
       key: mainSessionKey,
-      displayName: resolveSessionDisplayName(mainSessionKey, resolvedMain || undefined),
+      displayName: resolvedMain?.displayName || resolvedMain?.label,
     });
   }
 
@@ -238,7 +365,7 @@ function resolveSessionOptions(
     seen.add(sessionKey);
     options.push({
       key: sessionKey,
-      displayName: resolveSessionDisplayName(sessionKey, resolvedCurrent),
+      displayName: resolvedCurrent?.displayName || resolvedCurrent?.label,
     });
   }
 
@@ -247,10 +374,7 @@ function resolveSessionOptions(
     for (const s of sessions.sessions) {
       if (!seen.has(s.key)) {
         seen.add(s.key);
-        options.push({
-          key: s.key,
-          displayName: resolveSessionDisplayName(s.key, s),
-        });
+        options.push({ key: s.key, displayName: s.displayName || s.label });
       }
     }
   }

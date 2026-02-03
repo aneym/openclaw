@@ -1,7 +1,18 @@
+import { readFile } from "node:fs/promises";
+
 import type { AgentToolResult } from "@mariozechner/pi-agent-core";
 import { createEditTool, createReadTool, createWriteTool } from "@mariozechner/pi-coding-agent";
-import type { AnyAgentTool } from "./pi-tools.types.js";
+
+import {
+  DEFAULT_INPUT_FILE_MAX_BYTES,
+  DEFAULT_INPUT_FILE_MAX_CHARS,
+  DEFAULT_INPUT_PDF_MAX_PAGES,
+  DEFAULT_INPUT_PDF_MAX_PIXELS,
+  DEFAULT_INPUT_PDF_MIN_TEXT_CHARS,
+  extractPdfContent,
+} from "../media/input-files.js";
 import { detectMime } from "../media/mime.js";
+import type { AnyAgentTool } from "./pi-tools.types.js";
 import { assertSandboxPath } from "./sandbox-paths.js";
 import { sanitizeToolResultImages } from "./tool-images.js";
 
@@ -13,15 +24,11 @@ type TextContentBlock = Extract<ToolContentBlock, { type: "text" }>;
 
 async function sniffMimeFromBase64(base64: string): Promise<string | undefined> {
   const trimmed = base64.trim();
-  if (!trimmed) {
-    return undefined;
-  }
+  if (!trimmed) return undefined;
 
   const take = Math.min(256, trimmed.length);
   const sliceLen = take - (take % 4);
-  if (sliceLen < 8) {
-    return undefined;
-  }
+  if (sliceLen < 8) return undefined;
 
   try {
     const head = Buffer.from(trimmed.slice(0, sliceLen), "base64");
@@ -53,18 +60,14 @@ async function normalizeReadImageResult(
       typeof (b as { data?: unknown }).data === "string" &&
       typeof (b as { mimeType?: unknown }).mimeType === "string",
   );
-  if (!image) {
-    return result;
-  }
+  if (!image) return result;
 
   if (!image.data.trim()) {
     throw new Error(`read: image payload is empty (${filePath})`);
   }
 
   const sniffed = await sniffMimeFromBase64(image.data);
-  if (!sniffed) {
-    return result;
-  }
+  if (!sniffed) return result;
 
   if (!sniffed.startsWith("image/")) {
     throw new Error(
@@ -72,9 +75,7 @@ async function normalizeReadImageResult(
     );
   }
 
-  if (sniffed === image.mimeType) {
-    return result;
-  }
+  if (sniffed === image.mimeType) return result;
 
   const nextContent = content.map((block) => {
     if (block && typeof block === "object" && (block as { type?: unknown }).type === "image") {
@@ -125,9 +126,7 @@ export const CLAUDE_PARAM_GROUPS = {
 // Claude Code uses file_path/old_string/new_string while pi-coding-agent uses path/oldText/newText.
 // This prevents models trained on Claude Code from getting stuck in tool-call loops.
 export function normalizeToolParams(params: unknown): Record<string, unknown> | undefined {
-  if (!params || typeof params !== "object") {
-    return undefined;
-  }
+  if (!params || typeof params !== "object") return undefined;
   const record = params as Record<string, unknown>;
   const normalized = { ...record };
   // file_path → path (read, write, edit)
@@ -171,9 +170,7 @@ export function patchToolSchemaForClaudeCompatibility(tool: AnyAgentTool): AnyAg
   ];
 
   for (const { original, alias } of aliasPairs) {
-    if (!(original in properties)) {
-      continue;
-    }
+    if (!(original in properties)) continue;
     if (!(alias in properties)) {
       properties[alias] = properties[original];
       changed = true;
@@ -185,16 +182,14 @@ export function patchToolSchemaForClaudeCompatibility(tool: AnyAgentTool): AnyAg
     }
   }
 
-  if (!changed) {
-    return tool;
-  }
+  if (!changed) return tool;
 
   return {
     ...tool,
     parameters: {
       ...schema,
       properties,
-      required,
+      ...(required.length > 0 ? { required } : {}),
     },
   };
 }
@@ -210,16 +205,10 @@ export function assertRequiredParams(
 
   for (const group of groups) {
     const satisfied = group.keys.some((key) => {
-      if (!(key in record)) {
-        return false;
-      }
+      if (!(key in record)) return false;
       const value = record[key];
-      if (typeof value !== "string") {
-        return false;
-      }
-      if (group.allowEmpty) {
-        return true;
-      }
+      if (typeof value !== "string") return false;
+      if (group.allowEmpty) return true;
       return value.trim().length > 0;
     });
 
@@ -283,6 +272,41 @@ export function createSandboxedEditTool(root: string) {
   return wrapSandboxPathGuard(wrapToolParamNormalization(base, CLAUDE_PARAM_GROUPS.edit), root);
 }
 
+const PDF_READ_LIMITS = {
+  allowUrl: false,
+  allowedMimes: new Set(["application/pdf"]),
+  maxBytes: DEFAULT_INPUT_FILE_MAX_BYTES,
+  maxChars: DEFAULT_INPUT_FILE_MAX_CHARS,
+  maxRedirects: 0,
+  timeoutMs: 10_000,
+  pdf: {
+    maxPages: DEFAULT_INPUT_PDF_MAX_PAGES,
+    maxPixels: DEFAULT_INPUT_PDF_MAX_PIXELS,
+    minTextChars: DEFAULT_INPUT_PDF_MIN_TEXT_CHARS,
+  },
+};
+
+async function handlePdfRead(filePath: string): Promise<AgentToolResult<unknown>> {
+  const buffer = await readFile(filePath);
+  const { text, images } = await extractPdfContent({ buffer, limits: PDF_READ_LIMITS });
+
+  const content: AgentToolResult<unknown>["content"] = [];
+  if (text) {
+    content.push({ type: "text" as const, text: `PDF content from ${filePath}:\n\n${text}` });
+  }
+  for (const img of images) {
+    content.push(img);
+  }
+  if (content.length === 0) {
+    content.push({
+      type: "text" as const,
+      text: `PDF at ${filePath} contained no extractable content.`,
+    });
+  }
+
+  return { content, details: undefined };
+}
+
 export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {
   const patched = patchToolSchemaForClaudeCompatibility(base);
   return {
@@ -293,10 +317,20 @@ export function createOpenClawReadTool(base: AnyAgentTool): AnyAgentTool {
         normalized ??
         (params && typeof params === "object" ? (params as Record<string, unknown>) : undefined);
       assertRequiredParams(record, CLAUDE_PARAM_GROUPS.read, base.name);
-      const result = await base.execute(toolCallId, normalized ?? params, signal);
-      const filePath = typeof record?.path === "string" ? String(record.path) : "<unknown>";
-      const normalizedResult = await normalizeReadImageResult(result, filePath);
-      return sanitizeToolResultImages(normalizedResult, `read:${filePath}`);
+
+      const filePath = typeof record?.path === "string" ? String(record.path) : "";
+      if (filePath.toLowerCase().endsWith(".pdf")) {
+        return handlePdfRead(filePath);
+      }
+
+      const result = (await base.execute(
+        toolCallId,
+        normalized ?? params,
+        signal,
+      )) as AgentToolResult<unknown>;
+      const displayPath = filePath || "<unknown>";
+      const normalizedResult = await normalizeReadImageResult(result, displayPath);
+      return sanitizeToolResultImages(normalizedResult, `read:${displayPath}`);
     },
   };
 }

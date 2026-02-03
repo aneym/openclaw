@@ -1,5 +1,7 @@
 import type { Snapshot } from "../protocol/index.js";
 import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
+import { listChatCommandsForConfig } from "../../auto-reply/commands-registry.js";
+import { listSkillCommandsForAgents } from "../../auto-reply/skill-commands.js";
 import { getHealthSnapshot, type HealthSummary } from "../../commands/health.js";
 import { CONFIG_PATH, STATE_DIR, loadConfig } from "../../config/config.js";
 import { resolveMainSessionKey } from "../../config/sessions.js";
@@ -22,6 +24,31 @@ export function buildGatewaySnapshot(): Snapshot {
   const uptimeMs = Math.round(process.uptime() * 1000);
   // Health is async; caller should await getHealthSnapshot and replace later if needed.
   const emptyHealth: unknown = {};
+  // Build slash command list for webchat autocomplete
+  let slashCommands: Array<{ name: string; description: string; category?: string }> | undefined;
+  try {
+    const skillCommands = listSkillCommandsForAgents({ cfg });
+    const allCommands = listChatCommandsForConfig(cfg, { skillCommands });
+    const seen = new Set<string>();
+    slashCommands = [];
+    for (const cmd of allCommands) {
+      // Use the first text alias (e.g. "/help") stripped of the leading "/"
+      const alias = cmd.textAliases?.[0];
+      if (!alias) continue;
+      const name = alias.startsWith("/") ? alias.slice(1) : alias;
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const isSkill = cmd.key.startsWith("skill:");
+      slashCommands.push({
+        name,
+        description: cmd.description,
+        ...(isSkill ? { category: "skill" } : {}),
+      });
+    }
+  } catch {
+    // Non-critical; omit slashCommands on error
+  }
+
   return {
     presence,
     health: emptyHealth,
@@ -36,6 +63,7 @@ export function buildGatewaySnapshot(): Snapshot {
       mainSessionKey,
       scope,
     },
+    slashCommands,
   };
 }
 
