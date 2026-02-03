@@ -220,9 +220,33 @@
       "exitCode": 0,
       "completionDetected": false,
       "errors": []
+    },
+    {
+      "iteration": 12,
+      "startedAt": "2026-02-03T04:34:17.769Z",
+      "endedAt": "2026-02-03T04:37:29.585Z",
+      "durationMs": 190905,
+      "toolsUsed": {},
+      "filesModified": [
+        ".ralph/ralph-tasks.md",
+        "src/renderer/src/components/layout/ThreadSearch.tsx",
+        "src/renderer/src/gateway/normalize.ts",
+        "src/renderer/src/lib/date-utils.ts",
+        "kos/.ralph/ralph-history.json",
+        "kos/.ralph/ralph-loop.state.json",
+        "kos/.ralph/ralph-tasks.md",
+        "kos/package-lock.json",
+        "kos/package.json",
+        "kos/src/renderer/src/components/layout/Shell.tsx",
+        "kos/src/renderer/src/components/layout/ThreadSearch.tsx",
+        "kos/src/renderer/src/lib/date-utils.ts"
+      ],
+      "exitCode": 0,
+      "completionDetected": false,
+      "errors": []
     }
   ],
-  "totalDurationMs": 1270854,
+  "totalDurationMs": 1461759,
   "struggleIndicators": {
     "repeatedErrors": {},
     "noProgressIterations": 0,
