@@ -4,6 +4,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Bot, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TextPart } from './TextPart'
+import { ReasoningBlock } from './ReasoningBlock'
 
 interface MessageGroupProps {
   messages: ChatMessage[]
@@ -149,9 +150,11 @@ export function MessageGroup({ messages, role, isStreaming }: MessageGroupProps)
               }
               if (part.type === 'reasoning') {
                 return (
-                  <div key={idx} className="text-xs opacity-70 italic border-l-2 pl-2 my-1">
-                    💭 {part.reasoning}
-                  </div>
+                  <ReasoningBlock
+                    key={idx}
+                    reasoning={part.reasoning}
+                    durationMs={part.durationMs}
+                  />
                 )
               }
               return (
