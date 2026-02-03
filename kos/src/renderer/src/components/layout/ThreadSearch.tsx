@@ -1,37 +1,40 @@
-import { useEffect, useState } from 'react'
-import { Command } from 'cmdk'
-import { useThreadStore } from '../../stores/thread-store'
-import { Dialog, DialogContent } from '../ui/dialog'
-import { MessageSquare, Clock } from 'lucide-react'
-import { formatDistanceToNow } from '../../lib/date-utils'
+import { Command } from "cmdk";
+import { MessageSquare, Clock } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { formatDistanceToNow } from "../../lib/date-utils";
+import { useThreadStore } from "../../stores/thread-store";
+import { Dialog, DialogContent } from "../ui/dialog";
 
 interface ThreadSearchProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 export function ThreadSearch({ open, onOpenChange }: ThreadSearchProps) {
-  const [search, setSearch] = useState('')
-  const threads = useThreadStore((s) => Array.from(s.threads.values()))
-  const setActiveThread = useThreadStore((s) => s.setActiveThread)
+  const [search, setSearch] = useState("");
+  const threadsMap = useThreadStore((s) => s.threads);
+  const setActiveThread = useThreadStore((s) => s.setActiveThread);
+
+  // Memoize to avoid infinite loop from new array reference
+  const threads = useMemo(() => Array.from(threadsMap.values()), [threadsMap]);
 
   // Filter non-archived threads
   const activeThreads = threads
-    .filter((t) => t.status !== 'archived')
-    .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+    .filter((t) => t.status !== "archived")
+    .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 
   const handleSelect = (threadId: string) => {
-    setActiveThread(threadId)
-    onOpenChange(false)
-    setSearch('')
-  }
+    setActiveThread(threadId);
+    onOpenChange(false);
+    setSearch("");
+  };
 
   // Reset search when dialog closes
   useEffect(() => {
     if (!open) {
-      setSearch('')
+      setSearch("");
     }
-  }, [open])
+  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -75,5 +78,5 @@ export function ThreadSearch({ open, onOpenChange }: ThreadSearchProps) {
         </Command>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

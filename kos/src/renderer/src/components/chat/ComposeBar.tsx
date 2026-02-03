@@ -1,19 +1,13 @@
 import { Send, X } from "lucide-react";
-import { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent } from "react";
+import { useState, useRef, KeyboardEvent, ClipboardEvent } from "react";
+import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
+import { useImageAttachments } from "../../hooks/use-image-attachments";
 import { useStreaming } from "../../hooks/use-streaming";
-import { notifications } from "../../lib/notifications";
 import { cn } from "../../lib/utils";
+import { generateUUID } from "../../lib/uuid";
 import { useGatewayStore } from "../../stores/gateway-store";
 import { useMessageQueueStore } from "../../stores/message-queue-store";
 import { MessageQueue } from "./MessageQueue";
-
-interface ImageAttachment {
-  id: string;
-  dataUrl: string;
-  size: number;
-  width: number;
-  height: number;
-}
 
 interface ComposeBarProps {
   sessionKey: string;
@@ -23,104 +17,17 @@ interface ComposeBarProps {
 
 export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBarProps) {
   const [text, setText] = useState("");
-  const [images, setImages] = useState<ImageAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { request, connected } = useGatewayStore();
   const { isStreaming } = useStreaming(sessionKey);
+  const { images, addImage, removeImage, clearImages } = useImageAttachments();
   const addToQueue = useMessageQueueStore((state) => state.addToQueue);
   const dequeue = useMessageQueueStore((state) => state.dequeue);
 
-  // Compress image with quality stepping until under 4MB
-  const compressImage = async (
-    file: File | Blob,
-  ): Promise<{ dataUrl: string; size: number; width: number; height: number }> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      const reader = new FileReader();
+  // Auto-resize textarea based on content
+  useAutoResizeTextarea(textareaRef, text);
 
-      reader.onload = (e) => {
-        img.src = e.target?.result as string;
-      };
-
-      img.onload = () => {
-        // Calculate resize dimensions (max 1568px on longest side)
-        const maxDim = 1568;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxDim || height > maxDim) {
-          if (width > height) {
-            height = Math.round((height * maxDim) / width);
-            width = maxDim;
-          } else {
-            width = Math.round((width * maxDim) / height);
-            height = maxDim;
-          }
-        }
-
-        // Create canvas and draw resized image
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"));
-          return;
-        }
-        ctx.drawImage(img, 0, 0, width, height);
-
-        // Quality stepping: try 0.9, 0.8, 0.7, 0.6, 0.5, 0.4
-        const qualities = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
-        const maxSize = 4 * 1024 * 1024; // 4MB
-
-        const tryQuality = (qualityIndex: number) => {
-          if (qualityIndex >= qualities.length) {
-            reject(new Error("Could not compress image to under 4MB"));
-            return;
-          }
-
-          const quality = qualities[qualityIndex];
-          canvas.toBlob(
-            (blob) => {
-              if (!blob) {
-                reject(new Error("Failed to create blob"));
-                return;
-              }
-
-              if (blob.size <= maxSize) {
-                // Success! Convert to data URL
-                const blobReader = new FileReader();
-                blobReader.onload = (e) => {
-                  resolve({
-                    dataUrl: e.target?.result as string,
-                    size: blob.size,
-                    width,
-                    height,
-                  });
-                };
-                blobReader.readAsDataURL(blob);
-              } else {
-                // Try next quality
-                tryQuality(qualityIndex + 1);
-              }
-            },
-            "image/jpeg",
-            quality,
-          );
-        };
-
-        tryQuality(0);
-      };
-
-      img.onerror = () => {
-        reject(new Error("Failed to load image"));
-      };
-
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Handle clipboard paste
+  // Handle clipboard paste for images
   const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = e.clipboardData?.items;
     if (!items) return;
@@ -139,41 +46,11 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     // Process all pasted images
     for (const item of imageItems) {
       const file = item.getAsFile();
-      if (!file) continue;
-
-      try {
-        const compressed = await compressImage(file);
-        const newImage: ImageAttachment = {
-          id: Math.random().toString(36).substring(7),
-          ...compressed,
-        };
-        setImages((prev) => [...prev, newImage]);
-      } catch (err) {
-        console.error("[compose] image compression failed:", err);
-        notifications.error(
-          "Image compression failed",
-          err instanceof Error ? err.message : undefined,
-        );
+      if (file) {
+        await addImage(file);
       }
     }
   };
-
-  const removeImage = (id: string) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
-  };
-
-  // Auto-resize textarea
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    // Reset height to auto to get the correct scrollHeight
-    textarea.style.height = "auto";
-
-    // Set height based on content, max 200px
-    const newHeight = Math.min(textarea.scrollHeight, 200);
-    textarea.style.height = `${newHeight}px`;
-  }, [text]);
 
   const canSend = connected && !disabled && (text.trim().length > 0 || images.length > 0);
 
@@ -181,9 +58,8 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     if (!canSend) return;
 
     const messageText = text.trim();
-    // const messageImages = [...images] // TODO: Use when image support is added
     setText("");
-    setImages([]);
+    clearImages();
 
     // If agent is streaming and not immediate, queue the message
     if (isStreaming && !immediate) {
@@ -195,30 +71,29 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     // If immediate and streaming, abort current run first
     if (immediate && isStreaming) {
       try {
-        await request("session.abort", { sessionKey });
+        await request("chat.abort", { sessionKey });
       } catch (err) {
         console.error("[compose] abort failed:", err);
       }
     }
 
     try {
-      // TODO: Update session.sendMessage to support image attachments
-      // For now, just send text
-      await request("session.sendMessage", {
+      // TODO: Add image attachments support
+      await request("chat.send", {
         sessionKey,
         message: messageText,
-        // images: messageImages.map(img => img.dataUrl) // Future: add image support
+        deliver: false,
+        idempotencyKey: generateUUID(),
       });
     } catch (err) {
       console.error("[compose] send failed:", err);
-      notifications.messageFailed(err instanceof Error ? err.message : "Unknown error");
     }
   };
 
   const handleSendNow = async () => {
     // Abort current run and send the first queued message
     try {
-      await request("session.abort", { sessionKey });
+      await request("chat.abort", { sessionKey });
     } catch (err) {
       console.error("[compose] abort failed:", err);
     }
@@ -226,13 +101,14 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     const firstMessage = dequeue(threadId);
     if (firstMessage) {
       try {
-        await request("session.sendMessage", {
+        await request("chat.send", {
           sessionKey,
           message: firstMessage.text,
+          deliver: false,
+          idempotencyKey: generateUUID(),
         });
       } catch (err) {
         console.error("[compose] send queued message failed:", err);
-        notifications.messageFailed(err instanceof Error ? err.message : "Unknown error");
       }
     }
   };
@@ -249,22 +125,6 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
       void handleSend(true);
     }
   };
-
-  // Auto-send queued messages when streaming ends
-  useEffect(() => {
-    if (!isStreaming) {
-      const firstMessage = dequeue(threadId);
-      if (firstMessage) {
-        request("session.sendMessage", {
-          sessionKey,
-          message: firstMessage.text,
-        }).catch((err) => {
-          console.error("[compose] auto-send queued message failed:", err);
-        });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming]);
 
   return (
     <>

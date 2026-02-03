@@ -1,5 +1,5 @@
 import { Activity, Circle, Zap } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { useStreaming } from "../../hooks/use-streaming";
 import { useGatewayStore } from "../../stores/gateway-store";
@@ -9,10 +9,13 @@ import { useWorkspaceStore } from "../../stores/workspace-store";
 interface AgentEventPayload {
   runId: string;
   sessionKey?: string;
+  stream: "lifecycle" | "tool" | "assistant" | "error" | string;
+  ts: number;
   data: {
     model?: string;
     provider?: string;
     agentId?: string;
+    phase?: string;
   };
 }
 
@@ -22,9 +25,14 @@ export function StatusBar() {
   const subscribe = useGatewayStore((s) => s.subscribe);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
-  const getThread = useThreadStore((s) => s.getThread);
+  // Select raw Map to avoid calling method in selector (causes infinite loops)
+  const threadsMap = useThreadStore((s) => s.threads);
 
-  const activeThread = activeThreadId ? getThread(activeThreadId) : null;
+  // Derive activeThread outside selector with useMemo
+  const activeThread = useMemo(
+    () => (activeThreadId ? threadsMap.get(activeThreadId) : null),
+    [threadsMap, activeThreadId],
+  );
   const { isStreaming, runId } = useStreaming(activeThread?.sessionKey ?? "");
 
   // Track current model and agent from events
@@ -36,43 +44,39 @@ export function StatusBar() {
       return;
     }
 
-    // Subscribe to agent events to track model/agent info
-    const unsubscribe = subscribe("agent.event", (payload: unknown) => {
+    // Subscribe to agent events to track model/agent info and run lifecycle
+    const unsubscribe = subscribe("agent", (payload: unknown) => {
       const agentPayload = payload as AgentEventPayload;
 
       if (agentPayload.sessionKey !== activeThread.sessionKey) {
         return;
       }
 
-      // Extract model info from event data
-      if (agentPayload.data?.model) {
-        const provider = agentPayload.data.provider ?? "";
-        const model = agentPayload.data.model;
-        const displayModel = provider ? `${provider}/${model}` : model;
-        setCurrentModel(displayModel);
-      }
-
-      if (agentPayload.data?.agentId) {
-        setCurrentAgentId(agentPayload.data.agentId);
-      }
-    });
-
-    // Subscribe to run.start events
-    const unsubscribeRunStart = subscribe("run.start", (payload: unknown) => {
-      const p = payload as { sessionKey?: string; runId: string; model?: string; agentId?: string };
-      if (p.sessionKey === activeThread.sessionKey) {
-        if (p.model) {
-          setCurrentModel(p.model);
+      // Handle lifecycle events
+      if (agentPayload.stream === "lifecycle") {
+        const phase = agentPayload.data?.phase;
+        // Run starting - capture model/agent info
+        if (phase === "start") {
+          if (agentPayload.data?.model) {
+            const provider = agentPayload.data.provider ?? "";
+            const model = agentPayload.data.model;
+            const displayModel = provider ? `${provider}/${model}` : model;
+            setCurrentModel(displayModel);
+          }
+          if (agentPayload.data?.agentId) {
+            setCurrentAgentId(agentPayload.data.agentId);
+          }
         }
-        if (p.agentId) {
-          setCurrentAgentId(p.agentId);
+        // Run ended - clear model/agent info
+        if (phase === "end" || phase === "error") {
+          setCurrentModel(null);
+          setCurrentAgentId(null);
         }
       }
     });
 
     return () => {
       unsubscribe();
-      unsubscribeRunStart();
     };
   }, [activeThread?.sessionKey, subscribe]);
 

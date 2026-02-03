@@ -3,37 +3,44 @@
  * Displays above the compose bar.
  */
 
-import { X } from 'lucide-react'
-import { useMessageQueueStore } from '../../stores/message-queue-store'
-import { cn } from '../../lib/utils'
+import { X } from "lucide-react";
+import { useMemo } from "react";
+import { cn } from "../../lib/utils";
+import { useMessageQueueStore } from "../../stores/message-queue-store";
 
 interface MessageQueueProps {
-  threadId: string
-  onSendNow: () => void
+  threadId: string;
+  onSendNow: () => void;
 }
 
+// Empty array constant to avoid creating new arrays on each render
+const EMPTY_QUEUE: never[] = [];
+
 export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
-  const queue = useMessageQueueStore((state) => state.getQueue(threadId))
-  const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue)
-  const clearQueue = useMessageQueueStore((state) => state.clearQueue)
+  const queuesMap = useMessageQueueStore((state) => state.queues);
+  const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
+  const clearQueue = useMessageQueueStore((state) => state.clearQueue);
+
+  // Memoize to avoid infinite loop from new array reference
+  const queue = useMemo(() => queuesMap.get(threadId) ?? EMPTY_QUEUE, [queuesMap, threadId]);
 
   if (queue.length === 0) {
-    return null
+    return null;
   }
 
   const formatTimestamp = (timestamp: number) => {
-    const date = new Date(timestamp)
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true
-    })
-  }
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
 
   const truncateText = (text: string, maxLength = 60) => {
-    if (text.length <= maxLength) return text
-    return text.slice(0, maxLength) + '...'
-  }
+    if (text.length <= maxLength) return text;
+    return text.slice(0, maxLength) + "...";
+  };
 
   return (
     <div className="border-t border-border bg-muted/30 p-3">
@@ -45,8 +52,8 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
           <button
             onClick={onSendNow}
             className={cn(
-              'text-xs px-2 py-1 rounded bg-primary text-primary-foreground',
-              'hover:bg-primary/90 transition-colors'
+              "text-xs px-2 py-1 rounded bg-primary text-primary-foreground",
+              "hover:bg-primary/90 transition-colors",
             )}
           >
             Send Now
@@ -54,8 +61,8 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
           <button
             onClick={() => clearQueue(threadId)}
             className={cn(
-              'text-xs px-2 py-1 rounded bg-muted text-muted-foreground',
-              'hover:bg-muted/80 transition-colors'
+              "text-xs px-2 py-1 rounded bg-muted text-muted-foreground",
+              "hover:bg-muted/80 transition-colors",
             )}
           >
             Clear All
@@ -68,15 +75,13 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
           <div
             key={msg.id}
             className={cn(
-              'flex items-center justify-between gap-2',
-              'rounded-md bg-background border border-border p-2',
-              'hover:border-muted-foreground/20 transition-colors'
+              "flex items-center justify-between gap-2",
+              "rounded-md bg-background border border-border p-2",
+              "hover:border-muted-foreground/20 transition-colors",
             )}
           >
             <div className="flex-1 flex items-center gap-2 min-w-0">
-              <span className="text-sm text-foreground truncate">
-                {truncateText(msg.text)}
-              </span>
+              <span className="text-sm text-foreground truncate">{truncateText(msg.text)}</span>
               <span className="text-xs text-muted-foreground shrink-0">
                 · {formatTimestamp(msg.timestamp)}
               </span>
@@ -84,8 +89,8 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
             <button
               onClick={() => removeFromQueue(threadId, msg.id)}
               className={cn(
-                'shrink-0 p-0.5 rounded hover:bg-muted transition-colors',
-                'text-muted-foreground hover:text-foreground'
+                "shrink-0 p-0.5 rounded hover:bg-muted transition-colors",
+                "text-muted-foreground hover:text-foreground",
               )}
               title="Remove"
             >
@@ -95,5 +100,5 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
         ))}
       </div>
     </div>
-  )
+  );
 }

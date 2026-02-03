@@ -1,23 +1,26 @@
-import { resolve } from 'path'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
-import react from '@vitejs/plugin-react'
-import tailwindcss from '@tailwindcss/vite'
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig, externalizeDepsPlugin } from "electron-vite";
+import { resolve } from "path";
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
   },
   preload: {
-    plugins: [externalizeDepsPlugin()]
+    plugins: [externalizeDepsPlugin()],
   },
   renderer: {
+    server: {
+      port: 5175,
+    },
     resolve: {
       alias: {
-        '@': resolve('src/renderer/src'),
-        '@renderer': resolve('src/renderer/src')
+        "@": resolve("src/renderer/src"),
+        "@renderer": resolve("src/renderer/src"),
       },
-      dedupe: ['react', 'react-dom']
+      dedupe: ["react", "react-dom"],
     },
-    plugins: [react(), tailwindcss()]
-  }
-})
+    plugins: [react(), tailwindcss()],
+  },
+});

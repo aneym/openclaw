@@ -132,6 +132,78 @@ Multi-theme support with OKLch color space CSS variables:
 - **Components**: Named exports (except page components). Props interface above component.
 - **shadcn style**: new-york variant, Radix UI primitives, CVA for variants
 
+## Vercel React Best Practices
+
+Apply these patterns from the `vercel-react-best-practices` and `vercel-composition-patterns` skills:
+
+### Zustand Selectors (CRITICAL)
+
+**Never call methods inside selectors** — this causes infinite re-render loops.
+
+```tsx
+// ❌ WRONG — calling getThread() in selector creates new reference each render
+const thread = useThreadStore((s) => s.getThread(threadId));
+
+// ✅ CORRECT — select raw Map, derive value with useMemo
+const threadsMap = useThreadStore((s) => s.threads);
+const thread = useMemo(() => threadsMap.get(threadId), [threadsMap, threadId]);
+```
+
+Apply this pattern for all Zustand stores with Map/Set data:
+
+- `useThreadStore` → select `threads` Map
+- `usePanelStore` → select `layouts` Map
+- `useProjectStore` → select `projects` Map, `expandedProjectIds` Set
+
+### React 19 Patterns
+
+kOS uses React 19.2 — follow these patterns:
+
+- Use `use(Context)` instead of `useContext(Context)`
+- No need for `forwardRef` — ref is now a regular prop
+- `use()` can be called conditionally
+
+### Composition Patterns
+
+**Avoid boolean prop proliferation:**
+
+```tsx
+// ❌ WRONG — exponential complexity
+<Composer isThread isDMThread={false} isEditing showAttachments />
+
+// ✅ CORRECT — explicit variants
+<ThreadComposer channelId="abc" />
+<EditComposer messageId="xyz" />
+```
+
+**Use compound components for complex UI:**
+
+```tsx
+// Structure as: Namespace.Subcomponent
+<Panel.Frame>
+  <Panel.Header />
+  <Panel.Content />
+</Panel.Frame>
+```
+
+**Lift state to providers when siblings need access:**
+
+```tsx
+// Provider boundary enables state sharing across non-nested components
+<ComposerProvider>
+  <Composer.Input />
+  <MessagePreview /> {/* Can access composer state */}
+  <SubmitButton /> {/* Can call submit action */}
+</ComposerProvider>
+```
+
+### Performance Rules (by priority)
+
+1. **Eliminating waterfalls**: Use `Promise.all()` for parallel fetches, move `await` into branches
+2. **Bundle optimization**: Direct imports (no barrel files), `next/dynamic` for heavy components
+3. **Re-render optimization**: Use `useMemo` for expensive derivations, primitive deps in effects
+4. **Rendering**: Use ternary `{cond ? <A/> : <B/>}` not `{cond && <A/>}` for conditionals
+
 ## Key Decisions
 
 - **Fresh build**: Not a fork of OpenClaw's webchat UI — carries forward architectural patterns (session routing, WebSocket protocol) but UI is built from scratch

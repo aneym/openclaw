@@ -1,4 +1,5 @@
 import { ChevronRight, ChevronDown, Settings } from "lucide-react";
+import { useMemo } from "react";
 import type { Project } from "../../types";
 import { useProjectStore } from "../../stores/project-store";
 
@@ -10,8 +11,12 @@ interface ProjectItemProps {
 }
 
 export function ProjectItem({ project, threadCount, onClick, onSettingsClick }: ProjectItemProps) {
-  const isExpanded = useProjectStore((s) => s.isExpanded(project.id));
+  // Select raw Set to avoid calling method in selector (causes infinite loops)
+  const expandedIds = useProjectStore((s) => s.expandedProjectIds);
   const toggleExpanded = useProjectStore((s) => s.toggleExpanded);
+
+  // Derive isExpanded outside selector with useMemo
+  const isExpanded = useMemo(() => expandedIds.has(project.id), [expandedIds, project.id]);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();

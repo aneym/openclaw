@@ -27,7 +27,7 @@ function trackWindowState(win) {
           height: bounds.height,
           x: bounds.x,
           y: bounds.y,
-          isMaximized: win.isMaximized()
+          isMaximized: win.isMaximized(),
         };
         fs.mkdirSync(path.join(os.homedir(), ".kos"), { recursive: true });
         fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
@@ -41,6 +41,9 @@ function trackWindowState(win) {
   win.on("close", saveState);
 }
 const icon = path.join(__dirname, "../../resources/icon.png");
+if (utils.is.dev) {
+  process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
+}
 electron.ipcMain.handle("get-gateway-config", () => {
   try {
     const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
@@ -53,24 +56,99 @@ electron.ipcMain.handle("get-gateway-config", () => {
     return { url: "ws://localhost:18789" };
   }
 });
+electron.ipcMain.handle("dialog:openDirectory", async () => {
+  const result = await electron.dialog.showOpenDialog({
+    properties: ["openDirectory", "createDirectory"],
+  });
+  return result;
+});
+function createMenu() {
+  const isMac = process.platform === "darwin";
+  const template = [
+    // App menu (macOS only)
+    ...(isMac
+      ? [
+          {
+            label: electron.app.name,
+            submenu: [
+              { role: "about" },
+              { type: "separator" },
+              { role: "services" },
+              { type: "separator" },
+              { role: "hide" },
+              { role: "hideOthers" },
+              { role: "unhide" },
+              { type: "separator" },
+              { role: "quit" },
+            ],
+          },
+        ]
+      : []),
+    // Edit menu
+    {
+      label: "Edit",
+      submenu: [
+        { role: "undo" },
+        { role: "redo" },
+        { type: "separator" },
+        { role: "cut" },
+        { role: "copy" },
+        { role: "paste" },
+        { role: "selectAll" },
+      ],
+    },
+    // View menu with zoom controls
+    {
+      label: "View",
+      submenu: [
+        { role: "reload" },
+        { role: "forceReload" },
+        { role: "toggleDevTools" },
+        { type: "separator" },
+        { role: "resetZoom" },
+        { role: "zoomIn" },
+        { role: "zoomOut" },
+        { type: "separator" },
+        { role: "togglefullscreen" },
+      ],
+    },
+    // Window menu
+    {
+      label: "Window",
+      submenu: [
+        { role: "minimize" },
+        { role: "zoom" },
+        ...(isMac
+          ? [{ type: "separator" }, { role: "front" }, { type: "separator" }, { role: "window" }]
+          : [{ role: "close" }]),
+      ],
+    },
+  ];
+  const menu = electron.Menu.buildFromTemplate(template);
+  electron.Menu.setApplicationMenu(menu);
+}
 function createWindow() {
   const saved = restoreWindowState();
   const mainWindow = new electron.BrowserWindow({
     width: saved?.width ?? 1400,
     height: saved?.height ?? 900,
+    minWidth: 800,
+    minHeight: 600,
     x: saved?.x,
     y: saved?.y,
     show: false,
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    ...process.platform === "darwin" ? {
-      trafficLightPosition: { x: 12, y: 12 }
-    } : {},
-    ...process.platform === "linux" ? { icon } : {},
+    ...(process.platform === "darwin"
+      ? {
+          trafficLightPosition: { x: 12, y: 12 },
+        }
+      : {}),
+    ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       sandbox: false,
-      contextIsolation: true
-    }
+      contextIsolation: true,
+    },
   });
   trackWindowState(mainWindow);
   if (saved?.isMaximized) {
@@ -91,12 +169,13 @@ function createWindow() {
   }
 }
 electron.app.whenReady().then(() => {
+  createMenu();
   utils.electronApp.setAppUserModelId("com.kinetic.kos");
   electron.app.on("browser-window-created", (_, window) => {
     utils.optimizer.watchWindowShortcuts(window);
   });
   createWindow();
-  electron.app.on("activate", function() {
+  electron.app.on("activate", function () {
     if (electron.BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });

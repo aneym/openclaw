@@ -11,22 +11,22 @@ The `useStreaming` hook tracks real-time streaming state for a given session. It
 ## API
 
 ```typescript
-function useStreaming(sessionKey: string): StreamingState
+function useStreaming(sessionKey: string): StreamingState;
 
 interface StreamingState {
-  isStreaming: boolean  // Whether the session is currently streaming
-  streamText: string    // Current streaming text content
-  runId: string | null  // ID of the current run, null when not streaming
+  isStreaming: boolean; // Whether the session is currently streaming
+  streamText: string; // Current streaming text content
+  runId: string | null; // ID of the current run, null when not streaming
 }
 ```
 
 ## Usage
 
 ```tsx
-import { useStreaming } from '@/hooks/use-streaming'
+import { useStreaming } from "@/hooks/use-streaming";
 
 function ChatPanel({ sessionKey }: { sessionKey: string }) {
-  const { isStreaming, streamText, runId } = useStreaming(sessionKey)
+  const { isStreaming, streamText, runId } = useStreaming(sessionKey);
 
   return (
     <div>
@@ -37,7 +37,7 @@ function ChatPanel({ sessionKey }: { sessionKey: string }) {
         </div>
       )}
     </div>
-  )
+  );
 }
 ```
 
@@ -45,50 +45,64 @@ function ChatPanel({ sessionKey }: { sessionKey: string }) {
 
 ### Event Subscriptions
 
-The hook subscribes to three gateway events:
+The hook subscribes to the `agent` gateway event and processes different stream types:
 
-1. **`agent.event`** - Main event containing the `stream` field with current text
-2. **`run.start`** - Fired when an agent run begins (sets isStreaming to true)
-3. **`run.end`** - Fired when an agent run completes (sets isStreaming to false)
+1. **`agent` event with `stream: 'lifecycle'`** - Run start/end events
+   - `phase: 'start'` → Sets `isStreaming` to true, captures `runId`
+   - `phase: 'end'` or `phase: 'error'` → Sets `isStreaming` to false, clears state
+
+2. **`agent` event with `stream: 'assistant'`** - Text streaming
+   - `data.text` contains the text delta to append to `streamText`
 
 ### Streaming Detection
 
-The hook uses the `stream` field from `agent.event` payloads:
-- Non-empty `stream` → streaming is active, update `streamText`
-- Empty `stream` → streaming ended, clear state
+The hook uses the `stream` field from `agent` event payloads:
+
+- `lifecycle` with `phase: 'start'` → streaming begins
+- `assistant` with `data.text` → streaming content, update `streamText`
+- `lifecycle` with `phase: 'end'` or `phase: 'error'` → streaming ended
 - `runId` is tracked to identify the specific run
 
 ### State Management
 
 The hook uses React's `useState` and `useEffect` with proper cleanup:
+
 - Subscribes to events when `sessionKey` changes
 - Unsubscribes on unmount or when dependencies change
 - Uses functional state updates to avoid stale closure issues
 
 ## Gateway Protocol
 
-The hook expects events with the following structure:
+The hook expects `agent` events with the following structure:
 
 ```typescript
-// agent.event
+// Agent lifecycle event
 {
-  runId: string
-  sessionKey: string
-  stream: string        // Current streaming text
-  ts: number
-  data: Record<string, unknown>
+  runId: string;
+  sessionKey: string;
+  stream: "lifecycle";
+  ts: number;
+  data: {
+    phase: "start" | "end" | "error";
+  }
 }
 
-// run.start / run.end
+// Assistant streaming event
 {
-  sessionKey: string
-  runId: string
+  runId: string;
+  sessionKey: string;
+  stream: "assistant";
+  ts: number;
+  data: {
+    text: string; // Text delta
+  }
 }
 ```
 
 ## Integration
 
 This hook is designed to work with:
+
 - `MessageList` component (show streaming indicator)
 - `MessageGroup` component (pass isStreaming flag)
 - `ComposeBar` component (disable send while streaming)

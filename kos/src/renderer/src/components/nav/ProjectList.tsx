@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Project } from "../../types";
 import { useProjectStore } from "../../stores/project-store";
 import { useThreadStore } from "../../stores/thread-store";
@@ -14,10 +14,17 @@ interface ProjectListProps {
 
 export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps) {
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const projects = useProjectStore((s) =>
-    activeWorkspace ? s.getProjectsByWorkspace(activeWorkspace.id) : [],
-  );
-  const isExpanded = useProjectStore((s) => s.isExpanded);
+  const projectsMap = useProjectStore((s) => s.projects);
+
+  // Memoize the filtered/sorted projects to avoid infinite loop
+  const projects = useMemo(() => {
+    if (!activeWorkspace) return [];
+    return Array.from(projectsMap.values())
+      .filter((p) => p.workspaceId === activeWorkspace.id)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [projectsMap, activeWorkspace?.id]);
+  // Select raw Set to avoid calling method in selector (causes infinite loops)
+  const expandedIds = useProjectStore((s) => s.expandedProjectIds);
   const setSelectedProject = useProjectStore((s) => s.setSelectedProject);
   const threads = useThreadStore((s) => s.threads);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
@@ -58,7 +65,7 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
         {/* Projects with threads */}
         {projects.map((project) => {
           const count = threadsByProject.get(project.id) || 0;
-          const expanded = isExpanded(project.id);
+          const expanded = expandedIds.has(project.id);
 
           return (
             <div key={project.id} className="space-y-0.5">

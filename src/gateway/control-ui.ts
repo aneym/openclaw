@@ -39,6 +39,8 @@ function resolveUiRoot(name: string): string | null {
   const candidates = [
     // Packaged app: ui lives alongside the executable.
     execDir ? path.resolve(execDir, name) : null,
+    // Running from bundled dist: dist/<chunk>.js -> dist/<name>
+    path.resolve(here, name),
     // Running from dist: dist/gateway/control-ui.js -> dist/<name>
     path.resolve(here, `../${name}`),
     // Running from source: src/gateway/control-ui.ts -> dist/<name>

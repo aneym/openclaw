@@ -6,6 +6,107 @@
 
 Implement the adaptive panel system and thread management. Users can split the main content area into resizable panels, each rendering a different panel type (chat, code editor, terminal, etc.). Layouts persist per thread — switching threads restores the exact layout.
 
+## Tabs + Dashboard
+
+Implement a top tab bar (VS Code/Cursor style) and a pinned Home/Dashboard tab. Tabs scope threads and layouts so users can run multiple project sessions in parallel while keeping a single gateway connection.
+
+### Tab Model
+
+Tabs are in-app (not native). One project tab per project per workspace. Home is pinned and non-closable.
+
+```
+type TabType = 'home' | 'project'
+
+interface Tab {
+  id: string
+  workspaceId: string
+  type: TabType
+  title: string
+  icon?: string
+  projectId?: string
+  isPinned: boolean
+  lastActiveAt: number
+}
+```
+
+### Tab Store
+
+```
+interface TabState {
+  tabsByWorkspace: Record<string, Tab[]>
+  activeTabIdByWorkspace: Record<string, string>
+  activeThreadIdByTab: Record<string, string | null>
+  selectedProjectIdByTab: Record<string, string | null>
+
+  openHomeTab(workspaceId: string): void
+  openProjectTab(workspaceId: string, projectId: string): void
+  closeTab(tabId: string): void
+  setActiveTab(tabId: string): void
+  setActiveThread(tabId: string, threadId: string | null): void
+  setSelectedProject(tabId: string, projectId: string | null): void
+}
+```
+
+Notes:
+
+- Tabs persist across app restart.
+- Switching workspace restores that workspace’s tab set and active tab.
+- Project tabs are unique by `(workspaceId, projectId)`; if already open, focus it.
+
+### Tab Components
+
+```
+src/renderer/src/components/tabs/
+├── TabBar.tsx           # Top tab strip
+├── TabItem.tsx          # Single tab (icon, title, close, status dot)
+└── TabOverflow.tsx      # Optional overflow dropdown for many tabs
+```
+
+Behavior:
+
+- `Home` tab is pinned, not closable.
+- Project tab shows project icon + name.
+- Streaming indicator on a tab when any thread in that tab is streaming.
+- Close button on hover.
+
+### Dashboard (Home Tab)
+
+The Home tab is a global dashboard + routing chat.
+
+Dashboard sections:
+
+- Open project tabs (status + quick switch).
+- Running sessions (CC/Codex) with phase + duration.
+- Active worktrees/sims/webviews (thread-linked).
+- Recent errors/alerts (gateway + run errors).
+
+Controls:
+
+- Abort/stop a running session.
+- Jump to the owning tab/thread.
+
+#### Data Sources
+
+Use existing OpenClaw gateway APIs where possible:
+
+- **Running CC/Codex sessions:** `GET /api/coding-sessions`
+  - Fields include `id`, `taskId`, `title`, `status`, `branch`, `worktreeRelative`, `execSessionId`, `startedAt`, `finishedAt`, `summary`, `error`.
+  - Log streaming: `GET /api/coding-sessions/:id/log?offset=<n>&limit=<n>`
+  - Controls: `POST /api/coding-sessions/:id/kill`, `POST /api/coding-sessions/:id/dismiss`, `POST /api/coding-sessions/:id/respond`
+  - Open terminal: `POST /api/coding-sessions/:id/terminal`
+- **Abort active chat runs:** `chat.abort` gateway RPC with `{ sessionKey, runId? }`
+- **Open worktrees/sims/webviews:** derive from open panel layouts (panel store) until explicit telemetry exists.
+
+### Routing Chat
+
+Home hosts the routing chat for general questions.
+
+Routing behavior:
+
+- If a routed project exists and the tab is open, focus it and move the thread there.
+- If the tab is not open, create it and move the thread there.
+- If routing is unclear, keep the thread in Home.
+
 ## Panel Engine
 
 ### Library: react-resizable-panels
@@ -34,21 +135,21 @@ src/renderer/src/components/panels/
 Recursively renders the `PanelLayout` tree from the panel store:
 
 ```tsx
-import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
+import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 
 function PanelContainer({ threadId }: { threadId: string }) {
-  const layout = usePanelStore(s => s.getLayout(threadId));
-  
+  const layout = usePanelStore((s) => s.getLayout(threadId));
+
   if (!layout) {
     // Default: single chat panel
     return <PanelContent type="chat" threadId={threadId} />;
   }
-  
+
   return <RenderNode node={layout.root} threadId={threadId} />;
 }
 
 function RenderNode({ node, threadId }: { node: PanelNode; threadId: string }) {
-  if (node.type === 'leaf') {
+  if (node.type === "leaf") {
     return (
       <Panel id={node.panelId} order={0}>
         <PanelToolbar panelId={node.panelId} threadId={threadId} />
@@ -56,7 +157,7 @@ function RenderNode({ node, threadId }: { node: PanelNode; threadId: string }) {
       </Panel>
     );
   }
-  
+
   return (
     <PanelGroup direction={node.direction} onLayout={(sizes) => handleResize(threadId, sizes)}>
       <Panel defaultSize={node.sizes[0]}>
@@ -132,7 +233,7 @@ src/renderer/src/components/threads/
 
 ### ThreadList.tsx
 
-Lives in the sidebar. Shows threads grouped by project:
+Lives in the sidebar. Shows threads scoped to the active tab, grouped by project:
 
 ```
 ┌──────────────────────┐
@@ -156,7 +257,7 @@ Lives in the sidebar. Shows threads grouped by project:
 - `●` = active thread (highlighted)
 - Threads sorted by `lastMessageAt` descending within each project
 - "Unsorted" section for threads with no project
-- Click thread → set active, load its panel layout
+- Click thread → set active for the current tab, load its panel layout
 - Collapsible project sections (persisted)
 
 ### ThreadItem.tsx
@@ -185,9 +286,10 @@ Threads map to OpenClaw sessions. When the gateway sends session events:
 // "session.stream.start" → set thread status to streaming
 // "session.stream.end" → set thread status to idle
 
-useGatewayEvent('session.list', (payload) => {
+useGatewayEvent("session.list", (payload) => {
   // On connect, gateway sends full session list
   // Sync threads: create missing, update existing, mark removed as archived
+  // Unassigned sessions default to Home tab of the active workspace
 });
 ```
 
@@ -196,8 +298,8 @@ useGatewayEvent('session.list', (payload) => {
 "New Thread" button → creates a new OpenClaw session via gateway RPC:
 
 ```ts
-const result = await gateway.request('session.create', {
-  label: 'New conversation',
+const result = await gateway.request("session.create", {
+  label: "New conversation",
 });
 // result.sessionKey → create Thread in store, set active
 ```
@@ -217,18 +319,18 @@ Agent ActivityPanel ActionCC/Codex session startsOpen `coding-session` panel (sp
 function handleToolEvent(event: ToolStreamEvent) {
   const { threadId, toolName, result } = event;
   const layout = panelStore.getLayout(threadId);
-  
+
   // Don't auto-open if user has closed this panel type before in this thread
   const dismissed = getDismissedPanelTypes(threadId);
-  
-  if (toolName === 'exec' && isCodingAgentExec(result)) {
-    if (!dismissed.has('coding-session') && !hasPanel(layout, 'coding-session')) {
-      panelStore.splitPanel(threadId, 'chat', 'horizontal', 'coding-session');
+
+  if (toolName === "exec" && isCodingAgentExec(result)) {
+    if (!dismissed.has("coding-session") && !hasPanel(layout, "coding-session")) {
+      panelStore.splitPanel(threadId, "chat", "horizontal", "coding-session");
     }
   }
-  
-  if ((toolName === 'Write' || toolName === 'Edit') && result?.filePath) {
-    if (!dismissed.has('code-editor')) {
+
+  if ((toolName === "Write" || toolName === "Edit") && result?.filePath) {
+    if (!dismissed.has("code-editor")) {
       openOrUpdateCodeEditor(threadId, result.filePath);
     }
   }
@@ -245,7 +347,17 @@ When a user closes an auto-opened panel, track that they dismissed it:
 
 ## Keyboard Shortcuts
 
-ShortcutAction`Cmd+\`Toggle sidebar`Cmd+Shift+\`Split panel right`Cmd+W`Close active panel`Cmd+1` through `Cmd+9`Switch to thread by position`Cmd+N`New thread`Cmd+K`Thread search (fuzzy)
+ShortcutAction
+`Cmd+T`New tab (project picker)
+`Cmd+W`Close active tab
+`Cmd+Shift+W`Close active panel
+`Cmd+1` through `Cmd+9`Switch tabs
+`Cmd+Shift+1` through `Cmd+Shift+9`Switch threads within tab
+`Ctrl+Tab` / `Ctrl+Shift+Tab`Cycle tabs
+`Cmd+N`New thread (active tab)
+`Cmd+K`Thread search (active tab)
+`Cmd+\`Toggle sidebar
+`Cmd+Shift+\`Split panel right
 
 ## Styling
 
@@ -256,18 +368,22 @@ ShortcutAction`Cmd+\`Toggle sidebar`Cmd+Shift+\`Split panel right`Cmd+W`Close ac
 
 ## Acceptance Criteria
 
- 1. Click a thread → main area shows its panel layout
- 2. Default layout = single chat panel (placeholder content is fine)
- 3. Split Right from toolbar → panel splits horizontally, each half resizable
- 4. Split Down from toolbar → panel splits vertically
- 5. Close panel → sibling expands to fill space
- 6. Resize panels → sizes persist when switching threads and coming back
- 7. Layouts persist across app restart
- 8. Thread list shows in sidebar, grouped by project
- 9. Click thread in sidebar → switches active thread + layout
-10. New Thread button creates a session via gateway and activates it
-11. `Cmd+\` toggles sidebar
-12. `Cmd+K` opens thread search overlay (fuzzy match on title)
+1.  Top tab bar renders with a pinned Home tab
+2.  Home tab shows dashboard sections + routing chat
+3.  `Cmd+T` opens a project tab (or focuses if already open)
+4.  Closing a tab removes it from the tab bar and persists state
+5.  Click a thread → main area shows its panel layout (scoped to active tab)
+6.  Default layout = single chat panel (placeholder content is fine)
+7.  Split Right from toolbar → panel splits horizontally, each half resizable
+8.  Split Down from toolbar → panel splits vertically
+9.  Close panel → sibling expands to fill space
+10. Resize panels → sizes persist when switching threads and coming back
+11. Layouts persist across app restart
+12. Thread list shows in sidebar, grouped by project (scoped to active tab)
+13. Click thread in sidebar → switches active thread + layout within tab
+14. New Thread button creates a session via gateway and activates it in the active tab
+15. `Cmd+\` toggles sidebar
+16. `Cmd+K` opens thread search overlay (fuzzy match on title) for active tab
 
 ## Do NOT
 
@@ -278,3 +394,4 @@ ShortcutAction`Cmd+\`Toggle sidebar`Cmd+Shift+\`Split panel right`Cmd+W`Close ac
 - Do not implement browser embedding (just placeholder with URL)
 - Do not implement the adaptive trigger system yet (just the infrastructure — `splitPanel`, `closePanel`, etc.)
 - Stub panels are fine: just render their type name and props as text
+- Do not implement native window tabs

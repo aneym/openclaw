@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
 import type { PanelNode } from "../../types";
 import { usePanelStore } from "../../stores/panel-store";
@@ -10,8 +10,12 @@ interface PanelContainerProps {
 }
 
 export function PanelContainer({ threadId }: PanelContainerProps) {
-  const layout = usePanelStore((s) => s.getLayout(threadId));
+  // Select raw Map to avoid calling method in selector (causes infinite loops)
+  const layoutsMap = usePanelStore((s) => s.layouts);
   const resetLayout = usePanelStore((s) => s.resetLayout);
+
+  // Derive layout outside selector with useMemo
+  const layout = useMemo(() => layoutsMap.get(threadId), [layoutsMap, threadId]);
 
   // Create default layout if none exists for this thread
   useEffect(() => {

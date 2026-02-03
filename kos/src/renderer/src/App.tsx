@@ -32,10 +32,15 @@ function App() {
   }, [activeWorkspace?.id]);
 
   // Connect to gateway when workspace config is ready
+  // Use a small delay to handle React strict mode double-mount
   useEffect(() => {
-    if (activeWorkspace?.gatewayToken) {
+    if (!activeWorkspace?.gatewayToken) return;
+
+    const timer = setTimeout(() => {
       connect(activeWorkspace.gatewayUrl, activeWorkspace.gatewayToken);
-    }
+    }, 50);
+
+    return () => clearTimeout(timer);
   }, [activeWorkspace?.gatewayUrl, activeWorkspace?.gatewayToken, connect]);
 
   return (

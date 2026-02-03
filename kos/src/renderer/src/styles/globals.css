@@ -229,3 +229,16 @@ body {
       transform 200ms ease-out;
   }
 }
+
+/* Sonner toast overrides - force theme colors over sonner defaults */
+[data-sonner-toaster] [data-sonner-toast] {
+  --normal-bg: var(--background);
+  --normal-border: var(--border);
+  --normal-text: var(--foreground);
+  --success-bg: var(--background);
+  --success-border: var(--border);
+  --success-text: var(--foreground);
+  --error-bg: var(--destructive);
+  --error-border: var(--destructive);
+  --error-text: var(--destructive-foreground);
+}

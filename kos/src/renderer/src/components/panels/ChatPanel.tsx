@@ -1,16 +1,20 @@
-import { useThreadStore } from '../../stores/thread-store'
-import { useMessages } from '../chat/hooks/useMessages'
-import { useStreaming } from '../../hooks/use-streaming'
-import { MessageList } from '../chat/MessageList'
-import { ComposeBar } from '../chat/ComposeBar'
+import { useMemo } from "react";
+import { useStreaming } from "../../hooks/use-streaming";
+import { useThreadStore } from "../../stores/thread-store";
+import { ComposeBar } from "../chat/ComposeBar";
+import { useMessages } from "../chat/hooks/useMessages";
+import { MessageList } from "../chat/MessageList";
 
 interface ChatPanelProps {
-  threadId: string
+  threadId: string;
 }
 
 export function ChatPanel({ threadId }: ChatPanelProps) {
-  // Get the thread to access sessionKey
-  const thread = useThreadStore((s) => s.getThread(threadId))
+  // Select raw Map to avoid calling method in selector (causes infinite loops)
+  const threadsMap = useThreadStore((s) => s.threads);
+
+  // Derive thread outside selector with useMemo
+  const thread = useMemo(() => threadsMap.get(threadId), [threadsMap, threadId]);
 
   // If thread doesn't exist or has no sessionKey, show error state
   if (!thread?.sessionKey) {
@@ -19,14 +23,14 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
         <p className="text-sm">Thread not found or session key missing</p>
         <p className="text-xs mt-2 text-muted-foreground/60">Thread ID: {threadId}</p>
       </div>
-    )
+    );
   }
 
-  const sessionKey = thread.sessionKey
+  const sessionKey = thread.sessionKey;
 
   // Fetch messages and track streaming state
-  const { messages, loading, error } = useMessages(sessionKey, threadId)
-  const { isStreaming } = useStreaming(sessionKey)
+  const { messages, loading, error } = useMessages(sessionKey, threadId);
+  const { isStreaming } = useStreaming(sessionKey);
 
   // Show loading state
   if (loading) {
@@ -34,7 +38,7 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
       <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
         <p className="text-sm">Loading messages...</p>
       </div>
-    )
+    );
   }
 
   // Show error state
@@ -44,7 +48,7 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
         <p className="text-sm">Failed to load messages</p>
         <p className="text-xs mt-2 text-muted-foreground">{error}</p>
       </div>
-    )
+    );
   }
 
   // Render chat UI
@@ -56,5 +60,5 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
       {/* Compose bar (fixed at bottom) */}
       <ComposeBar sessionKey={sessionKey} threadId={threadId} disabled={isStreaming} />
     </div>
-  )
+  );
 }
