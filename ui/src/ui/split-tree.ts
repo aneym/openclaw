@@ -73,6 +73,29 @@ export function splitLeaf(
   });
 }
 
+/** Split a leaf to add a terminal pane beside it. */
+export function splitLeafWithTerminal(
+  root: SplitNode,
+  targetPaneId: string,
+  direction: SplitDirection,
+  terminalId: string,
+): SplitNode {
+  return mapNode(root, (node) => {
+    if (node.kind !== "leaf" || node.id !== targetPaneId) {
+      return node;
+    }
+    const newLeaf = createTerminalLeaf(terminalId);
+    return {
+      kind: "branch",
+      id: generatePaneId(),
+      direction,
+      ratio: 0.5,
+      first: node,
+      second: newLeaf,
+    } as SplitBranch;
+  });
+}
+
 /** Remove a leaf from the tree. Returns the pruned tree or null if the tree is now empty. */
 export function removeLeaf(root: SplitNode, paneId: string): SplitNode | null {
   if (root.kind === "leaf") {
@@ -223,7 +246,12 @@ export function moveLeafBeside(
   }
 
   // Insert a new leaf with the source's threadId beside the target
-  const newLeaf = createLeaf(sourceLeaf.threadId);
+  const newLeaf: SplitLeaf = {
+    kind: "leaf",
+    id: generatePaneId(),
+    threadId: sourceLeaf.threadId,
+    ...(sourceLeaf.paneType ? { paneType: sourceLeaf.paneType } : {}),
+  };
   return mapNode(pruned, (node) => {
     if (node.kind !== "leaf" || node.id !== targetPaneId) {
       return node;
@@ -302,7 +330,11 @@ function serializeNode(node: SplitNode): SerializedNode {
 
 function deserializeNode(data: SerializedNode): SplitNode {
   if (data.k === "l") {
-    return { kind: "leaf", id: data.id, threadId: data.t };
+    const leaf: SplitLeaf = { kind: "leaf", id: data.id, threadId: data.t };
+    if (data.pt === "t") {
+      leaf.paneType = "terminal";
+    }
+    return leaf;
   }
   return {
     kind: "branch",

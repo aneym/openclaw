@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { Settings } from '../settings/Settings'
+import { PanelContainer } from '../panels/PanelContainer'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThreadStore } from '../../stores/thread-store'
 
@@ -11,8 +12,6 @@ export function Shell() {
   const [view, setView] = useState<View>('home')
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace)
   const activeThreadId = useThreadStore((s) => s.activeThreadId)
-  const threads = useThreadStore((s) => s.threads)
-  const activeThread = activeThreadId ? (threads.get(activeThreadId) ?? null) : null
 
   return (
     <div className="h-screen flex flex-col">
@@ -27,18 +26,8 @@ export function Shell() {
           <div className="flex-1 overflow-hidden">
             {view === 'settings' ? (
               <Settings />
-            ) : activeThread ? (
-              <div className="flex-1 flex items-center justify-center h-full">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold mb-2">{activeThread.title}</h2>
-                  {activeThread.subtitle && (
-                    <p className="text-muted-foreground">{activeThread.subtitle}</p>
-                  )}
-                  <p className="text-sm text-muted-foreground mt-4">
-                    Chat UI will be implemented in Track 4
-                  </p>
-                </div>
-              </div>
+            ) : activeThreadId ? (
+              <PanelContainer threadId={activeThreadId} />
             ) : (
               <div className="flex-1 flex items-center justify-center h-full">
                 <div className="text-center max-w-md">

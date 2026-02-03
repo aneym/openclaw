@@ -22,6 +22,21 @@ if [ -f "$PROD_CONFIG" ]; then
       const devToken = dev.gateway?.auth?.token ?? 'dev';
       const merged = { ...prod };
       merged.gateway = { ...prod.gateway, port: 18790, auth: { mode: 'token', token: devToken } };
+      // Disable all channel plugins in dev to prevent double-polling (e.g. Telegram 409 conflicts)
+      if (merged.channels) {
+        for (const ch of Object.keys(merged.channels)) {
+          if (merged.channels[ch] && typeof merged.channels[ch] === 'object') {
+            merged.channels[ch].enabled = false;
+          }
+        }
+      }
+      if (merged.plugins?.entries) {
+        for (const pl of Object.keys(merged.plugins.entries)) {
+          if (merged.plugins.entries[pl] && typeof merged.plugins.entries[pl] === 'object') {
+            merged.plugins.entries[pl].enabled = false;
+          }
+        }
+      }
       fs.writeFileSync('$DEV_CONFIG', JSON.stringify(merged, null, 2) + '\n');
     " 2>/dev/null && printf '[dev-all] synced prod config → %s\n' "$DEV_CONFIG"
   fi

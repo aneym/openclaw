@@ -127,7 +127,7 @@
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
     "postinstall": "node scripts/postinstall.js",
     "prepack": "pnpm build && pnpm ui:build",
-    "prod": "pnpm build && pnpm ui:build && openclaw daemon install --port 18789 --runtime node --force && openclaw dashboard --no-open",
+    "prod": "openclaw gateway stop 2>/dev/null; pnpm build && pnpm ui:build && openclaw daemon install --port 18789 --runtime node --force && openclaw dashboard --no-open",
     "protocol:check": "pnpm protocol:gen && pnpm protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json apps/macos/Sources/OpenClawProtocol/GatewayModels.swift",
     "protocol:gen": "node --import tsx scripts/protocol-gen.ts",
     "protocol:gen:swift": "node --import tsx scripts/protocol-gen-swift.ts",

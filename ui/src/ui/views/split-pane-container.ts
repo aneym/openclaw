@@ -8,6 +8,7 @@ import { html } from "lit";
 import type { AppViewState } from "../app-view-state";
 import type { SplitNode, SplitBranch, SplitLeaf } from "../split-tree";
 import { renderChatPane } from "./chat-pane";
+import { renderTerminalPane } from "./terminal-pane";
 import "../components/resizable-divider";
 
 export function renderSplitPaneContainer(state: AppViewState) {
@@ -27,6 +28,9 @@ function renderNode(node: SplitNode, state: AppViewState): ReturnType<typeof htm
 
 function renderLeaf(leaf: SplitLeaf, state: AppViewState): ReturnType<typeof html> {
   const isFocused = state.focusedPaneId === leaf.id;
+  if (leaf.paneType === "terminal") {
+    return renderTerminalPane({ paneId: leaf.id, terminalId: leaf.threadId, state, isFocused });
+  }
   const paneState = state.paneStates.get(leaf.id);
   return renderChatPane({ leaf, state, paneState, isFocused });
 }

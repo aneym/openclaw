@@ -6,8 +6,8 @@
 - [x] Build PanelContainer that recursively renders PanelLayout tree using react-resizable-panels (PanelGroup, Panel, PanelResizeHandle). Default: single chat panel placeholder.
 - [x] Build PanelToolbar with title, split right/down buttons, and close button. Show on hover, 32px height.
 - [x] Implement panel store operations: splitPanel, closePanel, updatePanelProps, resetLayout. Wire up persistence to localStorage with `kos-panels` key.
-- [ ] Build PanelContent switch component that renders the correct stub for each PanelType (chat, code-editor, terminal, coding-session, linear-board, browser, preview, diff, empty).
-- [ ] Wire PanelContainer into Shell.tsx — main content area renders active thread's panel layout.
+- [x] Build PanelContent switch component that renders the correct stub for each PanelType (chat, code-editor, terminal, coding-session, linear-board, browser, preview, diff, empty).
+- [x] Wire PanelContainer into Shell.tsx — main content area renders active thread's panel layout.
 
 ## Section 2: Thread System (KOS-7, KOS-13)
 > Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7, KOS-13
