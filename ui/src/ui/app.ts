@@ -90,7 +90,9 @@ import { loadDraft, loadAttachments, loadQueue } from "./draft-storage";
 import { type PaneState, type ArtifactTab, syncPaneStates } from "./pane-state";
 import {
   createLeaf,
+  createTerminalLeaf,
   splitLeaf as splitLeafTree,
+  splitLeafWithTerminal,
   removeLeaf as removeLeafTree,
   findLeaf,
   allLeaves,
@@ -1711,6 +1713,141 @@ export class OpenClawApp extends LitElement {
           }
         }
       }
+    }
+  }
+
+  // -- Terminal pane management -----------------------------------------------
+
+  /** Open a terminal in the focused pane (split if in chat, or create new pane). */
+  async openTerminalPane() {
+    const terminalId = await this._createTerminalSession();
+    if (!terminalId) {
+      return;
+    }
+
+    if (!this.splitLayout) {
+      // Create initial layout with the terminal
+      const leaf = createTerminalLeaf(terminalId, "pane-initial");
+      this.splitLayout = {
+        root: leaf,
+        focusedPaneId: leaf.id,
+      };
+      this.focusedPaneId = leaf.id;
+      this.syncPaneStatesFromLayout();
+      this.persistSplitLayout();
+      return;
+    }
+
+    // Replace the focused pane's content with a terminal if it's empty,
+    // otherwise split to add a new terminal pane
+    const focusedId = this.focusedPaneId ?? allLeafIds(this.splitLayout.root)[0];
+    if (!focusedId) {
+      return;
+    }
+
+    const focusedLeaf = findLeaf(this.splitLayout.root, focusedId);
+    if (focusedLeaf && focusedLeaf.paneType !== "terminal") {
+      // Split horizontally to add terminal beside current pane
+      const newRoot = splitLeafWithTerminal(
+        this.splitLayout.root,
+        focusedId,
+        "horizontal",
+        terminalId,
+      );
+      const newLeaves = allLeaves(newRoot);
+      const oldIds = new Set(allLeafIds(this.splitLayout.root));
+      const newLeaf = newLeaves.find((l) => !oldIds.has(l.id));
+      this.splitLayout = {
+        root: newRoot,
+        focusedPaneId: newLeaf?.id ?? focusedId,
+      };
+      this.focusedPaneId = newLeaf?.id ?? focusedId;
+    }
+
+    this.syncPaneStatesFromLayout();
+    this.persistSplitLayout();
+  }
+
+  /** Open a terminal pane via split (beside the focused pane). */
+  async openTerminalInSplit(direction: "horizontal" | "vertical") {
+    const terminalId = await this._createTerminalSession();
+    if (!terminalId) {
+      return;
+    }
+
+    if (!this.splitLayout) {
+      // Create initial layout with single terminal
+      const leaf = createTerminalLeaf(terminalId, "pane-initial");
+      this.splitLayout = {
+        root: leaf,
+        focusedPaneId: leaf.id,
+      };
+      this.focusedPaneId = leaf.id;
+      this.syncPaneStatesFromLayout();
+      this.persistSplitLayout();
+      return;
+    }
+
+    const targetId = this.focusedPaneId ?? allLeafIds(this.splitLayout.root)[0];
+    if (!targetId) {
+      return;
+    }
+
+    const newRoot = splitLeafWithTerminal(this.splitLayout.root, targetId, direction, terminalId);
+    const newLeaves = allLeaves(newRoot);
+    const oldIds = new Set(allLeafIds(this.splitLayout.root));
+    const newLeaf = newLeaves.find((l) => !oldIds.has(l.id));
+    const newPaneId = newLeaf?.id ?? targetId;
+
+    this.splitLayout = {
+      root: newRoot,
+      focusedPaneId: newPaneId,
+    };
+    this.focusedPaneId = newPaneId;
+    this.syncPaneStatesFromLayout();
+    this.persistSplitLayout();
+  }
+
+  /** Close a terminal pane and dispose its resources. */
+  async closeTerminalPane(paneId: string) {
+    const { disposeTerminalPane } = await import("./views/terminal-pane.js");
+    disposeTerminalPane(paneId);
+    await this.closePane(paneId);
+  }
+
+  /** Replace the terminal session in a pane (used for restart). */
+  replaceTerminalInPane(paneId: string, newTerminalId: string) {
+    if (!this.splitLayout) {
+      return;
+    }
+    const leaf = findLeaf(this.splitLayout.root, paneId);
+    if (!leaf || leaf.paneType !== "terminal") {
+      return;
+    }
+    const newRoot = setLeafThread(this.splitLayout.root, paneId, newTerminalId);
+    this.splitLayout = { ...this.splitLayout, root: newRoot };
+    this.syncPaneStatesFromLayout();
+    this.persistSplitLayout();
+  }
+
+  /** Create a terminal session via HTTP POST. Returns the terminal ID or null on failure. */
+  private async _createTerminalSession(): Promise<string | null> {
+    try {
+      const base = this.basePath || window.location.origin;
+      const headers: Record<string, string> = { "Content-Type": "application/json" };
+      if (this.password) {
+        headers["Authorization"] = `Bearer ${this.password}`;
+      }
+      const resp = await fetch(`${base}/api/terminals`, { method: "POST", headers });
+      if (!resp.ok) {
+        console.error("Failed to create terminal session:", resp.status);
+        return null;
+      }
+      const data = (await resp.json()) as { id: string };
+      return data.id;
+    } catch (err) {
+      console.error("Failed to create terminal session:", err);
+      return null;
     }
   }
 

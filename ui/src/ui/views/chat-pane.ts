@@ -269,6 +269,18 @@ export function renderChatPane(props: ChatPaneProps) {
     onFocusNext: () => {
       state.focusNextPane();
     },
+    onOpenTerminal: () => {
+      state.focusPane(leaf.id);
+      state.openTerminalPane();
+    },
+    onSplitTerminalHorizontal: () => {
+      state.focusPane(leaf.id);
+      state.openTerminalInSplit("horizontal");
+    },
+    onSplitTerminalVertical: () => {
+      state.focusPane(leaf.id);
+      state.openTerminalInSplit("vertical");
+    },
   };
 
   const handleContextMenu = (e: MouseEvent) => {

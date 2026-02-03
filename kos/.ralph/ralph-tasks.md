@@ -12,7 +12,7 @@
 ## Section 2: Thread System (KOS-7, KOS-13)
 > Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7, KOS-13
 
-- [ ] Build ThreadList component for sidebar — threads grouped by project, sorted by lastMessageAt. Collapsible project sections.
+- [x] Build ThreadList component for sidebar — threads grouped by project, sorted by lastMessageAt. Collapsible project sections.
 - [ ] Build ThreadItem with title, relative timestamp, status dot (streaming/idle/unread).
 - [ ] Wire thread switching: click thread → set active thread → load its panel layout in PanelContainer.
 - [ ] Build NewThreadButton that creates a session via gateway RPC and activates it.

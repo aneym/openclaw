@@ -21,6 +21,7 @@ import type {
   CronStatus,
   GitFileStatus,
   GitLogEntry,
+  GitRepoEntry,
   HealthSnapshot,
   LogEntry,
   LogLevel,
@@ -75,6 +76,8 @@ export type AppViewState = {
   subagentRuns: Map<string, import("./types").SubagentRunInfo[]>;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
+  chatNewMessagesBelow: boolean;
+  scrollToBottom: () => void;
   devicesLoading: boolean;
   devicesError: string | null;
   devicesList: DevicePairingList | null;
@@ -186,6 +189,9 @@ export type AppViewState = {
   gitChangesCollapsed: boolean;
   gitLogCollapsed: boolean;
   gitPanelOpen: boolean;
+  gitRepos: GitRepoEntry[];
+  gitCwd: string;
+  gitReposLoading: boolean;
   client: GatewayBrowserClient | null;
   connect: () => void;
   setTab: (tab: Tab) => void;
@@ -318,4 +324,11 @@ export type AppViewState = {
   focusNextPane: () => void;
   exitSplitMode: () => Promise<void>;
   restoreSplitLayout: () => void;
+  // Terminal pane management
+  openTerminalPane: () => Promise<void>;
+  openTerminalInSplit: (direction: "horizontal" | "vertical") => Promise<void>;
+  closeTerminalPane: (paneId: string) => Promise<void>;
+  replaceTerminalInPane: (paneId: string, newTerminalId: string) => void;
+  // Coding sessions panel
+  handleOpenCodingSession: () => void;
 };

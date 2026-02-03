@@ -2,7 +2,7 @@
  * Terminal pane — renders an xterm.js terminal connected to a PTY on the gateway
  * via WebSocket.
  */
-import { html, type TemplateResult } from "lit";
+import { html } from "lit";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
@@ -351,7 +351,7 @@ function hasActiveTerminal(paneId: string): boolean {
   return !!entry && !entry.disposed;
 }
 
-export function renderTerminalPane(props: TerminalPaneProps): TemplateResult {
+export function renderTerminalPane(props: TerminalPaneProps): ReturnType<typeof html> {
   const { paneId, terminalId, state, isFocused } = props;
 
   // Initialize terminal on first render (setup runs in rAF after Lit paints)

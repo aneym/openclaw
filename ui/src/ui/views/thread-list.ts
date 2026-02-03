@@ -58,6 +58,7 @@ export interface NavThreadListProps {
   onArchive: (sessionKey: string) => void;
   onUnarchive: (sessionKey: string) => void;
   onNewSession: () => void;
+  onOpenTerminal?: () => void;
   onRequestUpdate: () => void;
 }
 

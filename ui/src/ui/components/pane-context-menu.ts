@@ -13,6 +13,9 @@ export interface PaneContextMenuCallbacks {
   onClosePane: () => void;
   onNewThread: () => void;
   onFocusNext: () => void;
+  onOpenTerminal?: () => void;
+  onSplitTerminalHorizontal?: () => void;
+  onSplitTerminalVertical?: () => void;
 }
 
 @customElement("pane-context-menu")
@@ -182,6 +185,28 @@ export class PaneContextMenu extends LitElement {
         <button class="menu-item" @click=${() => this.select(this.callbacks!.onNewThread)}>
           New Thread
         </button>
+        <div class="separator"></div>
+        ${
+          this.callbacks?.onOpenTerminal
+            ? html`<button class="menu-item" @click=${() => this.select(this.callbacks!.onOpenTerminal!)}>
+                Open Terminal
+              </button>`
+            : nothing
+        }
+        ${
+          this.callbacks?.onSplitTerminalHorizontal
+            ? html`<button class="menu-item" @click=${() => this.select(this.callbacks!.onSplitTerminalHorizontal!)}>
+                Split Terminal Right
+              </button>`
+            : nothing
+        }
+        ${
+          this.callbacks?.onSplitTerminalVertical
+            ? html`<button class="menu-item" @click=${() => this.select(this.callbacks!.onSplitTerminalVertical!)}>
+                Split Terminal Down
+              </button>`
+            : nothing
+        }
         ${
           this.showFocusNext
             ? html`
