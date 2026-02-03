@@ -1,23 +1,37 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useGatewayStore } from '../stores/gateway-store';
 
-export function useGateway() {
-  return useGatewayStore((s) => ({
-    connected: s.connected,
-    error: s.error,
-    connect: s.connect,
-    disconnect: s.disconnect,
-    request: s.request,
-  }));
+/** Individual selectors to avoid object creation on every render */
+export function useGatewayConnected() {
+  return useGatewayStore((s) => s.connected);
+}
+
+export function useGatewayError() {
+  return useGatewayStore((s) => s.error);
+}
+
+export function useGatewayConnect() {
+  return useGatewayStore((s) => s.connect);
+}
+
+export function useGatewayDisconnect() {
+  return useGatewayStore((s) => s.disconnect);
+}
+
+export function useGatewayRequest() {
+  return useGatewayStore((s) => s.request);
 }
 
 export function useGatewayEvent(event: string, handler: (payload: unknown) => void) {
   const subscribe = useGatewayStore((s) => s.subscribe);
+  const handlerRef = useRef(handler);
+  handlerRef.current = handler;
 
   useEffect(() => {
-    const unsubscribe = subscribe(event, handler);
+    const stableHandler = (payload: unknown) => handlerRef.current(payload);
+    const unsubscribe = subscribe(event, stableHandler);
     return unsubscribe;
-  }, [event, handler, subscribe]);
+  }, [event, subscribe]);
 }
 
 export function useSession(sessionKey: string) {
@@ -26,20 +40,22 @@ export function useSession(sessionKey: string) {
   const subscribe = useGatewayStore((s) => s.subscribe);
 
   useEffect(() => {
-    // Subscribe to session-specific events
     const unsubscribes = [
-      subscribe('session.message', (payload: any) => {
-        if (payload?.sessionKey === sessionKey) {
+      subscribe('session.message', (payload: unknown) => {
+        const p = payload as { sessionKey?: string };
+        if (p?.sessionKey === sessionKey) {
           setMessages((prev) => [...prev, payload]);
         }
       }),
-      subscribe('session.stream.start', (payload: any) => {
-        if (payload?.sessionKey === sessionKey) {
+      subscribe('session.stream.start', (payload: unknown) => {
+        const p = payload as { sessionKey?: string };
+        if (p?.sessionKey === sessionKey) {
           setIsStreaming(true);
         }
       }),
-      subscribe('session.stream.end', (payload: any) => {
-        if (payload?.sessionKey === sessionKey) {
+      subscribe('session.stream.end', (payload: unknown) => {
+        const p = payload as { sessionKey?: string };
+        if (p?.sessionKey === sessionKey) {
           setIsStreaming(false);
         }
       }),

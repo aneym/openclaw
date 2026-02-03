@@ -1,23 +1,13 @@
-import { useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { StatusBar } from './StatusBar';
-import { useGatewayStore } from '../../stores/gateway-store';
 import { useWorkspaceStore } from '../../stores/workspace-store';
 import { useThreadStore } from '../../stores/thread-store';
 
 export function Shell() {
-  const connect = useGatewayStore((s) => s.connect);
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const activeThread = useThreadStore((s) =>
-    s.activeThreadId ? s.getThread(s.activeThreadId) : null
-  );
-
-  // Auto-connect to gateway when workspace is loaded
-  useEffect(() => {
-    if (activeWorkspace) {
-      connect(activeWorkspace.gatewayUrl, activeWorkspace.gatewayToken);
-    }
-  }, [activeWorkspace, connect]);
+  const activeThreadId = useThreadStore((s) => s.activeThreadId);
+  const threads = useThreadStore((s) => s.threads);
+  const activeThread = activeThreadId ? threads.get(activeThreadId) ?? null : null;
 
   return (
     <div className="h-screen flex flex-col">

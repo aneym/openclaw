@@ -1,11 +1,15 @@
+import { useMemo } from 'react';
 import { useThreadStore } from '../../stores/thread-store';
 
 export function Sidebar() {
-  const threads = useThreadStore((s) => Array.from(s.threads.values()));
+  const threads = useThreadStore((s) => s.threads);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
   const setActiveThread = useThreadStore((s) => s.setActiveThread);
 
-  const activeThreads = threads.filter((t) => t.status === 'active');
+  const activeThreads = useMemo(
+    () => Array.from(threads.values()).filter((t) => t.status === 'active'),
+    [threads]
+  );
 
   return (
     <div className="w-60 border-r border-border bg-muted/30 flex flex-col">
