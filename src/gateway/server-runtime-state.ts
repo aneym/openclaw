@@ -146,8 +146,15 @@ export async function createGatewayRuntimeState(params: {
     noServer: true,
     maxPayload: MAX_PAYLOAD_BYTES,
   });
+  const terminalWss = new WebSocketServer({ noServer: true });
   for (const server of httpServers) {
-    attachGatewayUpgradeHandler({ httpServer: server, wss, canvasHost });
+    attachGatewayUpgradeHandler({
+      httpServer: server,
+      wss,
+      terminalWss,
+      canvasHost,
+      resolvedAuth: params.resolvedAuth,
+    });
   }
 
   const clients = new Set<GatewayWsClient>();

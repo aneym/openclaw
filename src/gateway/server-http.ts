@@ -373,10 +373,54 @@ export function createGatewayHttpServer(opts: {
 export function attachGatewayUpgradeHandler(opts: {
   httpServer: HttpServer;
   wss: WebSocketServer;
+  terminalWss: WebSocketServer;
   canvasHost: CanvasHostHandler | null;
+  resolvedAuth: import("./auth.js").ResolvedGatewayAuth;
 }) {
-  const { httpServer, wss, canvasHost } = opts;
+  const { httpServer, wss, terminalWss, canvasHost, resolvedAuth } = opts;
   httpServer.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", "http://localhost");
+
+    // Terminal WebSocket: /ws/terminal?id=xxx
+    if (url.pathname === "/ws/terminal") {
+      const token = url.searchParams.get("token") ?? url.searchParams.get("password") ?? undefined;
+      void (async () => {
+        const { authorizeGatewayConnect } = await import("./auth.js");
+        const { loadConfig } = await import("../config/config.js");
+        const cfg = loadConfig();
+        const authResult = await authorizeGatewayConnect({
+          auth: resolvedAuth,
+          connectAuth: token ? { token, password: token } : null,
+          req,
+          trustedProxies: cfg.gateway?.trustedProxies,
+        });
+        if (!authResult.ok) {
+          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+          socket.destroy();
+          return;
+        }
+        terminalWss.handleUpgrade(req, socket, head, async (ws) => {
+          const { createTerminalSession, attachWebSocket, getTerminalSession } =
+            await import("./terminal-pty.js");
+          let terminalId = url.searchParams.get("id") ?? undefined;
+
+          if (!terminalId) {
+            const result = await createTerminalSession();
+            terminalId = result.id;
+          }
+
+          if (!getTerminalSession(terminalId)) {
+            ws.close(1008, "Terminal session not found");
+            return;
+          }
+
+          ws.send(JSON.stringify({ type: "connected", id: terminalId }));
+          attachWebSocket(terminalId, ws);
+        });
+      })();
+      return;
+    }
+
     if (canvasHost?.handleUpgrade(req, socket, head)) {
       return;
     }
