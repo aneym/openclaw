@@ -1,7 +1,8 @@
 import type { Tab } from "./navigation";
 import type { SplitPaneLayout } from "./split-tree";
+import type { ChatQueueItem } from "./ui-types";
 import type { UiSettings } from "./storage";
-import { refreshChat } from "./app-chat";
+import { refreshChat, flushChatQueueForEvent } from "./app-chat";
 import { connectGateway } from "./app-gateway";
 import { loadModels } from "./controllers/models";
 import {
@@ -38,6 +39,9 @@ type LifecycleHost = {
   settings: UiSettings;
   chatHasAutoScrolled: boolean;
   chatLoading: boolean;
+  chatRunId: string | null;
+  chatSending: boolean;
+  chatQueue: ChatQueueItem[];
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string;
@@ -254,5 +258,35 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
         changed.has("tab") || changed.has("logsAutoFollow"),
       );
     }
+  }
+
+  // ── Reactive queue flush safety net ──────────────────────────────
+  // If chatRunId just transitioned to null (run ended) and the queue
+  // has items, trigger a flush.  This catches edge cases where the
+  // primary flush chain (loadChatHistory → flushChatQueue) silently
+  // fails — e.g. timing races, WS request hangs, or thread state
+  // mismatches that swallow the terminal event.
+  if (
+    changed.has("chatRunId") &&
+    !host.chatRunId &&
+    changed.get("chatRunId") != null &&
+    host.chatQueue.length > 0 &&
+    host.connected &&
+    !host.chatSending
+  ) {
+    // Delay slightly so the primary chain (which loads history first)
+    // gets a chance to run before this fallback.
+    setTimeout(() => {
+      if (host.connected && !host.chatRunId && !host.chatSending && host.chatQueue.length > 0) {
+        console.log(
+          "[CHAT-QUEUE] Safety-net flush: queue has",
+          host.chatQueue.length,
+          "item(s) after chatRunId cleared",
+        );
+        void flushChatQueueForEvent(
+          host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
+        );
+      }
+    }, 1500);
   }
 }

@@ -35,6 +35,7 @@ import {
 } from "./hooks.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
+import { handleTerminalHttpRequest } from "./terminal-http.js";
 import { handleTitleHttpRequest } from "./title-http.js";
 import { handleMediaHttpRequest } from "./media-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
@@ -251,6 +252,14 @@ export function createGatewayHttpServer(opts: {
       const configSnapshot = loadConfig();
       const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
       if (await handleHooksRequest(req, res)) {
+        return;
+      }
+      if (
+        await handleTerminalHttpRequest(req, res, {
+          auth: resolvedAuth,
+          trustedProxies,
+        })
+      ) {
         return;
       }
       if (

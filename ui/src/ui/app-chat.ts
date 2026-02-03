@@ -97,10 +97,18 @@ function enqueueChatMessage(
   if (!trimmed && !hasAttachments) {
     return;
   }
+  const id = generateUUID();
+  console.log(
+    "[CHAT-QUEUE] Enqueuing message: id=%s, text=%s, chatRunId=%s, chatSending=%s",
+    id,
+    trimmed.substring(0, 60),
+    host.chatRunId,
+    host.chatSending,
+  );
   host.chatQueue = [
     ...host.chatQueue,
     {
-      id: generateUUID(),
+      id,
       text: trimmed,
       createdAt: Date.now(),
       attachments: hasAttachments ? attachments?.map((att) => ({ ...att })) : undefined,
@@ -155,12 +163,22 @@ async function sendChatMessageNow(
 
 async function flushChatQueue(host: ChatHost) {
   if (!host.connected || isChatBusy(host)) {
+    if (host.chatQueue.length > 0) {
+      console.log(
+        "[CHAT-QUEUE] flushChatQueue skipped: connected=%s, chatSending=%s, chatRunId=%s, queueLen=%d",
+        host.connected,
+        host.chatSending,
+        host.chatRunId,
+        host.chatQueue.length,
+      );
+    }
     return;
   }
   const [next, ...rest] = host.chatQueue;
   if (!next) {
     return;
   }
+  console.log("[CHAT-QUEUE] Flushing queued message: id=%s, text=%s", next.id, next.text.substring(0, 60));
   host.chatQueue = rest;
   saveQueue(host.sessionKey, host.chatQueue);
   const ok = await sendChatMessageNow(host, next.text, {
