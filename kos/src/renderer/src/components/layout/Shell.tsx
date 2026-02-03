@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { StatusBar } from './StatusBar'
 import { Settings } from '../settings/Settings'
 import { PanelContainer } from '../panels/PanelContainer'
+import { ThreadSearch } from './ThreadSearch'
 import { useWorkspaceStore } from '../../stores/workspace-store'
 import { useThreadStore } from '../../stores/thread-store'
 
@@ -10,8 +11,21 @@ type View = 'home' | 'settings'
 
 export function Shell() {
   const [view, setView] = useState<View>('home')
+  const [searchOpen, setSearchOpen] = useState(false)
   const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace)
   const activeThreadId = useThreadStore((s) => s.activeThreadId)
+
+  // Cmd+K keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
 
   return (
     <div className="h-screen flex flex-col">
@@ -45,6 +59,7 @@ export function Shell() {
         </main>
       </div>
       <StatusBar />
+      <ThreadSearch open={searchOpen} onOpenChange={setSearchOpen} />
     </div>
   )
 }

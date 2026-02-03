@@ -16,13 +16,13 @@
 - [x] Build ThreadItem with title, relative timestamp, status dot (streaming/idle/unread).
 - [x] Wire thread switching: click thread → set active thread → load its panel layout in PanelContainer.
 - [x] Build NewThreadButton that creates a session via gateway RPC and activates it.
-- [ ] Build ThreadSearch overlay (Cmd+K) with fuzzy matching on thread titles using cmdk.
+- [x] Build ThreadSearch overlay (Cmd+K) with fuzzy matching on thread titles using cmdk.
 
 ## Section 3: Chat UI — Core (KOS-13, KOS-8)
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-8
 
-- [ ] Install markdown dependencies: `marked`, `dompurify`, `highlight.js`. Add @types/dompurify.
-- [ ] Build message normalization layer (gateway/normalize.ts) — convert raw gateway messages to ChatMessage parts model.
+- [x] Install markdown dependencies: `marked`, `dompurify`, `highlight.js`. Add @types/dompurify.
+- [x] Build message normalization layer (gateway/normalize.ts) — convert raw gateway messages to ChatMessage parts model.
 - [ ] Build useMessages hook — fetch history via gateway RPC on mount, subscribe to new messages via gateway events.
 - [ ] Build useStreaming hook — track streaming state per session (stream.start, stream.delta, stream.end events).
 - [ ] Build MessageList with auto-scroll (IntersectionObserver on sentinel element). "New messages" badge when scrolled up.
