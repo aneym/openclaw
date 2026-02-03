@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useThreadStore } from '../../stores/thread-store'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { ThreadItem } from './ThreadItem'
 import type { Thread } from '../../types'
 
 interface GroupedThreads {
@@ -113,23 +114,15 @@ export function ThreadList({ onThreadClick }: ThreadListProps) {
             {!collapsed && (
               <div className="space-y-1">
                 {group.threads.map((thread) => (
-                  <button
+                  <ThreadItem
                     key={thread.id}
+                    thread={thread}
+                    isActive={thread.id === activeThreadId}
                     onClick={() => {
                       setActiveThread(thread.id)
                       onThreadClick?.()
                     }}
-                    className={`w-full px-3 py-2 ml-6 rounded-md text-left text-sm transition-colors ${
-                      thread.id === activeThreadId
-                        ? 'bg-accent text-accent-foreground'
-                        : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    <div className="font-medium truncate">{thread.title}</div>
-                    {thread.subtitle && (
-                      <div className="text-xs opacity-70 truncate">{thread.subtitle}</div>
-                    )}
-                  </button>
+                  />
                 ))}
               </div>
             )}

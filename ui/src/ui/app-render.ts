@@ -378,6 +378,7 @@ export function renderApp(state: AppViewState) {
                           void patchSession(state, sessionKey, { archived: false });
                         },
                         onNewSession: () => startNewSession(state),
+                        onOpenTerminal: () => state.openTerminalPane(),
                         onRequestUpdate: () => {
                           // Force re-render by touching a reactive property
                           state.threads = new Map(state.threads);

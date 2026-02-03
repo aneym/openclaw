@@ -372,6 +372,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     onArchive,
     onUnarchive,
     onNewSession,
+    onOpenTerminal,
     onRequestUpdate,
   } = props;
   const filtered = threadSearchQuery
@@ -390,6 +391,21 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
         <span class="nav-thread-item__icon">+</span>
         <span class="nav-thread-item__new-label">New session</span>
       </button>
+      ${
+        onOpenTerminal
+          ? html`
+        <button
+          class="nav-thread-item nav-thread-item__terminal"
+          @click=${onOpenTerminal}
+          title="Open terminal"
+          aria-label="Open terminal"
+        >
+          <span class="nav-thread-item__icon">⌘</span>
+          <span class="nav-thread-item__new-label">Terminal</span>
+        </button>
+      `
+          : nothing
+      }
       <div class="nav-threads__search">
         <input
           class="nav-threads__search-input"

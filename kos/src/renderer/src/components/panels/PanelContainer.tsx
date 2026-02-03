@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import type { PanelNode } from '../../types'
 import { usePanelStore } from '../../stores/panel-store'
@@ -10,14 +11,18 @@ interface PanelContainerProps {
 
 export function PanelContainer({ threadId }: PanelContainerProps) {
   const layout = usePanelStore((s) => s.getLayout(threadId))
+  const resetLayout = usePanelStore((s) => s.resetLayout)
 
-  // Default: single chat panel if no layout exists
+  // Create default layout if none exists for this thread
+  useEffect(() => {
+    if (!layout) {
+      resetLayout(threadId)
+    }
+  }, [threadId, layout, resetLayout])
+
+  // Show loading state while layout is being created
   if (!layout) {
-    return (
-      <div className="h-full w-full">
-        <PanelContent type="chat" threadId={threadId} />
-      </div>
-    )
+    return null
   }
 
   return <RenderNode node={layout.root} threadId={threadId} />

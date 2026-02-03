@@ -21,7 +21,10 @@ export const useThreadStore = create<ThreadState>()(
       activeThreadId: null,
 
       setActiveThread: (id: string) => {
-        set({ activeThreadId: id })
+        const thread = get().threads.get(id)
+        if (thread) {
+          set({ activeThreadId: id })
+        }
       },
 
       addThread: (thread: Thread) => {
