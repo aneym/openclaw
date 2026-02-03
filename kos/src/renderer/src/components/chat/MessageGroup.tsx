@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { TextPart } from './TextPart'
 import { ReasoningBlock } from './ReasoningBlock'
 import { ImageAttachment } from './ImageAttachment'
+import { StreamingIndicator } from './StreamingIndicator'
 
 interface MessageGroupProps {
   messages: ChatMessage[]
@@ -167,9 +168,15 @@ export function MessageGroup({ messages, role, isStreaming }: MessageGroupProps)
                 </div>
               )
             })}
-            {isStreaming && msg === messages.at(-1) && (
-              <span className="inline-block w-1 h-4 bg-current animate-pulse ml-1" />
-            )}
+            {isStreaming && msg === messages.at(-1) && (() => {
+              // Show StreamingIndicator for empty streams (no text parts yet)
+              const hasTextParts = msg.parts.some((p) => p.type === 'text' && p.text.trim())
+              if (!hasTextParts) {
+                return <StreamingIndicator className="opacity-60" />
+              }
+              // Show cursor when text is being streamed
+              return <span className="inline-block w-1 h-4 bg-current animate-pulse ml-1" />
+            })()}
           </div>
         )
       }

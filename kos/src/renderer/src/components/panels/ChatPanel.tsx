@@ -54,7 +54,7 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
       <MessageList messages={messages} isStreaming={isStreaming} />
 
       {/* Compose bar (fixed at bottom) */}
-      <ComposeBar sessionKey={sessionKey} disabled={isStreaming} />
+      <ComposeBar sessionKey={sessionKey} threadId={threadId} disabled={isStreaming} />
     </div>
   )
 }

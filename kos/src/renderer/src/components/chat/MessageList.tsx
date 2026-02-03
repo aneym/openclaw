@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import { ChatMessage } from '@/types/message'
 import { Button } from '@/components/ui/button'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, Bot } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { MessageGroup } from './MessageGroup'
+import { StreamingIndicator } from './StreamingIndicator'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 interface MessageListProps {
   messages: ChatMessage[]
@@ -130,6 +132,24 @@ export function MessageList({ messages, isStreaming, className }: MessageListPro
                 />
               )
             })}
+
+            {/* Show streaming indicator when waiting for assistant response */}
+            {isStreaming && messageGroups.length > 0 && messageGroups[messageGroups.length - 1].role !== 'assistant' && (
+              <div className="flex gap-3">
+                <div className="flex-shrink-0">
+                  <Avatar className="w-8 h-8">
+                    <AvatarFallback className="bg-purple-500 text-white">
+                      <Bot className="w-4 h-4" />
+                    </AvatarFallback>
+                  </Avatar>
+                </div>
+                <div className="flex flex-col gap-2 flex-1 min-w-0">
+                  <div className="rounded-lg px-3 py-2 max-w-[85%] bg-muted text-foreground">
+                    <StreamingIndicator className="opacity-60" />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

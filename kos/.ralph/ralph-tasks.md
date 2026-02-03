@@ -38,16 +38,16 @@
 - [x] Build ToolCallGroup — collapsed by default ("🔧 3 tool calls"), expand to show individual chips.
 - [x] Build ReasoningBlock — collapsible "Thought for Xs..." block with purple accent.
 - [x] Build ImageAttachment — inline image display, clickable for full-size.
-- [ ] Build MessageQueue — shows queued messages above compose bar when agent is streaming. "Send Now" (abort + send) and "Clear All" buttons.
-- [ ] Build image paste handler in ComposeBar — clipboard paste detection, compression (max 1568px, JPEG quality stepping, 4MB budget), preview thumbnails.
-- [ ] Build StreamingIndicator — three-dot animated reading indicator for empty streams.
+- [x] Build MessageQueue — shows queued messages above compose bar when agent is streaming. "Send Now" (abort + send) and "Clear All" buttons.
+- [x] Build image paste handler in ComposeBar — clipboard paste detection, compression (max 1568px, JPEG quality stepping, 4MB budget), preview thumbnails.
+- [x] Build StreamingIndicator — three-dot animated reading indicator for empty streams.
 
 ## Section 5: Linear Board (KOS-2, KOS-4)
 > Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-2, KOS-4
 
-- [ ] Build Linear GraphQL client (src/renderer/src/linear/) — fetch team issues with states, priorities, assignees, labels, relations. Use workspace config for API key.
-- [ ] Build useLinearTeam hook — fetches issues for a team, caches with background refetch (60s). Returns issues + states + loading state.
-- [ ] Build dependency graph (useDependencyGraph) — build DAG from `blocks` relations. Expose isBlocked, getBlockers, getUnblockedTasks, getDownstreamCount, getCriticalPath.
+- [x] Build Linear GraphQL client (src/renderer/src/linear/) — fetch team issues with states, priorities, assignees, labels, relations. Use workspace config for API key.
+- [x] Build useLinearTeam hook — fetches issues for a team, caches with background refetch (60s). Returns issues + states + loading state.
+- [x] Build dependency graph (useDependencyGraph) — build DAG from `blocks` relations. Expose isBlocked, getBlockers, getUnblockedTasks, getDownstreamCount, getCriticalPath.
 - [ ] Build LinearBoard kanban component — columns per Linear state, cards sorted by priority then dependency depth.
 - [ ] Build LinearCard — shows identifier, title, priority icon, assignee, labels. Blocked cards get reduced opacity + "⛔ Blocked" badge. Downstream count badge.
 - [ ] Build drag-and-drop between columns — optimistic state update + Linear API mutation.
