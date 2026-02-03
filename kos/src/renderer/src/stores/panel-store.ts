@@ -80,8 +80,12 @@ export const usePanelStore = create<PanelState>()(
         direction: "horizontal" | "vertical",
         newPanelType: PanelType,
       ) => {
+        console.log("[panel-store] splitPanel:", { threadId, panelId, direction, newPanelType });
         const layout = get().getLayout(threadId);
-        if (!layout) return;
+        if (!layout) {
+          console.log("[panel-store] splitPanel: no layout found");
+          return;
+        }
 
         const newPanelId = `panel-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         const newLeaf: PanelLeaf = {
@@ -131,6 +135,9 @@ export const usePanelStore = create<PanelState>()(
         // Can't close the last panel
         if (layout.root.type === "leaf") return;
 
+        // Track which panel ID should receive focus after close
+        let siblingPanelId: string | null = null;
+
         const removePanel = (node: PanelNode): PanelNode | null => {
           if (node.type === "leaf") {
             if (node.panelId === panelId) {
@@ -145,9 +152,35 @@ export const usePanelStore = create<PanelState>()(
           const newLeft = removePanel(left);
           const newRight = removePanel(right);
 
-          // If one child was removed, promote the sibling
-          if (newLeft === null) return newRight;
-          if (newRight === null) return newLeft;
+          // If one child was removed, promote the sibling and track it for focus
+          if (newLeft === null) {
+            // Left was removed, focus on right (find first leaf in right)
+            if (right.type === "leaf") {
+              siblingPanelId = right.panelId;
+            } else {
+              // Find first leaf in right subtree
+              const findFirstLeaf = (n: PanelNode): string | null => {
+                if (n.type === "leaf") return n.panelId;
+                return findFirstLeaf(n.children[0]) || findFirstLeaf(n.children[1]);
+              };
+              siblingPanelId = findFirstLeaf(right);
+            }
+            return newRight;
+          }
+          if (newRight === null) {
+            // Right was removed, focus on left (find first leaf in left)
+            if (left.type === "leaf") {
+              siblingPanelId = left.panelId;
+            } else {
+              // Find first leaf in left subtree
+              const findFirstLeaf = (n: PanelNode): string | null => {
+                if (n.type === "leaf") return n.panelId;
+                return findFirstLeaf(n.children[0]) || findFirstLeaf(n.children[1]);
+              };
+              siblingPanelId = findFirstLeaf(left);
+            }
+            return newLeft;
+          }
 
           // Both children still exist
           return {
@@ -163,6 +196,11 @@ export const usePanelStore = create<PanelState>()(
             root: newRoot,
             updatedAt: Date.now(),
           });
+
+          // Update focus to the sibling panel
+          if (siblingPanelId) {
+            get().setFocusedPanelId(threadId, siblingPanelId);
+          }
         }
       },
 
