@@ -1,20 +1,21 @@
-import { create } from 'zustand'
-import { GatewayClient } from '../gateway/client'
-import type { GatewayEventFrame, GatewayHelloOk } from '../gateway/types'
+import { create } from "zustand";
+import type { GatewayEventFrame, GatewayHelloOk } from "../gateway/types";
+import { GatewayClient } from "../gateway/client";
+import { notifications } from "../lib/notifications";
 
-type EventHandler = (payload: unknown) => void
+type EventHandler = (payload: unknown) => void;
 
 interface GatewayState {
-  client: GatewayClient | null
-  connected: boolean
-  error: string | null
-  hello: GatewayHelloOk | null
-  eventHandlers: Map<string, Set<EventHandler>>
+  client: GatewayClient | null;
+  connected: boolean;
+  error: string | null;
+  hello: GatewayHelloOk | null;
+  eventHandlers: Map<string, Set<EventHandler>>;
 
-  connect: (url: string, token?: string) => void
-  disconnect: () => void
-  request: <T>(method: string, params?: unknown) => Promise<T>
-  subscribe: (event: string, handler: EventHandler) => () => void
+  connect: (url: string, token?: string) => void;
+  disconnect: () => void;
+  request: <T>(method: string, params?: unknown) => Promise<T>;
+  subscribe: (event: string, handler: EventHandler) => () => void;
 }
 
 export const useGatewayStore = create<GatewayState>((set, get) => ({
@@ -25,81 +26,90 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   eventHandlers: new Map(),
 
   connect: (url: string, token?: string) => {
-    const { client: existingClient } = get()
+    const { client: existingClient } = get();
     if (existingClient) {
-      existingClient.stop()
+      existingClient.stop();
     }
 
     const client = new GatewayClient({
       url,
       token,
       onHello: (hello) => {
-        set({ hello, connected: true, error: null })
+        const wasConnected = get().connected;
+        set({ hello, connected: true, error: null });
+        if (wasConnected) {
+          notifications.connectionRestored();
+        }
       },
       onEvent: (evt: GatewayEventFrame) => {
-        const handlers = get().eventHandlers.get(evt.event)
+        const handlers = get().eventHandlers.get(evt.event);
         if (handlers) {
           handlers.forEach((handler) => {
             try {
-              handler(evt.payload)
+              handler(evt.payload);
             } catch (err) {
-              console.error('[gateway] event handler error:', err)
+              console.error("[gateway] event handler error:", err);
             }
-          })
+          });
         }
       },
       onClose: (info) => {
-        set({ connected: false })
+        const wasConnected = get().connected;
+        set({ connected: false });
         if (info.code !== 1000) {
-          set({ error: `Connection closed: ${info.reason}` })
+          const errorMsg = `Connection closed: ${info.reason}`;
+          set({ error: errorMsg });
+          if (wasConnected) {
+            notifications.connectionLost();
+          }
         }
       },
       onGap: (info) => {
-        console.warn('[gateway] sequence gap detected:', info)
+        console.warn("[gateway] sequence gap detected:", info);
       },
       onReconnect: () => {
-        console.log('[gateway] reconnecting...')
-      }
-    })
+        console.log("[gateway] reconnecting...");
+      },
+    });
 
-    client.start()
-    set({ client, error: null })
+    client.start();
+    set({ client, error: null });
   },
 
   disconnect: () => {
-    const { client } = get()
+    const { client } = get();
     if (client) {
-      client.stop()
-      set({ client: null, connected: false, hello: null })
+      client.stop();
+      set({ client: null, connected: false, hello: null });
     }
   },
 
   request: async <T>(method: string, params?: unknown): Promise<T> => {
-    const { client } = get()
+    const { client } = get();
     if (!client) {
-      throw new Error('Gateway not connected')
+      throw new Error("Gateway not connected");
     }
-    return client.request<T>(method, params)
+    return client.request<T>(method, params);
   },
 
   subscribe: (event: string, handler: EventHandler) => {
-    const { eventHandlers } = get()
-    let handlers = eventHandlers.get(event)
+    const { eventHandlers } = get();
+    let handlers = eventHandlers.get(event);
     if (!handlers) {
-      handlers = new Set()
-      eventHandlers.set(event, handlers)
+      handlers = new Set();
+      eventHandlers.set(event, handlers);
     }
-    handlers.add(handler)
+    handlers.add(handler);
 
     // Return unsubscribe function
     return () => {
-      const currentHandlers = get().eventHandlers.get(event)
+      const currentHandlers = get().eventHandlers.get(event);
       if (currentHandlers) {
-        currentHandlers.delete(handler)
+        currentHandlers.delete(handler);
         if (currentHandlers.size === 0) {
-          get().eventHandlers.delete(event)
+          get().eventHandlers.delete(event);
         }
       }
-    }
-  }
-}))
+    };
+  },
+}));

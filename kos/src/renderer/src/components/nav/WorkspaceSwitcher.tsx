@@ -1,47 +1,47 @@
-import { Check, ChevronDown, Plus } from 'lucide-react'
-import { useWorkspaceStore } from '../../stores/workspace-store'
-import { Button } from '../ui/button'
+import { Check, ChevronDown, Plus } from "lucide-react";
+import { useWorkspaceStore } from "../../stores/workspace-store";
+import { Button } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
-  DropdownMenuTrigger
-} from '../ui/dropdown-menu'
+  DropdownMenuTrigger,
+} from "../ui/dropdown-menu";
 
 export function WorkspaceSwitcher() {
-  const { config, activeWorkspace, setActiveWorkspace, addWorkspace } = useWorkspaceStore()
+  const { config, activeWorkspace, setActiveWorkspace, addWorkspace } = useWorkspaceStore();
 
   const handleCreateWorkspace = () => {
-    const name = prompt('Enter workspace name:')
-    if (!name) return
+    const name = prompt("Enter workspace name:");
+    if (!name) return;
 
     const newWorkspace = {
       id: `ws-${Date.now()}`,
       name,
-      icon: '💼',
+      icon: "💼",
       projects: [],
-      gatewayUrl: 'ws://localhost:18789',
-      createdAt: Date.now()
-    }
+      gatewayUrl: "ws://localhost:18789",
+      createdAt: Date.now(),
+    };
 
-    addWorkspace(newWorkspace)
-    setActiveWorkspace(newWorkspace.id)
-  }
+    addWorkspace(newWorkspace);
+    setActiveWorkspace(newWorkspace.id);
+  };
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button
           variant="ghost"
-          className="w-full justify-between px-3 h-10 text-left font-normal"
+          className="w-full justify-between px-3 h-10 text-left font-normal hover:bg-accent/50 transition-all duration-200"
         >
-          <div className="flex items-center gap-2 min-w-0">
-            <span className="text-base shrink-0">{activeWorkspace?.icon}</span>
-            <span className="truncate">{activeWorkspace?.name}</span>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="text-base shrink-0 leading-none">{activeWorkspace?.icon}</span>
+            <span className="truncate font-medium">{activeWorkspace?.name}</span>
           </div>
-          <ChevronDown className="h-4 w-4 opacity-50 shrink-0" />
+          <ChevronDown className="h-4 w-4 opacity-50 shrink-0 transition-transform duration-200 data-[state=open]:rotate-180" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
@@ -65,5 +65,5 @@ export function WorkspaceSwitcher() {
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
-  )
+  );
 }

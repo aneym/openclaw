@@ -10,7 +10,6 @@ import { connectHandlers } from "./server-methods/connect.js";
 import { cronHandlers } from "./server-methods/cron.js";
 import { deviceHandlers } from "./server-methods/devices.js";
 import { execApprovalsHandlers } from "./server-methods/exec-approvals.js";
-import { gitHandlers } from "./server-methods/git.js";
 import { healthHandlers } from "./server-methods/health.js";
 import { logsHandlers } from "./server-methods/logs.js";
 import { modelsHandlers } from "./server-methods/models.js";
@@ -81,10 +80,6 @@ const READ_METHODS = new Set([
   "chat.history",
   "chat.status",
   "subagents.list",
-  "git.repos",
-  "git.status",
-  "git.diff",
-  "git.log",
 ]);
 const WRITE_METHODS = new Set([
   "send",
@@ -101,10 +96,6 @@ const WRITE_METHODS = new Set([
   "chat.send",
   "chat.abort",
   "browser.request",
-  "git.stage",
-  "git.unstage",
-  "git.commit",
-  "git.discard",
 ]);
 
 function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["client"]) {
@@ -186,7 +177,6 @@ export const coreGatewayHandlers: GatewayRequestHandlers = {
   ...cronHandlers,
   ...deviceHandlers,
   ...execApprovalsHandlers,
-  ...gitHandlers,
   ...webHandlers,
   ...modelsHandlers,
   ...configHandlers,

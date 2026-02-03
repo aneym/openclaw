@@ -33,11 +33,11 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
+import { handleMediaHttpRequest } from "./media-http.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
 import { handleTerminalHttpRequest } from "./terminal-http.js";
 import { handleTitleHttpRequest } from "./title-http.js";
-import { handleMediaHttpRequest } from "./media-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -269,10 +269,9 @@ export function createGatewayHttpServer(opts: {
         })
       ) {
         return;
-<<<<<<< HEAD
       }
       if (
-        await handleFileHttpRequest(req, res, {
+        await handleMediaHttpRequest(req, res, {
           auth: resolvedAuth,
           trustedProxies,
         })
@@ -285,17 +284,6 @@ export function createGatewayHttpServer(opts: {
       if (handlePluginRequest && (await handlePluginRequest(req, res))) {
         return;
       }
-=======
-      if (
-        await handleMediaHttpRequest(req, res, {
-          auth: resolvedAuth,
-          trustedProxies,
-        })
-      )
-        return;
-      if (await handleSlackHttpRequest(req, res)) return;
-      if (handlePluginRequest && (await handlePluginRequest(req, res))) return;
->>>>>>> 4b7c1a102 (feat: dev mode, audio player, streaming fixes, split-pane improvements, expo app, session archiving)
       if (openResponsesEnabled) {
         if (
           await handleOpenResponsesHttpRequest(req, res, {

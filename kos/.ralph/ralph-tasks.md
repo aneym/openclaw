@@ -1,6 +1,7 @@
 # kOS Implementation Tasks
 
 ## Section 1: Panel Engine (KOS-7)
+
 > Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7
 
 - [x] Build PanelContainer that recursively renders PanelLayout tree using react-resizable-panels (PanelGroup, Panel, PanelResizeHandle). Default: single chat panel placeholder.
@@ -10,6 +11,7 @@
 - [x] Wire PanelContainer into Shell.tsx — main content area renders active thread's panel layout.
 
 ## Section 2: Thread System (KOS-7, KOS-13)
+
 > Spec: `specs/SPEC-kos-panels.md` | PRD: KOS-7, KOS-13
 
 - [x] Build ThreadList component for sidebar — threads grouped by project, sorted by lastMessageAt. Collapsible project sections.
@@ -19,6 +21,7 @@
 - [x] Build ThreadSearch overlay (Cmd+K) with fuzzy matching on thread titles using cmdk.
 
 ## Section 3: Chat UI — Core (KOS-13, KOS-8)
+
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-8
 
 - [x] Install markdown dependencies: `marked`, `dompurify`, `highlight.js`. Add @types/dompurify.
@@ -32,6 +35,7 @@
 - [x] Wire ChatPanel together: MessageList + ComposeBar. Replace the chat stub in PanelContent.
 
 ## Section 4: Chat UI — Advanced (KOS-13, KOS-5)
+
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-13, KOS-5
 
 - [x] Build ToolCallChip — compact chip with icon per tool type (📖 Read, ✏️ Edit, 📝 Write, ⚡ exec, 🔍 search, 🌐 fetch, 🔧 default).
@@ -43,6 +47,7 @@
 - [x] Build StreamingIndicator — three-dot animated reading indicator for empty streams.
 
 ## Section 5: Linear Board (KOS-2, KOS-4)
+
 > Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-2, KOS-4
 
 - [x] Build Linear GraphQL client (src/renderer/src/linear/) — fetch team issues with states, priorities, assignees, labels, relations. Use workspace config for API key.
@@ -55,6 +60,7 @@
 - [x] Wire LinearBoard as a panel type in PanelContent. Show when project has Linear team linked.
 
 ## Section 6: Project Navigation (KOS-7, KOS-13)
+
 > Spec: `specs/SPEC-kos-nav.md` | PRD: KOS-7, KOS-13
 
 - [x] Build ProjectList in sidebar — expandable projects with thread count badge.
@@ -63,6 +69,7 @@
 - [x] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
 
 ## Section 7: Coding Session Panel (KOS-5)
+
 > Spec: `specs/SPEC-kos-chat.md` | PRD: KOS-5
 
 - [x] Build CodingSessionPanel — monitors agent coding sessions in real-time. Header with phase indicator + session name + duration.
@@ -72,10 +79,11 @@
 - [x] Wire CodingSessionPanel into PanelContent as the 'coding-session' panel type.
 
 ## Section 8: Keyboard Shortcuts & Polish
+
 > PRD: KOS-7, KOS-8
 
 - [x] Implement keyboard shortcuts: Cmd+\ (toggle sidebar), Cmd+K (thread search), Cmd+N (new thread), Cmd+W (close panel), Cmd+Shift+\ (split panel right).
-- [ ] Build notification toasts for important events (connection lost/restored, thread created, errors). Use shadcn toast/sonner.
-- [ ] Add panel open/close animations (200ms ease-out transitions).
-- [ ] Improve StatusBar — show active agent status, session info, current model.
-- [ ] Polish sidebar — active states, hover effects, smooth transitions, proper spacing.
+- [x] Build notification toasts for important events (connection lost/restored, thread created, errors). Use shadcn toast/sonner.
+- [x] Add panel open/close animations (200ms ease-out transitions).
+- [x] Improve StatusBar — show active agent status, session info, current model.
+- [x] Polish sidebar — active states, hover effects, smooth transitions, proper spacing.
