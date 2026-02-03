@@ -5,6 +5,7 @@ import { Bot, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { TextPart } from './TextPart'
 import { ReasoningBlock } from './ReasoningBlock'
+import { ImageAttachment } from './ImageAttachment'
 
 interface MessageGroupProps {
   messages: ChatMessage[]
@@ -156,6 +157,9 @@ export function MessageGroup({ messages, role, isStreaming }: MessageGroupProps)
                     durationMs={part.durationMs}
                   />
                 )
+              }
+              if (part.type === 'image') {
+                return <ImageAttachment key={idx} part={part} />
               }
               return (
                 <div key={idx} className="text-xs opacity-70">

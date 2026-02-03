@@ -37,7 +37,7 @@
 - [x] Build ToolCallChip — compact chip with icon per tool type (📖 Read, ✏️ Edit, 📝 Write, ⚡ exec, 🔍 search, 🌐 fetch, 🔧 default).
 - [x] Build ToolCallGroup — collapsed by default ("🔧 3 tool calls"), expand to show individual chips.
 - [x] Build ReasoningBlock — collapsible "Thought for Xs..." block with purple accent.
-- [ ] Build ImageAttachment — inline image display, clickable for full-size.
+- [x] Build ImageAttachment — inline image display, clickable for full-size.
 - [ ] Build MessageQueue — shows queued messages above compose bar when agent is streaming. "Send Now" (abort + send) and "Clear All" buttons.
 - [ ] Build image paste handler in ComposeBar — clipboard paste detection, compression (max 1568px, JPEG quality stepping, 4MB budget), preview thumbnails.
 - [ ] Build StreamingIndicator — three-dot animated reading indicator for empty streams.
