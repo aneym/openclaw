@@ -1,48 +1,46 @@
-import type { ThemeDefinition } from '../types';
+import type { ThemeDefinition } from '../types'
 
 /**
  * Prettify a theme name: replace hyphens with spaces, title case.
  */
 function prettifyName(name: string): string {
-  return name
-    .replace(/-/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+  return name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 }
 
 interface TweakcnThemeJson {
-  name: string;
+  name: string
   cssVars: {
-    theme?: Record<string, string>;
-    light: Record<string, string>;
-    dark: Record<string, string>;
-  };
+    theme?: Record<string, string>
+    light: Record<string, string>
+    dark: Record<string, string>
+  }
 }
 
 /**
  * Parse and validate a tweakcn theme JSON object.
  */
 function parseThemeJson(json: unknown, source?: string): ThemeDefinition {
-  const data = json as Record<string, unknown>;
+  const data = json as Record<string, unknown>
 
   if (!data || typeof data !== 'object') {
-    throw new Error('Invalid theme data: not an object');
+    throw new Error('Invalid theme data: not an object')
   }
 
   if (!data.name || typeof data.name !== 'string') {
-    throw new Error('Invalid theme data: missing "name" field');
+    throw new Error('Invalid theme data: missing "name" field')
   }
 
-  const cssVars = data.cssVars as TweakcnThemeJson['cssVars'] | undefined;
+  const cssVars = data.cssVars as TweakcnThemeJson['cssVars'] | undefined
   if (!cssVars || typeof cssVars !== 'object') {
-    throw new Error('Invalid theme data: missing "cssVars" field');
+    throw new Error('Invalid theme data: missing "cssVars" field')
   }
 
   if (!cssVars.light || typeof cssVars.light !== 'object') {
-    throw new Error('Invalid theme data: missing "cssVars.light" block');
+    throw new Error('Invalid theme data: missing "cssVars.light" block')
   }
 
   if (!cssVars.dark || typeof cssVars.dark !== 'object') {
-    throw new Error('Invalid theme data: missing "cssVars.dark" block');
+    throw new Error('Invalid theme data: missing "cssVars.dark" block')
   }
 
   return {
@@ -53,10 +51,10 @@ function parseThemeJson(json: unknown, source?: string): ThemeDefinition {
     cssVars: {
       theme: cssVars.theme,
       light: cssVars.light,
-      dark: cssVars.dark,
+      dark: cssVars.dark
     },
-    installedAt: Date.now(),
-  };
+    installedAt: Date.now()
+  }
 }
 
 /**
@@ -66,34 +64,34 @@ function parseThemeJson(json: unknown, source?: string): ThemeDefinition {
  * @returns Parsed ThemeDefinition ready to be added to the store
  */
 export async function installThemeFromUrl(input: string): Promise<ThemeDefinition> {
-  const trimmed = input.trim();
+  const trimmed = input.trim()
 
   // Detect raw JSON input
   if (trimmed.startsWith('{')) {
     try {
-      const json = JSON.parse(trimmed);
-      return parseThemeJson(json);
+      const json = JSON.parse(trimmed)
+      return parseThemeJson(json)
     } catch (e) {
       if (e instanceof SyntaxError) {
-        throw new Error('Invalid JSON: ' + e.message);
+        throw new Error('Invalid JSON: ' + e.message)
       }
-      throw e;
+      throw e
     }
   }
 
   // Otherwise treat as URL
-  let url: URL;
+  let url: URL
   try {
-    url = new URL(trimmed);
+    url = new URL(trimmed)
   } catch {
-    throw new Error('Invalid URL. Paste a tweakcn.com theme URL or raw JSON.');
+    throw new Error('Invalid URL. Paste a tweakcn.com theme URL or raw JSON.')
   }
 
-  const response = await fetch(url.toString());
+  const response = await fetch(url.toString())
   if (!response.ok) {
-    throw new Error(`Failed to fetch theme: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed to fetch theme: ${response.status} ${response.statusText}`)
   }
 
-  const json = await response.json();
-  return parseThemeJson(json, url.toString());
+  const json = await response.json()
+  return parseThemeJson(json, url.toString())
 }

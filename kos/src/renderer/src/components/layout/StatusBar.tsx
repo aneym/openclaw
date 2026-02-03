@@ -1,13 +1,13 @@
-import { useGatewayStore } from '../../stores/gateway-store';
-import { useWorkspaceStore } from '../../stores/workspace-store';
+import { useGatewayStore } from '../../stores/gateway-store'
+import { useWorkspaceStore } from '../../stores/workspace-store'
 
 export function StatusBar() {
-  const connected = useGatewayStore((s) => s.connected);
-  const error = useGatewayStore((s) => s.error);
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const connected = useGatewayStore((s) => s.connected)
+  const error = useGatewayStore((s) => s.error)
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace)
 
-  const statusColor = connected ? 'bg-green-500' : error ? 'bg-red-500' : 'bg-yellow-500';
-  const statusText = connected ? 'Connected' : error ? 'Disconnected' : 'Connecting...';
+  const statusColor = connected ? 'bg-green-500' : error ? 'bg-red-500' : 'bg-yellow-500'
+  const statusText = connected ? 'Connected' : error ? 'Disconnected' : 'Connecting...'
 
   return (
     <div className="h-6 border-t border-border bg-muted/50 px-3 flex items-center justify-between text-xs text-muted-foreground">
@@ -24,5 +24,5 @@ export function StatusBar() {
         )}
       </div>
     </div>
-  );
+  )
 }

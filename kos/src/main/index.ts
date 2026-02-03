@@ -1,8 +1,24 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
+import { readFileSync } from 'fs'
+import { homedir } from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { restoreWindowState, trackWindowState } from './window-state'
 import icon from '../../resources/icon.png?asset'
+
+// Read OpenClaw gateway config from ~/.openclaw/openclaw.json
+ipcMain.handle('get-gateway-config', () => {
+  try {
+    const configPath = join(homedir(), '.openclaw', 'openclaw.json')
+    const raw = readFileSync(configPath, 'utf-8')
+    const config = JSON.parse(raw)
+    const port = config?.gateway?.port ?? 18789
+    const token = config?.gateway?.auth?.token
+    return { url: `ws://localhost:${port}`, token }
+  } catch {
+    return { url: 'ws://localhost:18789' }
+  }
+})
 
 function createWindow(): void {
   const saved = restoreWindowState()
@@ -15,14 +31,16 @@ function createWindow(): void {
     y: saved?.y,
     show: false,
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-    ...(process.platform === 'darwin' ? {
-      trafficLightPosition: { x: 12, y: 12 }
-    } : {}),
+    ...(process.platform === 'darwin'
+      ? {
+          trafficLightPosition: { x: 12, y: 12 }
+        }
+      : {}),
     ...(process.platform === 'linux' ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
-      contextIsolation: true,
+      contextIsolation: true
     }
   })
 

@@ -1,6 +1,13 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle
+} from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -12,14 +19,32 @@ import { Toggle } from '@/components/ui/toggle'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { Progress } from '@/components/ui/progress'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow
+} from '@/components/ui/table'
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger
+} from '@/components/ui/accordion'
 import {
   Bold,
   Italic,
@@ -33,7 +58,7 @@ import {
   Edit,
   Star,
   Heart,
-  Mail,
+  Mail
 } from 'lucide-react'
 
 export function ThemeShowcase() {
@@ -64,7 +89,7 @@ export function ThemeShowcase() {
               ['Muted', 'bg-muted', 'text-muted-foreground'],
               ['Accent', 'bg-accent', 'text-accent-foreground'],
               ['Destructive', 'bg-destructive', 'text-destructive-foreground'],
-              ['Card', 'bg-card', 'text-card-foreground'],
+              ['Card', 'bg-card', 'text-card-foreground']
             ].map(([name, bg, text]) => (
               <div key={name} className={`${bg} ${text} rounded-lg p-4 text-sm font-medium border`}>
                 {name}
@@ -90,11 +115,15 @@ export function ThemeShowcase() {
             <Button size="sm">Small</Button>
             <Button size="default">Default</Button>
             <Button size="lg">Large</Button>
-            <Button size="icon"><Plus className="h-4 w-4" /></Button>
+            <Button size="icon">
+              <Plus className="h-4 w-4" />
+            </Button>
           </div>
           <div className="flex flex-wrap gap-3">
             <Button disabled>Disabled</Button>
-            <Button><Mail className="mr-2 h-4 w-4" /> With Icon</Button>
+            <Button>
+              <Mail className="mr-2 h-4 w-4" /> With Icon
+            </Button>
           </div>
         </section>
 
@@ -126,14 +155,18 @@ export function ThemeShowcase() {
                 <p className="text-sm text-muted-foreground">Card body content.</p>
               </CardContent>
               <CardFooter className="flex justify-between">
-                <Button variant="outline" size="sm">Cancel</Button>
+                <Button variant="outline" size="sm">
+                  Cancel
+                </Button>
                 <Button size="sm">Deploy</Button>
               </CardFooter>
             </Card>
             <Card>
               <CardHeader>
                 <div className="flex items-center gap-3">
-                  <Avatar><AvatarFallback>AN</AvatarFallback></Avatar>
+                  <Avatar>
+                    <AvatarFallback>AN</AvatarFallback>
+                  </Avatar>
                   <div>
                     <CardTitle className="text-base">Alex Neyman</CardTitle>
                     <CardDescription>alex@kineticapps.io</CardDescription>
@@ -176,7 +209,9 @@ export function ThemeShowcase() {
               <div className="space-y-2">
                 <Label>Project</Label>
                 <Select>
-                  <SelectTrigger><SelectValue placeholder="Select a project" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a project" />
+                  </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="payme">PayMe</SelectItem>
                     <SelectItem value="relay">Relay</SelectItem>
@@ -206,10 +241,18 @@ export function ThemeShowcase() {
         <section className="space-y-4">
           <h2 className="text-2xl font-semibold">Toggle</h2>
           <div className="flex gap-2">
-            <Toggle aria-label="Bold"><Bold className="h-4 w-4" /></Toggle>
-            <Toggle aria-label="Italic"><Italic className="h-4 w-4" /></Toggle>
-            <Toggle variant="outline" aria-label="Star"><Star className="h-4 w-4" /></Toggle>
-            <Toggle variant="outline" aria-label="Heart"><Heart className="h-4 w-4" /></Toggle>
+            <Toggle aria-label="Bold">
+              <Bold className="h-4 w-4" />
+            </Toggle>
+            <Toggle aria-label="Italic">
+              <Italic className="h-4 w-4" />
+            </Toggle>
+            <Toggle variant="outline" aria-label="Star">
+              <Star className="h-4 w-4" />
+            </Toggle>
+            <Toggle variant="outline" aria-label="Heart">
+              <Heart className="h-4 w-4" />
+            </Toggle>
           </div>
         </section>
 
@@ -226,20 +269,32 @@ export function ThemeShowcase() {
             </TabsList>
             <TabsContent value="overview" className="mt-4">
               <Card>
-                <CardHeader><CardTitle>Overview</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-muted-foreground">Overview tab content.</p></CardContent>
+                <CardHeader>
+                  <CardTitle>Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Overview tab content.</p>
+                </CardContent>
               </Card>
             </TabsContent>
             <TabsContent value="analytics" className="mt-4">
               <Card>
-                <CardHeader><CardTitle>Analytics</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-muted-foreground">Charts and metrics.</p></CardContent>
+                <CardHeader>
+                  <CardTitle>Analytics</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Charts and metrics.</p>
+                </CardContent>
               </Card>
             </TabsContent>
             <TabsContent value="settings" className="mt-4">
               <Card>
-                <CardHeader><CardTitle>Settings</CardTitle></CardHeader>
-                <CardContent><p className="text-sm text-muted-foreground">Configuration options.</p></CardContent>
+                <CardHeader>
+                  <CardTitle>Settings</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground">Configuration options.</p>
+                </CardContent>
               </Card>
             </TabsContent>
           </Tabs>
@@ -269,9 +324,30 @@ export function ThemeShowcase() {
           <h2 className="text-2xl font-semibold">Tooltips</h2>
           <TooltipProvider>
             <div className="flex gap-4">
-              <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon"><Settings className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Settings</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon"><User className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Profile</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><Button variant="outline" size="icon"><Bell className="h-4 w-4" /></Button></TooltipTrigger><TooltipContent>Notifications</TooltipContent></Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Settings</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <User className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Profile</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="outline" size="icon">
+                    <Bell className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Notifications</TooltipContent>
+              </Tooltip>
             </div>
           </TooltipProvider>
         </section>
@@ -296,16 +372,28 @@ export function ThemeShowcase() {
                   { task: 'KOS-1 Data Model', status: 'In Progress', priority: 'Urgent' },
                   { task: 'KOS-7 UI Layout', status: 'In Progress', priority: 'High' },
                   { task: 'KOS-2 Linear Integration', status: 'Backlog', priority: 'High' },
-                  { task: 'KOS-10 Mobile App', status: 'Backlog', priority: 'Low' },
+                  { task: 'KOS-10 Mobile App', status: 'Backlog', priority: 'Low' }
                 ].map((row) => (
                   <TableRow key={row.task}>
                     <TableCell className="font-medium">{row.task}</TableCell>
-                    <TableCell><Badge variant={row.status === 'In Progress' ? 'default' : 'secondary'}>{row.status}</Badge></TableCell>
-                    <TableCell><Badge variant={row.priority === 'Urgent' ? 'destructive' : 'outline'}>{row.priority}</Badge></TableCell>
+                    <TableCell>
+                      <Badge variant={row.status === 'In Progress' ? 'default' : 'secondary'}>
+                        {row.status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={row.priority === 'Urgent' ? 'destructive' : 'outline'}>
+                        {row.priority}
+                      </Badge>
+                    </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button variant="ghost" size="icon"><Edit className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="icon"><Trash2 className="h-3.5 w-3.5" /></Button>
+                        <Button variant="ghost" size="icon">
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button variant="ghost" size="icon">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -327,7 +415,9 @@ export function ThemeShowcase() {
             </AccordionItem>
             <AccordionItem value="item-2">
               <AccordionTrigger>How does theming work?</AccordionTrigger>
-              <AccordionContent>Themes override CSS custom properties at runtime via the theme applier.</AccordionContent>
+              <AccordionContent>
+                Themes override CSS custom properties at runtime via the theme applier.
+              </AccordionContent>
             </AccordionItem>
           </Accordion>
         </section>

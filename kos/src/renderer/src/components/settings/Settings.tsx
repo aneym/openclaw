@@ -1,17 +1,17 @@
-import { useState } from 'react';
-import { Palette, Eye } from 'lucide-react';
-import { AppearanceSettings } from './AppearanceSettings';
-import { ThemeShowcase } from '../ThemeShowcase';
+import { useState } from 'react'
+import { Palette, Eye } from 'lucide-react'
+import { AppearanceSettings } from './AppearanceSettings'
+import { ThemeShowcase } from '../ThemeShowcase'
 
-type SettingsSection = 'appearance' | 'preview';
+type SettingsSection = 'appearance' | 'preview'
 
 const sections = [
   { id: 'appearance' as const, label: 'Appearance', icon: Palette },
-  { id: 'preview' as const, label: 'Preview', icon: Eye },
-];
+  { id: 'preview' as const, label: 'Preview', icon: Eye }
+]
 
 export function Settings() {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance');
+  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
 
   return (
     <div className="flex h-full">
@@ -44,10 +44,8 @@ export function Settings() {
             <AppearanceSettings />
           </div>
         )}
-        {activeSection === 'preview' && (
-          <ThemeShowcase />
-        )}
+        {activeSection === 'preview' && <ThemeShowcase />}
       </div>
     </div>
-  );
+  )
 }

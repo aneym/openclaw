@@ -5,17 +5,18 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin()]
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [externalizeDepsPlugin()]
   },
   renderer: {
     resolve: {
       alias: {
         '@': resolve('src/renderer/src'),
         '@renderer': resolve('src/renderer/src')
-      }
+      },
+      dedupe: ['react', 'react-dom']
     },
     plugins: [react(), tailwindcss()]
   }

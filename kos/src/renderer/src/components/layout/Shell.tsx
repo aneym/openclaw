@@ -1,18 +1,18 @@
-import { useState } from 'react';
-import { Sidebar } from './Sidebar';
-import { StatusBar } from './StatusBar';
-import { Settings } from '../settings/Settings';
-import { useWorkspaceStore } from '../../stores/workspace-store';
-import { useThreadStore } from '../../stores/thread-store';
+import { useState } from 'react'
+import { Sidebar } from './Sidebar'
+import { StatusBar } from './StatusBar'
+import { Settings } from '../settings/Settings'
+import { useWorkspaceStore } from '../../stores/workspace-store'
+import { useThreadStore } from '../../stores/thread-store'
 
-type View = 'home' | 'settings';
+type View = 'home' | 'settings'
 
 export function Shell() {
-  const [view, setView] = useState<View>('home');
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const activeThreadId = useThreadStore((s) => s.activeThreadId);
-  const threads = useThreadStore((s) => s.threads);
-  const activeThread = activeThreadId ? threads.get(activeThreadId) ?? null : null;
+  const [view, setView] = useState<View>('home')
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace)
+  const activeThreadId = useThreadStore((s) => s.activeThreadId)
+  const threads = useThreadStore((s) => s.threads)
+  const activeThread = activeThreadId ? (threads.get(activeThreadId) ?? null) : null
 
   return (
     <div className="h-screen flex flex-col">
@@ -42,9 +42,7 @@ export function Shell() {
             ) : (
               <div className="flex-1 flex items-center justify-center h-full">
                 <div className="text-center max-w-md">
-                  <h1 className="text-4xl font-bold mb-4">
-                    Welcome to kOS
-                  </h1>
+                  <h1 className="text-4xl font-bold mb-4">Welcome to kOS</h1>
                   <p className="text-muted-foreground mb-6">
                     {activeWorkspace?.icon || '🏠'} {activeWorkspace?.name || 'Default Workspace'}
                   </p>
@@ -59,5 +57,5 @@ export function Shell() {
       </div>
       <StatusBar />
     </div>
-  );
+  )
 }

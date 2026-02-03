@@ -1,4 +1,4 @@
-import type { ThemeDefinition } from '../types';
+import type { ThemeDefinition } from '../types'
 
 export const zincDefaultTheme: ThemeDefinition = {
   id: 'default',
@@ -9,7 +9,7 @@ export const zincDefaultTheme: ThemeDefinition = {
       'font-sans': 'ui-sans-serif, system-ui, sans-serif',
       'font-mono': 'ui-monospace, monospace',
       'font-serif': 'ui-serif, Georgia, serif',
-      radius: '0.625rem',
+      radius: '0.625rem'
     },
     light: {
       background: 'oklch(1 0 0)',
@@ -43,7 +43,7 @@ export const zincDefaultTheme: ThemeDefinition = {
       'sidebar-accent': 'oklch(0.967 0.001 286.375)',
       'sidebar-accent-foreground': 'oklch(0.141 0.005 285.823)',
       'sidebar-border': 'oklch(0.92 0.004 286.029)',
-      'sidebar-ring': 'oklch(0.141 0.005 285.823)',
+      'sidebar-ring': 'oklch(0.141 0.005 285.823)'
     },
     dark: {
       background: 'oklch(0.141 0.005 285.823)',
@@ -77,11 +77,11 @@ export const zincDefaultTheme: ThemeDefinition = {
       'sidebar-accent': 'oklch(0.274 0.006 286.033)',
       'sidebar-accent-foreground': 'oklch(0.985 0.002 247.858)',
       'sidebar-border': 'oklch(0.274 0.006 286.033)',
-      'sidebar-ring': 'oklch(0.871 0.006 286.286)',
-    },
+      'sidebar-ring': 'oklch(0.871 0.006 286.286)'
+    }
   },
-  installedAt: 0,
-};
+  installedAt: 0
+}
 
 export const twitterTheme: ThemeDefinition = {
   id: 'twitter',
@@ -93,7 +93,7 @@ export const twitterTheme: ThemeDefinition = {
       'font-sans': 'Open Sans, sans-serif',
       'font-mono': 'Menlo, monospace',
       'font-serif': 'Georgia, serif',
-      radius: '1.3rem',
+      radius: '1.3rem'
     },
     light: {
       background: 'oklch(1.0000 0 0)',
@@ -130,7 +130,7 @@ export const twitterTheme: ThemeDefinition = {
       'sidebar-ring': 'oklch(0.6818 0.1584 243.3540)',
       'font-sans': 'Open Sans, sans-serif',
       'font-serif': 'Georgia, serif',
-      'font-mono': 'Menlo, monospace',
+      'font-mono': 'Menlo, monospace'
     },
     dark: {
       background: 'oklch(0 0 0)',
@@ -167,11 +167,11 @@ export const twitterTheme: ThemeDefinition = {
       'sidebar-ring': 'oklch(0.6818 0.1584 243.3540)',
       'font-sans': 'Open Sans, sans-serif',
       'font-serif': 'Georgia, serif',
-      'font-mono': 'Menlo, monospace',
-    },
+      'font-mono': 'Menlo, monospace'
+    }
   },
-  installedAt: 0,
-};
+  installedAt: 0
+}
 
 export const amberMinimalTheme: ThemeDefinition = {
   id: 'amber-minimal',
@@ -183,7 +183,7 @@ export const amberMinimalTheme: ThemeDefinition = {
       'font-sans': 'Inter, sans-serif',
       'font-mono': 'JetBrains Mono, monospace',
       'font-serif': 'Source Serif 4, serif',
-      radius: '0.375rem',
+      radius: '0.375rem'
     },
     light: {
       background: 'oklch(1.0000 0 0)',
@@ -220,7 +220,7 @@ export const amberMinimalTheme: ThemeDefinition = {
       'sidebar-ring': 'oklch(0.7686 0.1647 70.0804)',
       'font-sans': 'Inter, sans-serif',
       'font-serif': 'Source Serif 4, serif',
-      'font-mono': 'JetBrains Mono, monospace',
+      'font-mono': 'JetBrains Mono, monospace'
     },
     dark: {
       background: 'oklch(0.2046 0 0)',
@@ -257,14 +257,10 @@ export const amberMinimalTheme: ThemeDefinition = {
       'sidebar-ring': 'oklch(0.7686 0.1647 70.0804)',
       'font-sans': 'Inter, sans-serif',
       'font-serif': 'Source Serif 4, serif',
-      'font-mono': 'JetBrains Mono, monospace',
-    },
+      'font-mono': 'JetBrains Mono, monospace'
+    }
   },
-  installedAt: 0,
-};
+  installedAt: 0
+}
 
-export const builtInThemes: ThemeDefinition[] = [
-  twitterTheme,
-  zincDefaultTheme,
-  amberMinimalTheme,
-];
+export const builtInThemes: ThemeDefinition[] = [twitterTheme, zincDefaultTheme, amberMinimalTheme]
