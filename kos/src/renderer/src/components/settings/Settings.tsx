@@ -1,17 +1,19 @@
-import { useState } from 'react'
-import { Palette, Eye } from 'lucide-react'
-import { AppearanceSettings } from './AppearanceSettings'
-import { ThemeShowcase } from '../ThemeShowcase'
+import { Eye, Palette, Plug } from "lucide-react";
+import { useState } from "react";
+import { ThemeShowcase } from "../ThemeShowcase";
+import { AppearanceSettings } from "./AppearanceSettings";
+import { ConnectionSettings } from "./ConnectionSettings";
 
-type SettingsSection = 'appearance' | 'preview'
+type SettingsSection = "appearance" | "preview" | "connection";
 
 const sections = [
-  { id: 'appearance' as const, label: 'Appearance', icon: Palette },
-  { id: 'preview' as const, label: 'Preview', icon: Eye }
-]
+  { id: "appearance" as const, label: "Appearance", icon: Palette },
+  { id: "preview" as const, label: "Preview", icon: Eye },
+  { id: "connection" as const, label: "Connection", icon: Plug },
+];
 
 export function Settings() {
-  const [activeSection, setActiveSection] = useState<SettingsSection>('appearance')
+  const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
 
   return (
     <div className="flex h-full">
@@ -25,8 +27,8 @@ export function Settings() {
               onClick={() => setActiveSection(id)}
               className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
                 activeSection === id
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+                  ? "bg-accent text-accent-foreground"
+                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
               }`}
             >
               <Icon className="h-4 w-4" />
@@ -38,14 +40,19 @@ export function Settings() {
 
       {/* Settings content */}
       <div className="flex-1 overflow-hidden">
-        {activeSection === 'appearance' && (
+        {activeSection === "appearance" && (
           <div className="overflow-y-auto h-full p-8 max-w-2xl">
             <h2 className="text-2xl font-bold mb-6">Appearance</h2>
             <AppearanceSettings />
           </div>
         )}
-        {activeSection === 'preview' && <ThemeShowcase />}
+        {activeSection === "preview" && <ThemeShowcase />}
+        {activeSection === "connection" && (
+          <div className="overflow-y-auto h-full p-8 max-w-2xl">
+            <ConnectionSettings />
+          </div>
+        )}
       </div>
     </div>
-  )
+  );
 }

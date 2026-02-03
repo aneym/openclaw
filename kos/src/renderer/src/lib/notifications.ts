@@ -72,13 +72,6 @@ export const notifications = {
     });
   },
 
-  threadDeleted: (threadName: string) => {
-    toast.info("Thread deleted", {
-      description: threadName,
-      duration: 3000,
-    });
-  },
-
   // Error events
   error: (title: string, description?: string, details?: ErrorDetails) => {
     toast.error(title, {
@@ -135,6 +128,36 @@ export const notifications = {
     toast.info(message, {
       description,
       duration: 3000,
+    });
+  },
+
+  // Session events
+  sessionArchived: (sessionKey: string) => {
+    toast.success("Session archived", {
+      description: `Archived ${sessionKey.slice(0, 8)}...`,
+      duration: 3000,
+    });
+  },
+
+  sessionUnarchived: (sessionKey: string) => {
+    toast.success("Session unarchived", {
+      description: `Restored ${sessionKey.slice(0, 8)}...`,
+      duration: 3000,
+    });
+  },
+
+  sessionReloaded: () => {
+    toast.success("Session reloaded", {
+      description: "History has been cleared",
+      duration: 3000,
+    });
+  },
+
+  // Clipboard events
+  copied: (item: string) => {
+    toast.success("Copied", {
+      description: `${item} copied to clipboard`,
+      duration: 2000,
     });
   },
 };

@@ -49,8 +49,10 @@ export function renderChatControls(state: AppViewState) {
   );
   const disableThinkingToggle = state.onboarding;
   const disableFocusToggle = state.onboarding;
+  const disableSoundToggle = state.onboarding;
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const focusActive = state.onboarding ? true : state.settings.chatFocusMode;
+  const soundEnabled = state.onboarding ? false : state.settings.notificationSound;
   // Refresh icon
   const refreshIcon = html`
     <svg
@@ -174,6 +176,25 @@ export function renderChatControls(state: AppViewState) {
         ${icons.brain}
       </button>
       <button
+        class="btn btn--sm btn--icon ${soundEnabled ? "active" : ""}"
+        ?disabled=${disableSoundToggle}
+        @click=${() => {
+          if (disableSoundToggle) {
+            return;
+          }
+          state.applySettings({
+            ...state.settings,
+            notificationSound: !state.settings.notificationSound,
+          });
+        }}
+        aria-pressed=${soundEnabled}
+        title=${
+          disableSoundToggle ? "Disabled during onboarding" : "Play sound when response completes"
+        }
+      >
+        ${icons.bell}
+      </button>
+      <button
         class="btn btn--sm btn--icon ${focusActive ? "active" : ""}"
         ?disabled=${disableFocusToggle}
         @click=${() => {
@@ -258,8 +279,7 @@ export function renderModelPicker(state: AppViewState) {
           const aliasRef = config.alias;
           if (aliasRef === modelRef) return true;
           // Check if provider/model matches
-          if (config.provider === entry.provider && config.model === entry.id)
-            return true;
+          if (config.provider === entry.provider && config.model === entry.id) return true;
           return false;
         });
       })

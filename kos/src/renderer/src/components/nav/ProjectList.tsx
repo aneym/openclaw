@@ -28,41 +28,66 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
   const setSelectedProject = useProjectStore((s) => s.setSelectedProject);
   const threads = useThreadStore((s) => s.threads);
   const activeThreadId = useThreadStore((s) => s.activeThreadId);
+  const setActiveThread = useThreadStore((s) => s.setActiveThread);
 
   // Settings modal state
   const [settingsProject, setSettingsProject] = useState<Project | null>(null);
 
-  // Handle project click: expand to show threads, or show Linear board if no active thread
+  // Handle project click: open/focus the project tab
   const handleProjectClick = (projectId: string) => {
     const project = projects.find((p) => p.id === projectId);
+    const activeThread = activeThreadId ? threads.get(activeThreadId) : null;
+    const activeThreadInProject =
+      activeThread?.projectId === projectId && activeThread.status !== "archived";
+    const hasBoard = !!(project?.linearTeamId && activeWorkspace?.linearApiKey);
+    const projectThreads = Array.from(threads.values()).filter(
+      (thread) => thread.projectId === projectId && thread.status !== "archived",
+    );
+    const latestThread = projectThreads.sort((a, b) => b.lastMessageAt - a.lastMessageAt)[0];
 
-    // Always toggle expansion to show/hide threads
+    // Preserve existing hooks while routing to the project tab
     onProjectClick?.(projectId);
+    onThreadClick?.();
 
-    // If no active thread and project has a Linear team, show the board
-    if (!activeThreadId && project?.linearTeamId) {
-      setSelectedProject(projectId);
+    setSelectedProject(projectId);
+
+    // If we're already focused on this project's thread, keep it as-is.
+    if (activeThreadInProject) {
+      return;
+    }
+
+    // Focus the most recent thread in this project when available.
+    if (latestThread) {
+      setActiveThread(latestThread.id);
+      return;
+    }
+
+    // No threads available — show the board if possible, otherwise the empty state.
+    if (activeThreadId) {
+      useThreadStore.setState({ activeThreadId: null });
+    }
+    if (hasBoard) {
+      return;
     }
   };
 
-  // Get threads grouped by project
-  const threadsByProject = new Map<string, number>();
-  const unsortedThreads: string[] = [];
-
-  Array.from(threads.values()).forEach((thread) => {
-    if (thread.status === "archived") return;
-
-    if (thread.projectId) {
-      threadsByProject.set(thread.projectId, (threadsByProject.get(thread.projectId) || 0) + 1);
-    } else {
-      unsortedThreads.push(thread.id);
-    }
-  });
+  // Get thread count per project (for the project item badge)
+  const threadsByProject = useMemo(() => {
+    const counts = new Map<string, number>();
+    Array.from(threads.values()).forEach((thread) => {
+      if (thread.status === "archived") return;
+      if (thread.sessionKey?.startsWith("cron:")) return;
+      if (thread.projectId) {
+        counts.set(thread.projectId, (counts.get(thread.projectId) || 0) + 1);
+      }
+    });
+    return counts;
+  }, [threads]);
 
   return (
     <>
       <div className="space-y-0.5">
-        {/* Projects with threads */}
+        {/* Projects list (just shows project items, no thread sublists) */}
         {projects.map((project) => {
           const count = threadsByProject.get(project.id) || 0;
           const expanded = expandedIds.has(project.id);
@@ -80,7 +105,7 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
                   <ThreadList
                     projectId={project.id}
                     onThreadClick={() => {
-                      setSelectedProject(null);
+                      setSelectedProject(project.id);
                       onThreadClick?.();
                     }}
                     compact
@@ -91,24 +116,15 @@ export function ProjectList({ onThreadClick, onProjectClick }: ProjectListProps)
           );
         })}
 
-        {/* Unsorted threads section */}
-        {unsortedThreads.length > 0 && (
-          <div className="mt-6">
-            <div className="px-3 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
-              Unsorted
-            </div>
-            <div className="space-y-0.5">
-              <ThreadList
-                projectId={null}
-                onThreadClick={() => {
-                  setSelectedProject(null);
-                  onThreadClick?.();
-                }}
-                compact
-              />
-            </div>
-          </div>
-        )}
+        {/* All threads grouped by Active/Older/Automated/Archived */}
+        <div className="mt-6">
+          <ThreadList
+            onThreadClick={() => {
+              setSelectedProject(null);
+              onThreadClick?.();
+            }}
+          />
+        </div>
       </div>
 
       {/* Project Settings Sheet */}

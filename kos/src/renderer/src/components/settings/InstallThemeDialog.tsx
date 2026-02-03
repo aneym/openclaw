@@ -1,52 +1,52 @@
-import { useState } from 'react'
+import { Plus, Loader2 } from "lucide-react";
+import { useState } from "react";
+import { useTheme } from "../../hooks/use-theme";
+import { installThemeFromUrl } from "../../lib/theme-installer";
+import { Button } from "../ui/button";
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger
-} from '../ui/dialog'
-import { Input } from '../ui/input'
-import { Button } from '../ui/button'
-import { Plus, Loader2 } from 'lucide-react'
-import { installThemeFromUrl } from '../../lib/theme-installer'
-import { useTheme } from '../../hooks/use-theme'
+  DialogTrigger,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
 
 export function InstallThemeDialog() {
-  const [open, setOpen] = useState(false)
-  const [input, setInput] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const { installTheme, setTheme } = useTheme()
+  const [open, setOpen] = useState(false);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const { installTheme, setTheme } = useTheme();
 
   const handleInstall = async () => {
-    if (!input.trim()) return
+    if (!input.trim()) return;
 
-    setLoading(true)
-    setError(null)
+    setLoading(true);
+    setError(null);
 
     try {
-      const theme = await installThemeFromUrl(input)
-      installTheme(theme)
-      setTheme(theme.id)
-      setInput('')
-      setOpen(false)
+      const theme = await installThemeFromUrl(input);
+      installTheme(theme);
+      setTheme(theme.id);
+      setInput("");
+      setOpen(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to install theme')
+      setError(err instanceof Error ? err.message : "Failed to install theme");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   const handleOpenChange = (next: boolean) => {
-    setOpen(next)
+    setOpen(next);
     if (!next) {
-      setInput('')
-      setError(null)
-      setLoading(false)
+      setInput("");
+      setError(null);
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -60,17 +60,17 @@ export function InstallThemeDialog() {
         <DialogHeader>
           <DialogTitle>Install Theme</DialogTitle>
           <DialogDescription>
-            Paste a tweakcn.com theme URL or raw JSON to install a new theme.
+            Paste a tweakcn.com theme URL, a shadcn add command, or raw JSON to install a new theme.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">
           <Input
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder="https://tweakcn.com/r/themes/..."
+            placeholder="pnpm dlx shadcn@latest add https://tweakcn.com/r/themes/..."
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && !loading) {
-                handleInstall()
+              if (e.key === "Enter" && !loading) {
+                handleInstall();
               }
             }}
             disabled={loading}
@@ -87,12 +87,12 @@ export function InstallThemeDialog() {
                   Installing...
                 </>
               ) : (
-                'Install'
+                "Install"
               )}
             </Button>
           </div>
         </div>
       </DialogContent>
     </Dialog>
-  )
+  );
 }

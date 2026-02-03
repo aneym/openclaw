@@ -29,8 +29,8 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
   const sessionKey = thread.sessionKey;
 
   // Fetch messages and track streaming state
-  const { messages, loading, error } = useMessages(sessionKey, threadId);
-  const { isStreaming } = useStreaming(sessionKey);
+  const { messages, loading, error, addMessage } = useMessages(sessionKey, threadId);
+  const { isStreaming, streamText } = useStreaming(sessionKey);
 
   // Show loading state
   if (loading) {
@@ -55,10 +55,15 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Message list (flex-1 takes remaining space) */}
-      <MessageList messages={messages} isStreaming={isStreaming} />
+      <MessageList messages={messages} isStreaming={isStreaming} streamText={streamText} />
 
       {/* Compose bar (fixed at bottom) */}
-      <ComposeBar sessionKey={sessionKey} threadId={threadId} disabled={isStreaming} />
+      <ComposeBar
+        sessionKey={sessionKey}
+        threadId={threadId}
+        disabled={isStreaming}
+        onAddMessage={addMessage}
+      />
     </div>
   );
 }

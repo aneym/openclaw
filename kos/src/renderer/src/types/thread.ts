@@ -1,6 +1,6 @@
 export interface Thread {
   id: string;
-  tabId?: string; // owning tab (home if unset)
+  tabId: string; // owning tab
   projectId?: string; // null = unsorted
   sessionKey: string; // OpenClaw session key
   title: string;

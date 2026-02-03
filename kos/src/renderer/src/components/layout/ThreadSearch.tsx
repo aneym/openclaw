@@ -2,7 +2,9 @@ import { Command } from "cmdk";
 import { MessageSquare, Clock } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { formatDistanceToNow } from "../../lib/date-utils";
+import { useTabStore } from "../../stores/tab-store";
 import { useThreadStore } from "../../stores/thread-store";
+import { useWorkspaceStore } from "../../stores/workspace-store";
 import { Dialog, DialogContent } from "../ui/dialog";
 
 interface ThreadSearchProps {
@@ -14,13 +16,24 @@ export function ThreadSearch({ open, onOpenChange }: ThreadSearchProps) {
   const [search, setSearch] = useState("");
   const threadsMap = useThreadStore((s) => s.threads);
   const setActiveThread = useThreadStore((s) => s.setActiveThread);
+  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
+  const activeTabIdByWorkspace = useTabStore((s) => s.activeTabIdByWorkspace);
+  const homeTabId = activeWorkspace ? `home-${activeWorkspace.id}` : null;
+  const activeTabId = useMemo(() => {
+    if (!activeWorkspace) return null;
+    return activeTabIdByWorkspace[activeWorkspace.id] ?? homeTabId ?? null;
+  }, [activeTabIdByWorkspace, activeWorkspace?.id, homeTabId]);
 
   // Memoize to avoid infinite loop from new array reference
   const threads = useMemo(() => Array.from(threadsMap.values()), [threadsMap]);
 
-  // Filter non-archived threads
+  // Filter non-archived threads in active tab
   const activeThreads = threads
     .filter((t) => t.status !== "archived")
+    .filter((thread) => {
+      if (!activeTabId) return true;
+      return thread.tabId === activeTabId;
+    })
     .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
 
   const handleSelect = (threadId: string) => {

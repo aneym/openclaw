@@ -1,5 +1,6 @@
 import { Send, X } from "lucide-react";
 import { useState, useRef, KeyboardEvent, ClipboardEvent } from "react";
+import type { ChatMessage } from "../../types/message";
 import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
 import { useImageAttachments } from "../../hooks/use-image-attachments";
 import { useStreaming } from "../../hooks/use-streaming";
@@ -13,9 +14,15 @@ interface ComposeBarProps {
   sessionKey: string;
   threadId: string;
   disabled?: boolean;
+  onAddMessage?: (message: ChatMessage) => void;
 }
 
-export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBarProps) {
+export function ComposeBar({
+  sessionKey,
+  threadId,
+  disabled = false,
+  onAddMessage,
+}: ComposeBarProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { request, connected } = useGatewayStore();
@@ -58,6 +65,7 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
     if (!canSend) return;
 
     const messageText = text.trim();
+    const messageId = generateUUID();
     setText("");
     clearImages();
 
@@ -77,13 +85,24 @@ export function ComposeBar({ sessionKey, threadId, disabled = false }: ComposeBa
       }
     }
 
+    // Add user message locally (optimistic update)
+    if (onAddMessage) {
+      onAddMessage({
+        id: messageId,
+        role: "user",
+        parts: [{ type: "text", text: messageText }],
+        createdAt: Date.now(),
+        threadId,
+      });
+    }
+
     try {
       // TODO: Add image attachments support
       await request("chat.send", {
         sessionKey,
         message: messageText,
         deliver: false,
-        idempotencyKey: generateUUID(),
+        idempotencyKey: messageId,
       });
     } catch (err) {
       console.error("[compose] send failed:", err);

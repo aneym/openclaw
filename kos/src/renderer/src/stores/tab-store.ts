@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Tab } from "../types";
+import { useProjectStore } from "./project-store";
+import { useThreadStore } from "./thread-store";
 
 interface TabState {
   tabsByWorkspace: Record<string, Tab[]>;
@@ -16,10 +18,11 @@ interface TabState {
   setSelectedProject: (tabId: string, projectId: string | null) => void;
 }
 
-const createTabId = () => `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+const getHomeTabId = (workspaceId: string) => `home-${workspaceId}`;
+const getProjectTabId = (projectId: string) => `project-${projectId}`;
 
 const createHomeTab = (workspaceId: string, now: number): Tab => ({
-  id: `home-${workspaceId}`,
+  id: getHomeTabId(workspaceId),
   workspaceId,
   type: "home",
   title: "Home",
@@ -27,11 +30,20 @@ const createHomeTab = (workspaceId: string, now: number): Tab => ({
   lastActiveAt: now,
 });
 
-const createProjectTab = (workspaceId: string, projectId: string, now: number): Tab => ({
-  id: createTabId(),
+const fallbackProjectTitle = "Project";
+
+const createProjectTab = (
+  workspaceId: string,
+  projectId: string,
+  now: number,
+  title: string,
+  icon?: string,
+): Tab => ({
+  id: getProjectTabId(projectId),
   workspaceId,
   type: "project",
-  title: projectId,
+  title,
+  icon,
   projectId,
   isPinned: false,
   lastActiveAt: now,
@@ -45,6 +57,30 @@ const ensureActiveThreadEntry = (
     return activeThreadIdByTab;
   }
   return { ...activeThreadIdByTab, [tabId]: null };
+};
+
+const migrateRecordKey = <T extends Record<string, string | null>>(
+  record: T,
+  fromId: string,
+  toId: string,
+): T => {
+  if (fromId === toId || !Object.prototype.hasOwnProperty.call(record, fromId)) {
+    return record;
+  }
+  const { [fromId]: value, ...rest } = record;
+  return { ...rest, [toId]: value ?? null } as T;
+};
+
+const migrateThreadTabIds = (fromId: string, toId: string) => {
+  if (fromId === toId) return;
+  const { threads, updateThread } = useThreadStore.getState();
+  const idsToUpdate: string[] = [];
+  threads.forEach((thread, id) => {
+    if (thread.tabId === fromId) {
+      idsToUpdate.push(id);
+    }
+  });
+  idsToUpdate.forEach((id) => updateThread(id, { tabId: toId }));
 };
 
 const ensureHomeTab = (tabs: Tab[], workspaceId: string, now: number) => {
@@ -92,14 +128,21 @@ export const useTabStore = create<TabState>()(
           const now = Date.now();
           const existingTabs = state.tabsByWorkspace[workspaceId] ?? [];
           const { tabs, homeTab } = ensureHomeTab(existingTabs, workspaceId, now);
-
+          const activeTabId = state.activeTabIdByWorkspace[workspaceId];
+          const activeTabExists = activeTabId ? tabs.some((tab) => tab.id === activeTabId) : false;
+          const resolvedActiveTabId = activeTabExists ? activeTabId! : homeTab.id;
           const updatedTabs = tabs.map((tab) =>
-            tab.id === homeTab.id ? { ...tab, lastActiveAt: now } : tab,
+            tab.id === homeTab.id && resolvedActiveTabId === homeTab.id
+              ? { ...tab, lastActiveAt: now }
+              : tab,
           );
 
           return {
             tabsByWorkspace: { ...state.tabsByWorkspace, [workspaceId]: updatedTabs },
-            activeTabIdByWorkspace: { ...state.activeTabIdByWorkspace, [workspaceId]: homeTab.id },
+            activeTabIdByWorkspace: {
+              ...state.activeTabIdByWorkspace,
+              [workspaceId]: resolvedActiveTabId,
+            },
             activeThreadIdByTab: ensureActiveThreadEntry(state.activeThreadIdByTab, homeTab.id),
             selectedProjectIdByTab: { ...state.selectedProjectIdByTab, [homeTab.id]: null },
           };
@@ -111,39 +154,72 @@ export const useTabStore = create<TabState>()(
           const now = Date.now();
           const existingTabs = state.tabsByWorkspace[workspaceId] ?? [];
           const { tabs, homeTab } = ensureHomeTab(existingTabs, workspaceId, now);
+          const project = useProjectStore.getState().projects.get(projectId);
+          const resolvedTitle = project?.name ?? fallbackProjectTitle;
+          const resolvedIcon = project?.icon;
+          const projectTabId = getProjectTabId(projectId);
           const existingProjectTab = tabs.find(
             (tab) => tab.type === "project" && tab.projectId === projectId,
           );
 
           let activeThreadIdByTab = ensureActiveThreadEntry(state.activeThreadIdByTab, homeTab.id);
+          let selectedProjectIdByTab = {
+            ...state.selectedProjectIdByTab,
+            [homeTab.id]: null,
+          };
+          let activeTabIdByWorkspace = { ...state.activeTabIdByWorkspace };
 
           if (existingProjectTab) {
-            activeThreadIdByTab = ensureActiveThreadEntry(
-              activeThreadIdByTab,
-              existingProjectTab.id,
-            );
+            const needsIdMigration = existingProjectTab.id !== projectTabId;
+            const updatedProjectTab = {
+              ...existingProjectTab,
+              id: projectTabId,
+              title: project?.name ?? existingProjectTab.title ?? fallbackProjectTitle,
+              icon: project?.icon ?? existingProjectTab.icon,
+              lastActiveAt: now,
+            };
+            if (needsIdMigration) {
+              activeThreadIdByTab = migrateRecordKey(
+                activeThreadIdByTab,
+                existingProjectTab.id,
+                projectTabId,
+              );
+              selectedProjectIdByTab = migrateRecordKey(
+                selectedProjectIdByTab,
+                existingProjectTab.id,
+                projectTabId,
+              );
+              if (activeTabIdByWorkspace[workspaceId] === existingProjectTab.id) {
+                activeTabIdByWorkspace = {
+                  ...activeTabIdByWorkspace,
+                  [workspaceId]: projectTabId,
+                };
+              }
+              migrateThreadTabIds(existingProjectTab.id, projectTabId);
+            }
+            activeThreadIdByTab = ensureActiveThreadEntry(activeThreadIdByTab, projectTabId);
+            selectedProjectIdByTab = {
+              ...selectedProjectIdByTab,
+              [projectTabId]: projectId,
+            };
 
             return {
               tabsByWorkspace: {
                 ...state.tabsByWorkspace,
                 [workspaceId]: tabs.map((tab) =>
-                  tab.id === existingProjectTab.id ? { ...tab, lastActiveAt: now } : tab,
+                  tab.id === existingProjectTab.id ? updatedProjectTab : tab,
                 ),
               },
               activeTabIdByWorkspace: {
-                ...state.activeTabIdByWorkspace,
-                [workspaceId]: existingProjectTab.id,
+                ...activeTabIdByWorkspace,
+                [workspaceId]: projectTabId,
               },
               activeThreadIdByTab,
-              selectedProjectIdByTab: {
-                ...state.selectedProjectIdByTab,
-                [homeTab.id]: null,
-                [existingProjectTab.id]: projectId,
-              },
+              selectedProjectIdByTab,
             };
           }
 
-          const newTab = createProjectTab(workspaceId, projectId, now);
+          const newTab = createProjectTab(workspaceId, projectId, now, resolvedTitle, resolvedIcon);
 
           return {
             tabsByWorkspace: {
@@ -152,16 +228,15 @@ export const useTabStore = create<TabState>()(
             },
             activeTabIdByWorkspace: {
               ...state.activeTabIdByWorkspace,
-              [workspaceId]: newTab.id,
+              [workspaceId]: projectTabId,
             },
             activeThreadIdByTab: {
               ...activeThreadIdByTab,
-              [newTab.id]: null,
+              [projectTabId]: null,
             },
             selectedProjectIdByTab: {
-              ...state.selectedProjectIdByTab,
-              [homeTab.id]: null,
-              [newTab.id]: projectId,
+              ...selectedProjectIdByTab,
+              [projectTabId]: projectId,
             },
           };
         });

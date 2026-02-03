@@ -3,7 +3,7 @@ const electron = require("electron");
 const preload = require("@electron-toolkit/preload");
 const api = {
   getGatewayConfig: () => electron.ipcRenderer.invoke("get-gateway-config"),
-  openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
+  openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory")
 };
 if (process.contextIsolated) {
   try {

@@ -1,6 +1,15 @@
 import { Check, ChevronDown, Plus } from "lucide-react";
+import { useState } from "react";
 import { useWorkspaceStore } from "../../stores/workspace-store";
 import { Button } from "../ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,17 +18,20 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
 
 export function WorkspaceSwitcher() {
   const { config, activeWorkspace, setActiveWorkspace, addWorkspace } = useWorkspaceStore();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState("");
 
   const handleCreateWorkspace = () => {
-    const name = prompt("Enter workspace name:");
-    if (!name) return;
+    if (!newWorkspaceName.trim()) return;
 
     const newWorkspace = {
       id: `ws-${Date.now()}`,
-      name,
+      name: newWorkspaceName.trim(),
       icon: "💼",
       projects: [],
       gatewayUrl: "ws://localhost:18789",
@@ -28,6 +40,8 @@ export function WorkspaceSwitcher() {
 
     addWorkspace(newWorkspace);
     setActiveWorkspace(newWorkspace.id);
+    setDialogOpen(false);
+    setNewWorkspaceName("");
   };
 
   return (
@@ -59,11 +73,43 @@ export function WorkspaceSwitcher() {
           </DropdownMenuItem>
         ))}
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={handleCreateWorkspace} className="flex items-center gap-2">
+        <DropdownMenuItem onClick={() => setDialogOpen(true)} className="flex items-center gap-2">
           <Plus className="h-4 w-4" />
           <span>New Workspace</span>
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <DialogTitle>Create Workspace</DialogTitle>
+            <DialogDescription>Enter a name for your new workspace.</DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="workspace-name">Name</Label>
+              <Input
+                id="workspace-name"
+                value={newWorkspaceName}
+                onChange={(e) => setNewWorkspaceName(e.target.value)}
+                placeholder="My Workspace"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleCreateWorkspace();
+                }}
+                autoFocus
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCreateWorkspace} disabled={!newWorkspaceName.trim()}>
+              Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </DropdownMenu>
   );
 }

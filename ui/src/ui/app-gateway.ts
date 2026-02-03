@@ -55,6 +55,7 @@ import {
   removeToolApproval,
 } from "./controllers/tool-approval";
 import { GatewayBrowserClient } from "./gateway";
+import { playNotificationSound, shouldPlaySound } from "./notification-sound";
 import { allLeaves } from "./split-tree";
 
 type GatewayHost = {
@@ -244,10 +245,12 @@ export function connectGateway(host: GatewayHost) {
           if (threadSessionKey && hasPendingAbort(threadSessionKey) && thread.chatRunId) {
             clearAbortPending(threadSessionKey);
             if (host.client && host.connected) {
-              void host.client.request("chat.abort", {
-                sessionKey: threadSessionKey,
-                runId: thread.chatRunId,
-              }).catch(() => {});
+              void host.client
+                .request("chat.abort", {
+                  sessionKey: threadSessionKey,
+                  runId: thread.chatRunId,
+                })
+                .catch(() => {});
             }
           }
         }
@@ -478,6 +481,14 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         }
       }
       if (state === "final") {
+        // Play notification sound if enabled and user isn't watching
+        if (host.settings.notificationSound) {
+          const tabFocused = document.hasFocus();
+          const chatVisible = host.tab === "chat";
+          if (shouldPlaySound(tabFocused, chatVisible)) {
+            playNotificationSound();
+          }
+        }
         // Load history before flushing the queue so the optimistic user
         // message appended by sendChatMessage isn't overwritten by the
         // history reload.

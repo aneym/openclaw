@@ -1,122 +1,154 @@
-import { cn } from '@/lib/utils'
-import type { ToolCallPart, ToolResultPart } from '@/types/message'
+import { ChevronRight } from "lucide-react";
+import { useState } from "react";
+import type { ToolCallPart, ToolResultPart } from "@/types/message";
+import { cn } from "@/lib/utils";
 
 interface ToolCallChipProps {
-  part: ToolCallPart | ToolResultPart
-  onClick?: () => void
+  part: ToolCallPart | ToolResultPart;
+  onClick?: () => void;
+  /** If true, start expanded */
+  defaultOpen?: boolean;
 }
 
 /**
  * Get the icon for a tool based on its name.
- * Icons are specified in SPEC-kos-chat.md:
- * - Read → 📖
- * - Write → 📝
- * - Edit → ✏️
- * - exec → ⚡
- * - web_search → 🔍
- * - web_fetch → 🌐
- * - browser → 🖥
- * - message → 💬
- * - Default → 🔧
  */
 function getToolIcon(toolName: string): string {
   const iconMap: Record<string, string> = {
-    Read: '📖',
-    Write: '📝',
-    Edit: '✏️',
-    exec: '⚡',
-    web_search: '🔍',
-    web_fetch: '🌐',
-    browser: '🖥',
-    message: '💬'
-  }
+    Read: "📖",
+    Write: "📝",
+    Edit: "✏️",
+    exec: "⚡",
+    Bash: "⚡",
+    web_search: "🔍",
+    WebSearch: "🔍",
+    web_fetch: "🌐",
+    WebFetch: "🌐",
+    browser: "🖥",
+    message: "💬",
+    Task: "🤖",
+    Glob: "🔎",
+    Grep: "🔎",
+  };
 
-  return iconMap[toolName] || '🔧'
+  return iconMap[toolName] || "🔧";
 }
 
 /**
  * Extract display details from tool args/result.
- * For file tools (Read/Write/Edit), show the file path.
- * For exec, show the command (truncated).
  */
 function getToolDetails(part: ToolCallPart | ToolResultPart): string | null {
-  const { toolName } = part
+  const { toolName } = part;
 
   // File tools: extract file_path from args
-  if (['Read', 'Write', 'Edit'].includes(toolName) && part.type === 'tool-call') {
-    const filePath = part.args.file_path as string | undefined
+  if (["Read", "Write", "Edit"].includes(toolName) && part.type === "tool-call") {
+    const filePath = part.args.file_path as string | undefined;
     if (filePath) {
-      // Truncate long paths: show filename if path is too long
       if (filePath.length > 40) {
-        const filename = filePath.split('/').pop() || filePath
-        return `.../${filename}`
+        const filename = filePath.split("/").pop() || filePath;
+        return `.../${filename}`;
       }
-      return filePath
+      return filePath;
     }
   }
 
-  // exec: show command (truncated)
-  if (toolName === 'exec' && part.type === 'tool-call') {
-    const command = part.args.command as string | undefined
+  // exec/Bash: show command (truncated)
+  if ((toolName === "exec" || toolName === "Bash") && part.type === "tool-call") {
+    const command = part.args.command as string | undefined;
     if (command) {
-      return command.length > 40 ? command.slice(0, 37) + '...' : command
+      return command.length > 40 ? command.slice(0, 37) + "..." : command;
     }
   }
 
-  return null
+  return null;
 }
 
 /**
- * Format duration for exec results (if available)
- * TODO: Use this when displaying execution duration in tool chips
+ * Format result content for display - prettify JSON
  */
-// function formatDuration(ms?: number): string | null {
-//   if (!ms) return null
-//   return `${(ms / 1000).toFixed(1)}s`
-// }
+function formatResult(result: unknown): { content: string; isJson: boolean } {
+  if (result === null || result === undefined) {
+    return { content: "", isJson: false };
+  }
+  if (typeof result === "string") {
+    // Try to parse as JSON for pretty printing
+    try {
+      const parsed = JSON.parse(result);
+      return { content: JSON.stringify(parsed, null, 2), isJson: true };
+    } catch {
+      return { content: result, isJson: false };
+    }
+  }
+  try {
+    return { content: JSON.stringify(result, null, 2), isJson: true };
+  } catch {
+    return { content: String(result), isJson: false };
+  }
+}
 
-export function ToolCallChip({ part, onClick }: ToolCallChipProps) {
-  const icon = getToolIcon(part.toolName)
-  const details = getToolDetails(part)
-  const isResult = part.type === 'tool-result'
-  const isError = isResult && part.isError
+export function ToolCallChip({ part, onClick, defaultOpen = false }: ToolCallChipProps) {
+  const [open, setOpen] = useState(defaultOpen);
+  const icon = getToolIcon(part.toolName);
+  const details = getToolDetails(part);
+  const isResult = part.type === "tool-result";
+  const isError = isResult && part.isError;
 
-  // For exec results, try to extract duration from result metadata
-  // (This is a placeholder - actual duration extraction depends on gateway format)
-  const duration = isResult && part.toolName === 'exec' ? null : null
+  const isClickable = ["Read", "Write", "Edit"].includes(part.toolName);
+  const hasContent = isResult && part.result != null;
 
-  const isClickable = ['Read', 'Write', 'Edit'].includes(part.toolName)
+  const handleClick = () => {
+    if (hasContent) {
+      setOpen(!open);
+    } else if (isClickable && onClick) {
+      onClick();
+    }
+  };
+
+  const { content, isJson } =
+    hasContent && isResult ? formatResult(part.result) : { content: "", isJson: false };
 
   return (
-    <button
-      onClick={isClickable ? onClick : undefined}
-      disabled={!isClickable}
-      className={cn(
-        'inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
-        'border border-border/50',
-        isError
-          ? 'bg-destructive/10 text-destructive border-destructive/30'
-          : isResult
-            ? 'bg-muted/50 text-foreground'
-            : 'bg-muted/30 text-muted-foreground',
-        isClickable && 'cursor-pointer hover:bg-muted/70 hover:border-border',
-        !isClickable && 'cursor-default'
+    <div className="tool-call-chip">
+      <button
+        onClick={handleClick}
+        className={cn(
+          "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
+          "border border-border/50",
+          isError
+            ? "bg-destructive/10 text-destructive border-destructive/30"
+            : isResult
+              ? "bg-muted/50 text-foreground"
+              : "bg-muted/30 text-muted-foreground",
+          (hasContent || isClickable) && "cursor-pointer hover:bg-muted/70 hover:border-border",
+          !hasContent && !isClickable && "cursor-default",
+        )}
+      >
+        <span className="text-sm leading-none">{icon}</span>
+        <span className="font-mono">{part.toolName}</span>
+        {details && (
+          <>
+            <span className="text-muted-foreground/50">·</span>
+            <span className="truncate max-w-[200px]">{details}</span>
+          </>
+        )}
+        {hasContent && (
+          <ChevronRight
+            className={cn("w-3 h-3 transition-transform ml-0.5", open && "rotate-90")}
+          />
+        )}
+      </button>
+      {open && hasContent && content && (
+        <div className="mt-1.5 rounded-md border border-border/50 bg-muted/30 overflow-hidden">
+          <pre
+            className={cn(
+              "text-xs p-2 overflow-x-auto max-h-[300px] overflow-y-auto",
+              isJson ? "text-muted-foreground" : "text-foreground whitespace-pre-wrap break-all",
+            )}
+          >
+            <code className={isJson ? "language-json" : ""}>{content}</code>
+          </pre>
+        </div>
       )}
-    >
-      <span className="text-sm leading-none">{icon}</span>
-      <span className="font-mono">{part.toolName}</span>
-      {details && (
-        <>
-          <span className="text-muted-foreground/50">·</span>
-          <span className="truncate max-w-[200px]">{details}</span>
-        </>
-      )}
-      {duration && (
-        <>
-          <span className="text-muted-foreground/50">·</span>
-          <span className="text-muted-foreground">({duration})</span>
-        </>
-      )}
-    </button>
-  )
+    </div>
+  );
 }

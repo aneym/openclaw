@@ -11,6 +11,7 @@ export type UiSettings = {
   theme: ThemeMode;
   chatFocusMode: boolean;
   chatShowThinking: boolean;
+  notificationSound: boolean; // Play sound when response completes
   splitRatio: number; // Sidebar split ratio (0.4 to 0.7, default 0.6)
   splitLayout: string | null; // Serialized SplitPaneLayout (null = single pane mode)
   navCollapsed: boolean; // Collapsible sidebar state
@@ -39,6 +40,7 @@ export function loadSettings(): UiSettings {
     theme: "system",
     chatFocusMode: false,
     chatShowThinking: true,
+    notificationSound: false,
     splitRatio: 0.6,
     splitLayout: null,
     navCollapsed: false,
@@ -62,30 +64,28 @@ export function loadSettings(): UiSettings {
           ? parsed.sessionKey.trim()
           : defaults.sessionKey,
       lastActiveSessionKey:
-        typeof parsed.lastActiveSessionKey === "string" &&
-        parsed.lastActiveSessionKey.trim()
+        typeof parsed.lastActiveSessionKey === "string" && parsed.lastActiveSessionKey.trim()
           ? parsed.lastActiveSessionKey.trim()
-          : (typeof parsed.sessionKey === "string" &&
-              parsed.sessionKey.trim()) ||
+          : (typeof parsed.sessionKey === "string" && parsed.sessionKey.trim()) ||
             defaults.lastActiveSessionKey,
       lastActiveThreadId:
         typeof parsed.lastActiveThreadId === "string" && parsed.lastActiveThreadId.trim()
           ? parsed.lastActiveThreadId.trim()
           : defaults.lastActiveThreadId,
       theme:
-        parsed.theme === "light" ||
-        parsed.theme === "dark" ||
-        parsed.theme === "system"
+        parsed.theme === "light" || parsed.theme === "dark" || parsed.theme === "system"
           ? parsed.theme
           : defaults.theme,
       chatFocusMode:
-        typeof parsed.chatFocusMode === "boolean"
-          ? parsed.chatFocusMode
-          : defaults.chatFocusMode,
+        typeof parsed.chatFocusMode === "boolean" ? parsed.chatFocusMode : defaults.chatFocusMode,
       chatShowThinking:
         typeof parsed.chatShowThinking === "boolean"
           ? parsed.chatShowThinking
           : defaults.chatShowThinking,
+      notificationSound:
+        typeof parsed.notificationSound === "boolean"
+          ? parsed.notificationSound
+          : defaults.notificationSound,
       splitRatio:
         typeof parsed.splitRatio === "number" &&
         parsed.splitRatio >= 0.4 &&
@@ -95,19 +95,17 @@ export function loadSettings(): UiSettings {
       splitLayout:
         typeof parsed.splitLayout === "string" ? parsed.splitLayout : defaults.splitLayout,
       navCollapsed:
-        typeof parsed.navCollapsed === "boolean"
-          ? parsed.navCollapsed
-          : defaults.navCollapsed,
+        typeof parsed.navCollapsed === "boolean" ? parsed.navCollapsed : defaults.navCollapsed,
       navWidth:
         typeof parsed.navWidth === "number" && parsed.navWidth >= 140 && parsed.navWidth <= 500
           ? parsed.navWidth
           : defaults.navWidth,
       navGroupsCollapsed:
-        typeof parsed.navGroupsCollapsed === "object" &&
-        parsed.navGroupsCollapsed !== null
+        typeof parsed.navGroupsCollapsed === "object" && parsed.navGroupsCollapsed !== null
           ? parsed.navGroupsCollapsed
           : defaults.navGroupsCollapsed,
-      selectedModel: typeof parsed.selectedModel === "string" ? parsed.selectedModel : defaults.selectedModel,
+      selectedModel:
+        typeof parsed.selectedModel === "string" ? parsed.selectedModel : defaults.selectedModel,
     };
   } catch {
     return defaults;

@@ -12,7 +12,7 @@ interface SidebarProps {
 
 export function Sidebar({ onNavigate, currentView }: SidebarProps) {
   return (
-    <div className="w-60 border-r border-border bg-muted/30 flex flex-col">
+    <div className="h-full border-r border-border bg-muted/30 flex flex-col">
       {/* Header with macOS titlebar inset — drag region for window movement */}
       <div
         className="shrink-0 border-b border-border [-webkit-app-region:drag]"

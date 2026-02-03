@@ -125,6 +125,15 @@ pnpm agent:stop -- <AGENT_ID>
 - If a rule implies adding a new dependency (e.g. SWR, better-all, expo-image, Galeria, native menus), confirm the stack and scope before introducing it.
 - Web UI reviews: use the `web-design-guidelines` skill to fetch the latest Vercel Web Interface Guidelines and report findings in the required `file:line` format.
 
+### kOS (Electron App) Constraints
+
+- **Never use native browser dialogs** in kOS (`kos/`) — they're not supported in Electron's renderer:
+  - `prompt()` → use shadcn `<Dialog>` with `<Input>`
+  - `confirm()` → use shadcn `<AlertDialog>`
+  - `alert()` → use shadcn `<Dialog>` or toast notifications
+- **File/directory selection**: Use Electron's native dialog via `window.api.openDirectoryDialog()` when available, with a shadcn Dialog fallback for manual path entry.
+- See `kos/CLAUDE.md` for full kOS-specific guidance.
+
 ## Release Channels (Naming)
 
 - stable: tagged releases only (e.g. `vYYYY.M.D`), npm dist-tag `latest`.

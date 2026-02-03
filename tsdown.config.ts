@@ -10,12 +10,16 @@ export default defineConfig([
     env,
     fixedExtension: false,
     platform: "node",
+    // Disable automatic cleaning to preserve dist/control-ui/ and other UI assets
+    // that are built separately via `pnpm ui:build`
+    clean: false,
   },
   {
     entry: "src/entry.ts",
     env,
     fixedExtension: false,
     platform: "node",
+    clean: false,
   },
   {
     dts: true,
@@ -24,11 +28,13 @@ export default defineConfig([
     env,
     fixedExtension: false,
     platform: "node",
+    clean: false,
   },
   {
     entry: "src/extensionAPI.ts",
     env,
     fixedExtension: false,
     platform: "node",
+    clean: false,
   },
 ]);

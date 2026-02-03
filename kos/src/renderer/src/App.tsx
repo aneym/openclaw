@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Shell } from "./components/layout/Shell";
 import { Toaster } from "./components/ui/sonner";
+import { useSessionSync } from "./hooks/use-session-sync";
 import { useTheme } from "./hooks/use-theme";
 import { useGatewayStore } from "./stores/gateway-store";
 import { useWorkspaceStore } from "./stores/workspace-store";
@@ -13,6 +14,7 @@ function App() {
 
   // Initialize theme system — applies CSS vars and dark/light class on <html>
   useTheme();
+  useSessionSync();
 
   // Auto-discover gateway config from OpenClaw config on first launch
   useEffect(() => {
@@ -21,20 +23,22 @@ function App() {
     // If the workspace already has a token, no need to discover
     if (activeWorkspace.gatewayToken) return;
 
-    window.api.getGatewayConfig().then((config) => {
-      if (config.token || config.url !== activeWorkspace.gatewayUrl) {
-        updateWorkspace(activeWorkspace.id, {
-          gatewayUrl: config.url,
-          gatewayToken: config.token,
-        });
-      }
-    });
+    if (window.api?.getGatewayConfig) {
+      window.api.getGatewayConfig().then((config) => {
+        if (config.token || config.url !== activeWorkspace.gatewayUrl) {
+          updateWorkspace(activeWorkspace.id, {
+            gatewayUrl: config.url,
+            gatewayToken: config.token,
+          });
+        }
+      });
+    }
   }, [activeWorkspace?.id]);
 
   // Connect to gateway when workspace config is ready
   // Use a small delay to handle React strict mode double-mount
   useEffect(() => {
-    if (!activeWorkspace?.gatewayToken) return;
+    if (!activeWorkspace?.gatewayUrl) return;
 
     const timer = setTimeout(() => {
       connect(activeWorkspace.gatewayUrl, activeWorkspace.gatewayToken);

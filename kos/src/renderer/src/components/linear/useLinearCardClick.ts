@@ -4,6 +4,7 @@ import type { Thread } from "../../types";
 import { useGatewayStore } from "../../stores/gateway-store";
 import { usePanelStore } from "../../stores/panel-store";
 import { useThreadStore } from "../../stores/thread-store";
+import { useWorkspaceStore } from "../../stores/workspace-store";
 
 function generateThreadId(): string {
   return "thread-" + Date.now() + "-" + Math.random().toString(36).slice(2, 9);
@@ -27,6 +28,10 @@ export function useLinearCardClick() {
   // Select raw Map to avoid calling method in selector (causes infinite loops)
   const threadsMap = useThreadStore((s) => s.threads);
   const resetLayout = usePanelStore((s) => s.resetLayout);
+  const activeWorkspaceId = useWorkspaceStore(
+    (s) => s.activeWorkspace?.id ?? s.config.activeWorkspaceId ?? "default",
+  );
+  const homeTabId = `home-${activeWorkspaceId}`;
 
   // Memoize a function to find thread by linear issue ID
   const findThreadByLinearIssue = useMemo(() => {
@@ -68,8 +73,11 @@ export function useLinearCardClick() {
         });
 
         // Build thread with Linear context
+        const tabId = projectId ? `project-${projectId}` : homeTabId;
+
         const newThread: Thread = {
           id: threadId,
+          tabId,
           sessionKey,
           title: issue.title,
           subtitle: `${issue.identifier}: ${issue.state.name}`,
@@ -95,7 +103,15 @@ export function useLinearCardClick() {
         console.error("[useLinearCardClick] Failed to create thread:", err);
       }
     },
-    [connected, request, addThread, setActiveThread, findThreadByLinearIssue, resetLayout],
+    [
+      connected,
+      request,
+      addThread,
+      setActiveThread,
+      findThreadByLinearIssue,
+      resetLayout,
+      homeTabId,
+    ],
   );
 
   return handleCardClick;

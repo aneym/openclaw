@@ -1,204 +1,179 @@
-import { useMemo } from 'react'
-import { ChatMessage } from '@/types/message'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Bot, User } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { TextPart } from './TextPart'
-import { ReasoningBlock } from './ReasoningBlock'
-import { ImageAttachment } from './ImageAttachment'
-import { StreamingIndicator } from './StreamingIndicator'
+import { useMemo } from "react";
+import type { ChatMessage, MessagePart, ToolCallPart, ToolResultPart } from "@/types/message";
+import { cn } from "@/lib/utils";
+import { ImageAttachment } from "./ImageAttachment";
+import { ReasoningBlock } from "./ReasoningBlock";
+import { StreamingIndicator } from "./StreamingIndicator";
+import { TextPart } from "./TextPart";
+import { ToolCallGroup } from "./ToolCallGroup";
 
 interface MessageGroupProps {
-  messages: ChatMessage[]
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  isStreaming?: boolean
-}
-
-function isToolOnlyMessage(message: ChatMessage): boolean {
-  // A message is tool-only if it contains only tool-call or tool-result parts
-  return (
-    message.parts.length > 0 &&
-    message.parts.every((p) => p.type === 'tool-call' || p.type === 'tool-result')
-  )
+  messages: ChatMessage[];
+  role: "user" | "assistant" | "system" | "tool";
+  isStreaming?: boolean;
+  streamText?: string;
 }
 
 function formatTimestamp(timestamp: number): string {
-  const date = new Date(timestamp)
-  const now = new Date()
-  const isToday = date.toDateString() === now.toDateString()
+  const date = new Date(timestamp);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
 
   if (isToday) {
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
       hour12: true,
-    })
+    });
   }
 
-  const yesterday = new Date(now)
-  yesterday.setDate(yesterday.getDate() - 1)
-  const isYesterday = date.toDateString() === yesterday.toDateString()
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const isYesterday = date.toDateString() === yesterday.toDateString();
 
   if (isYesterday) {
-    return `Yesterday ${date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+    return `Yesterday ${date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true })}`;
   }
 
-  return date.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
+  return date.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
     hour12: true,
-  })
-}
-
-function RoleAvatar({ role }: { role: 'user' | 'assistant' | 'system' | 'tool' }) {
-  if (role === 'user') {
-    return (
-      <Avatar className="w-8 h-8">
-        <AvatarFallback className="bg-blue-500 text-white">
-          <User className="w-4 h-4" />
-        </AvatarFallback>
-      </Avatar>
-    )
-  }
-
-  if (role === 'assistant') {
-    return (
-      <Avatar className="w-8 h-8">
-        <AvatarFallback className="bg-purple-500 text-white">
-          <Bot className="w-4 h-4" />
-        </AvatarFallback>
-      </Avatar>
-    )
-  }
-
-  // System/tool messages
-  return (
-    <Avatar className="w-8 h-8">
-      <AvatarFallback className="bg-gray-500 text-white text-xs">
-        {role[0].toUpperCase()}
-      </AvatarFallback>
-    </Avatar>
-  )
+  });
 }
 
 function GroupFooter({
   role,
   timestamp,
 }: {
-  role: 'user' | 'assistant' | 'system' | 'tool'
-  timestamp: number
+  role: "user" | "assistant" | "system" | "tool";
+  timestamp: number;
 }) {
-  const roleLabel = role === 'assistant' ? 'Bot' : role === 'user' ? 'You' : role
-  const timeStr = formatTimestamp(timestamp)
+  const timeStr = formatTimestamp(timestamp);
 
   return (
-    <div className="text-xs text-muted-foreground mt-1 px-1">
-      {roleLabel} · {timeStr}
+    <div
+      className={cn(
+        "text-xs text-muted-foreground mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity",
+        role === "user" && "text-right",
+      )}
+    >
+      {timeStr}
     </div>
-  )
+  );
 }
 
-export function MessageGroup({ messages, role, isStreaming }: MessageGroupProps) {
-  // Batch consecutive tool-only messages and regular messages
-  const rendered = useMemo(() => {
-    const items: React.ReactNode[] = []
-    let toolBatch: ChatMessage[] = []
+/**
+ * Extract parts by type from all messages in the group.
+ * Returns: { toolParts, reasoningParts, textParts, imageParts }
+ */
+function extractPartsByType(messages: ChatMessage[]) {
+  const toolParts: (ToolCallPart | ToolResultPart)[] = [];
+  const reasoningParts: Array<{ reasoning: string; durationMs?: number }> = [];
+  const textParts: Array<{ text: string; isLast: boolean }> = [];
+  const imageParts: Array<{ url: string; alt?: string }> = [];
 
-    const flushTools = () => {
-      if (toolBatch.length === 0) return
-      const count = toolBatch.reduce(
-        (sum, m) => sum + m.parts.filter((p) => p.type === 'tool-call' || p.type === 'tool-result').length,
-        0
-      )
-      // TODO: Replace with actual ToolCallGroup component when it's built
-      items.push(
-        <div
-          key={`tools-${items.length}`}
-          className="text-xs text-muted-foreground border border-border rounded-md px-2 py-1"
-        >
-          🔧 {count} tool call{count !== 1 ? 's' : ''}
-        </div>
-      )
-      toolBatch = []
-    }
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+    const isLastMessage = i === messages.length - 1;
 
-    for (const msg of messages) {
-      if (isToolOnlyMessage(msg)) {
-        toolBatch.push(msg)
-      } else {
-        flushTools()
-        // TODO: Replace with actual MessageBubble component when it's built
-        items.push(
-          <div
-            key={msg.id}
-            className={cn(
-              'rounded-lg px-3 py-2 max-w-[85%]',
-              role === 'user'
-                ? 'bg-blue-500 text-white self-end'
-                : 'bg-muted text-foreground self-start'
-            )}
-          >
-            {msg.parts.map((part, idx) => {
-              if (part.type === 'text') {
-                return (
-                  <TextPart
-                    key={idx}
-                    text={part.text}
-                    isStreaming={isStreaming && msg === messages.at(-1)}
-                  />
-                )
-              }
-              if (part.type === 'reasoning') {
-                return (
-                  <ReasoningBlock
-                    key={idx}
-                    reasoning={part.reasoning}
-                    durationMs={part.durationMs}
-                  />
-                )
-              }
-              if (part.type === 'image') {
-                return <ImageAttachment key={idx} part={part} />
-              }
-              return (
-                <div key={idx} className="text-xs opacity-70">
-                  [{part.type}]
-                </div>
-              )
-            })}
-            {isStreaming && msg === messages.at(-1) && (() => {
-              // Show StreamingIndicator for empty streams (no text parts yet)
-              const hasTextParts = msg.parts.some((p) => p.type === 'text' && p.text.trim())
-              if (!hasTextParts) {
-                return <StreamingIndicator className="opacity-60" />
-              }
-              // Show cursor when text is being streamed
-              return <span className="inline-block w-1 h-4 bg-current animate-pulse ml-1" />
-            })()}
-          </div>
-        )
+    for (const part of msg.parts) {
+      if (part.type === "tool-call" || part.type === "tool-result") {
+        toolParts.push(part);
+      } else if (part.type === "reasoning") {
+        reasoningParts.push({ reasoning: part.reasoning, durationMs: part.durationMs });
+      } else if (part.type === "text") {
+        textParts.push({ text: part.text, isLast: isLastMessage });
+      } else if (part.type === "image") {
+        imageParts.push({ url: part.url, alt: part.alt });
       }
     }
-    flushTools()
-    return items
-  }, [messages, isStreaming, role])
+  }
 
-  if (messages.length === 0) return null
+  return { toolParts, reasoningParts, textParts, imageParts };
+}
+
+/**
+ * MessageGroup renders a turn (consecutive messages from the same role).
+ *
+ * Layout order (matching web UI):
+ * 1. Tool calls (collapsed at top) - "🔧 N tool calls"
+ * 2. Reasoning blocks (collapsed) - "🧠 Thought..."
+ * 3. Text content - actual chat message
+ * 4. Images
+ */
+export function MessageGroup({ messages, role, isStreaming, streamText }: MessageGroupProps) {
+  const { toolParts, reasoningParts, textParts, imageParts } = useMemo(
+    () => extractPartsByType(messages),
+    [messages],
+  );
+
+  // Build tool-only messages for ToolCallGroup (it expects ChatMessage[])
+  const toolMessages = useMemo(() => {
+    if (toolParts.length === 0) return [];
+    // Create a synthetic message containing all tool parts
+    const syntheticMessage: ChatMessage = {
+      id: `tools-${messages[0]?.id ?? "unknown"}`,
+      role: "tool",
+      parts: toolParts as MessagePart[],
+      createdAt: messages[0]?.createdAt ?? Date.now(),
+      threadId: messages[0]?.threadId ?? "",
+    };
+    return [syntheticMessage];
+  }, [toolParts, messages]);
+
+  if (messages.length === 0) return null;
+
+  const hasTextContent = textParts.length > 0 || (isStreaming && streamText);
 
   return (
-    <div className={cn('flex gap-3', role === 'user' ? 'flex-row-reverse' : '')}>
-      {/* Avatar */}
-      <div className="flex-shrink-0">
-        <RoleAvatar role={role} />
-      </div>
+    <div className={cn("flex flex-col group", role === "user" ? "items-end" : "items-start")}>
+      {/* 1. Tool calls and reasoning grouped tightly */}
+      {(toolMessages.length > 0 || reasoningParts.length > 0) && (
+        <div className="flex flex-col">
+          {toolMessages.length > 0 && <ToolCallGroup messages={toolMessages} />}
+          {reasoningParts.map((rp, idx) => (
+            <ReasoningBlock
+              key={`reasoning-${idx}`}
+              reasoning={rp.reasoning}
+              durationMs={rp.durationMs}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Message bubbles + footer */}
-      <div className="flex flex-col gap-2 flex-1 min-w-0">
-        {rendered}
-        <GroupFooter role={role} timestamp={messages[0].createdAt} />
-      </div>
+      {/* 2. Text content */}
+      {hasTextContent && (
+        <div
+          className={cn(
+            "max-w-[85%]",
+            (toolMessages.length > 0 || reasoningParts.length > 0) && "mt-1",
+            role === "user"
+              ? "rounded-lg px-3 py-2 bg-muted text-foreground self-end"
+              : "text-foreground self-start",
+          )}
+        >
+          {textParts.map((tp, idx) => (
+            <TextPart key={`text-${idx}`} text={tp.text} isStreaming={isStreaming && tp.isLast} />
+          ))}
+          {/* Streaming text */}
+          {isStreaming && streamText && <span className="whitespace-pre-wrap">{streamText}</span>}
+          {/* Streaming indicator when no content yet */}
+          {isStreaming && !streamText && textParts.length === 0 && (
+            <StreamingIndicator className="opacity-60" />
+          )}
+        </div>
+      )}
+
+      {/* 3. Images */}
+      {imageParts.map((img, idx) => (
+        <ImageAttachment key={`img-${idx}`} part={{ type: "image", ...img }} />
+      ))}
+
+      {/* 4. Timestamp pinned at bottom of entire turn */}
+      <GroupFooter role={role} timestamp={messages[0].createdAt} />
     </div>
-  )
+  );
 }

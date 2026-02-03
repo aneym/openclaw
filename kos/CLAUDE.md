@@ -10,6 +10,15 @@ kOS is a desktop AI workspace app built with Electron + React. It's the primary 
 
 **Current state:** Scaffold with theme system, workspace/thread stores, gateway client, sidebar navigation, and settings UI. Chat UI, panels, Linear board, and task views are not yet implemented.
 
+## Terminology: kOS vs web-ui
+
+| Term       | Path                              | Stack                         | Purpose                                   |
+| ---------- | --------------------------------- | ----------------------------- | ----------------------------------------- |
+| **kOS**    | `kos/` (this directory)           | Electron + React 19 + Zustand | Desktop workspace app, built from scratch |
+| **web-ui** | `../ui/src/` (`openclaw/ui/src/`) | Lit.js + vanilla CSS          | Legacy web UI served by gateway at `/`    |
+
+Both connect to the same OpenClaw gateway via WebSocket using the same protocol. When referencing "web-ui" in conversation, it means `openclaw/ui/src/` — the Lit.js UI. Study web-ui for protocol patterns, but don't copy its architecture (kOS uses React, not Lit).
+
 ## Product Requirements (Linear)
 
 All PRDs live in Linear under the KOS team (KOS-1 through KOS-17). **Read them directly:**
@@ -50,6 +59,10 @@ Detailed technical specs are in `specs/` within this directory:
 
 These provide implementation-level detail. When a spec and PRD conflict, the PRD wins on product intent; the spec wins on technical approach.
 
+## Rules
+
+Coding rules are in `rules/`. Check them before making changes.
+
 ## Tech Stack
 
 - **Electron** 39 + **React** 19 + **TypeScript** 5.9
@@ -58,7 +71,7 @@ These provide implementation-level detail. When a spec and PRD conflict, the PRD
 - **State**: Zustand v5 with `persist` middleware (localStorage, `kos-*` prefixed keys)
 - **Gateway**: Custom WebSocket client (`src/renderer/src/gateway/client.ts`) connecting to OpenClaw gateway
 - **Panels**: react-resizable-panels (already installed)
-- **Command palette**: cmdk (already installed)
+- **Command palette**: cmdk — global `Cmd+K` palette for actions, threads, projects, themes
 - **Icons**: lucide-react
 - **Markdown**: Install `marked` + `dompurify` + `highlight.js` when needed
 
@@ -132,6 +145,16 @@ Multi-theme support with OKLch color space CSS variables:
 - **Components**: Named exports (except page components). Props interface above component.
 - **shadcn style**: new-york variant, Radix UI primitives, CVA for variants
 
+## Electron Constraints
+
+**Never use native browser dialogs** — they're not supported in Electron's renderer:
+
+- `prompt()` — use shadcn `<Dialog>` with `<Input>`
+- `confirm()` — use shadcn `<AlertDialog>`
+- `alert()` — use shadcn `<Dialog>` or toast notifications
+
+**File/directory selection**: Use Electron's native dialog via `window.api.openDirectoryDialog()` when available, with a shadcn Dialog fallback for manual path entry.
+
 ## Vercel React Best Practices
 
 Apply these patterns from the `vercel-react-best-practices` and `vercel-composition-patterns` skills:
@@ -203,6 +226,21 @@ kOS uses React 19.2 — follow these patterns:
 2. **Bundle optimization**: Direct imports (no barrel files), `next/dynamic` for heavy components
 3. **Re-render optimization**: Use `useMemo` for expensive derivations, primitive deps in effects
 4. **Rendering**: Use ternary `{cond ? <A/> : <B/>}` not `{cond && <A/>}` for conditionals
+
+## Keyboard Shortcuts
+
+| Shortcut    | Action                                                           |
+| ----------- | ---------------------------------------------------------------- |
+| `⌘K`        | Open command palette (search threads, projects, actions, themes) |
+| `⌘T`        | Open project picker                                              |
+| `⌘\`        | Toggle sidebar                                                   |
+| `⌘⇧\`       | Split panel horizontally                                         |
+| `⌘W`        | Close current panel                                              |
+| `⌘⇧W`       | Close current tab                                                |
+| `Ctrl+Tab`  | Next tab                                                         |
+| `Ctrl+⇧Tab` | Previous tab                                                     |
+| `⌘1-9`      | Switch to tab by index                                           |
+| `⌘⇧1-9`     | Switch to thread by index                                        |
 
 ## Key Decisions
 

@@ -1,66 +1,94 @@
-import { useState } from 'react'
-import { Check, Folder, Hash, Settings, Trash2, X } from 'lucide-react'
-import { Button } from '../ui/button'
-import { Input } from '../ui/input'
-import { Label } from '../ui/label'
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../ui/sheet'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select'
-import { Checkbox } from '../ui/checkbox'
-import { useProjectStore } from '@/stores/project-store'
-import type { Project } from '@/types'
+import { Check, Folder, Hash, Settings, Trash2, X } from "lucide-react";
+import { useState } from "react";
+import type { Project } from "@/types";
+import { useProjectStore } from "@/stores/project-store";
+import { Button } from "../ui/button";
+import { Checkbox } from "../ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../ui/dialog";
+import { Input } from "../ui/input";
+import { Label } from "../ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../ui/select";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "../ui/sheet";
 
 interface ProjectSettingsProps {
-  project: Project
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  project: Project;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }
 
 // Emoji picker (simple for now)
 const EMOJI_OPTIONS = [
-  '📦', '🎯', '🚀', '💻', '🎨', '📱', '⚡', '🔧', '🛠', '📊',
-  '🎮', '🌟', '💡', '🔥', '🎭', '🎪', '🎨', '🎬', '🎤', '🎧'
-]
+  "📦",
+  "🎯",
+  "🚀",
+  "💻",
+  "🎨",
+  "📱",
+  "⚡",
+  "🔧",
+  "🛠",
+  "📊",
+  "🎮",
+  "🌟",
+  "💡",
+  "🔥",
+  "🎭",
+  "🎪",
+  "🎨",
+  "🎬",
+  "🎤",
+  "🎧",
+];
 
 // Color picker (simple for now)
 const COLOR_OPTIONS = [
-  { name: 'Blue', value: '#3b82f6' },
-  { name: 'Green', value: '#10b981' },
-  { name: 'Purple', value: '#8b5cf6' },
-  { name: 'Pink', value: '#ec4899' },
-  { name: 'Orange', value: '#f97316' },
-  { name: 'Yellow', value: '#eab308' },
-  { name: 'Red', value: '#ef4444' },
-  { name: 'Gray', value: '#6b7280' }
-]
+  { name: "Blue", value: "#3b82f6" },
+  { name: "Green", value: "#10b981" },
+  { name: "Purple", value: "#8b5cf6" },
+  { name: "Pink", value: "#ec4899" },
+  { name: "Orange", value: "#f97316" },
+  { name: "Yellow", value: "#eab308" },
+  { name: "Red", value: "#ef4444" },
+  { name: "Gray", value: "#6b7280" },
+];
 
 // Mock Linear teams (in real app, fetch from Linear API)
 const MOCK_LINEAR_TEAMS = [
-  { id: 'team_kos', name: 'KOS' },
-  { id: 'team_eng', name: 'Engineering' },
-  { id: 'team_design', name: 'Design' }
-]
+  { id: "team_kos", name: "KOS" },
+  { id: "team_eng", name: "Engineering" },
+  { id: "team_design", name: "Design" },
+];
 
 // Mock skills (in real app, fetch from gateway)
 const MOCK_SKILLS = [
-  { id: 'skill_code', name: 'Code Generation' },
-  { id: 'skill_review', name: 'Code Review' },
-  { id: 'skill_debug', name: 'Debugging' },
-  { id: 'skill_test', name: 'Test Generation' },
-  { id: 'skill_docs', name: 'Documentation' },
-  { id: 'skill_refactor', name: 'Refactoring' }
-]
+  { id: "skill_code", name: "Code Generation" },
+  { id: "skill_review", name: "Code Review" },
+  { id: "skill_debug", name: "Debugging" },
+  { id: "skill_test", name: "Test Generation" },
+  { id: "skill_docs", name: "Documentation" },
+  { id: "skill_refactor", name: "Refactoring" },
+];
 
 export function ProjectSettings({ project, open, onOpenChange }: ProjectSettingsProps) {
-  const updateProject = useProjectStore((s) => s.updateProject)
+  const updateProject = useProjectStore((s) => s.updateProject);
 
   // Local state for form
-  const [name, setName] = useState(project.name)
-  const [icon, setIcon] = useState(project.icon || '📦')
-  const [color, setColor] = useState(project.color || COLOR_OPTIONS[0].value)
-  const [linearTeamId, setLinearTeamId] = useState(project.linearTeamId || '')
-  const [repoPath, setRepoPath] = useState(project.repoPath || '')
-  const [skills, setSkills] = useState<string[]>(project.skills || [])
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const [name, setName] = useState(project.name);
+  const [icon, setIcon] = useState(project.icon || "📦");
+  const [color, setColor] = useState(project.color || COLOR_OPTIONS[0].value);
+  const [linearTeamId, setLinearTeamId] = useState(project.linearTeamId || "");
+  const [repoPath, setRepoPath] = useState(project.repoPath || "");
+  const [skills, setSkills] = useState<string[]>(project.skills || []);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [pathDialogOpen, setPathDialogOpen] = useState(false);
+  const [manualPath, setManualPath] = useState("");
 
   const handleSave = () => {
     updateProject(project.id, {
@@ -69,47 +97,56 @@ export function ProjectSettings({ project, open, onOpenChange }: ProjectSettings
       color,
       linearTeamId: linearTeamId || undefined,
       repoPath: repoPath || undefined,
-      skills
-    })
-    onOpenChange(false)
-  }
+      skills,
+    });
+    onOpenChange(false);
+  };
 
   const handleCancel = () => {
     // Reset to original values
-    setName(project.name)
-    setIcon(project.icon || '📦')
-    setColor(project.color || COLOR_OPTIONS[0].value)
-    setLinearTeamId(project.linearTeamId || '')
-    setRepoPath(project.repoPath || '')
-    setSkills(project.skills || [])
-    onOpenChange(false)
-  }
+    setName(project.name);
+    setIcon(project.icon || "📦");
+    setColor(project.color || COLOR_OPTIONS[0].value);
+    setLinearTeamId(project.linearTeamId || "");
+    setRepoPath(project.repoPath || "");
+    setSkills(project.skills || []);
+    onOpenChange(false);
+  };
 
   const handleSelectRepoPath = async () => {
     // Use Electron dialog to select directory
     if (window.api?.openDirectoryDialog) {
       try {
-        const result = await window.api.openDirectoryDialog()
+        const result = await window.api.openDirectoryDialog();
         if (result && !result.canceled && result.filePaths[0]) {
-          setRepoPath(result.filePaths[0])
+          setRepoPath(result.filePaths[0]);
         }
       } catch (err) {
-        console.error('Failed to open directory dialog:', err)
+        console.error("Failed to open directory dialog:", err);
+        // Fallback to manual entry dialog
+        setManualPath(repoPath);
+        setPathDialogOpen(true);
       }
     } else {
-      // Fallback: manual entry for web environment
-      const path = prompt('Enter repository path:')
-      if (path) setRepoPath(path)
+      // Fallback: manual entry dialog for web environment
+      setManualPath(repoPath);
+      setPathDialogOpen(true);
     }
-  }
+  };
+
+  const handleManualPathSubmit = () => {
+    if (manualPath.trim()) {
+      setRepoPath(manualPath.trim());
+    }
+    setPathDialogOpen(false);
+    setManualPath("");
+  };
 
   const toggleSkill = (skillId: string) => {
     setSkills((prev) =>
-      prev.includes(skillId)
-        ? prev.filter((s) => s !== skillId)
-        : [...prev, skillId]
-    )
-  }
+      prev.includes(skillId) ? prev.filter((s) => s !== skillId) : [...prev, skillId],
+    );
+  };
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -153,8 +190,8 @@ export function ProjectSettings({ project, open, onOpenChange }: ProjectSettings
                       key={emoji}
                       className="text-2xl hover:bg-accent p-1 rounded"
                       onClick={() => {
-                        setIcon(emoji)
-                        setShowEmojiPicker(false)
+                        setIcon(emoji);
+                        setShowEmojiPicker(false);
                       }}
                     >
                       {emoji}
@@ -173,7 +210,7 @@ export function ProjectSettings({ project, open, onOpenChange }: ProjectSettings
                 <button
                   key={opt.value}
                   className={`w-8 h-8 rounded border-2 ${
-                    color === opt.value ? 'border-foreground' : 'border-transparent'
+                    color === opt.value ? "border-foreground" : "border-transparent"
                   }`}
                   style={{ backgroundColor: opt.value }}
                   onClick={() => setColor(opt.value)}
@@ -281,7 +318,40 @@ export function ProjectSettings({ project, open, onOpenChange }: ProjectSettings
             Save Changes
           </Button>
         </div>
+
+        {/* Manual Path Entry Dialog */}
+        <Dialog open={pathDialogOpen} onOpenChange={setPathDialogOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Enter Repository Path</DialogTitle>
+              <DialogDescription>
+                Enter the full path to your local git repository.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label htmlFor="manual-path">Path</Label>
+                <Input
+                  id="manual-path"
+                  value={manualPath}
+                  onChange={(e) => setManualPath(e.target.value)}
+                  placeholder="/Users/you/projects/my-repo"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleManualPathSubmit();
+                  }}
+                  autoFocus
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setPathDialogOpen(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleManualPathSubmit}>Set Path</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </SheetContent>
     </Sheet>
-  )
+  );
 }
