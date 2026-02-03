@@ -34,13 +34,6 @@ export function Shell() {
   const connected = useGatewayStore((s) => s.connected);
   const addThread = useThreadStore((s) => s.addThread);
   const setActiveThread = useThreadStore((s) => s.setActiveThread);
-  // Select raw Map to avoid calling method in selector (causes infinite loops)
-  const layoutsMap = usePanelStore((s) => s.layouts);
-  // Derive activeLayout outside selector with useMemo
-  const activeLayout = useMemo(
-    () => (activeThreadId ? layoutsMap.get(activeThreadId) : undefined),
-    [layoutsMap, activeThreadId],
-  );
   const splitPanel = usePanelStore((s) => s.splitPanel);
   const closePanel = usePanelStore((s) => s.closePanel);
   const resetLayout = usePanelStore((s) => s.resetLayout);
@@ -139,7 +132,7 @@ export function Shell() {
       setActiveThread,
       closePanel,
       splitPanel,
-      activeLayout,
+      getFocusedPanelId,
       resetLayout,
       request,
     ],
