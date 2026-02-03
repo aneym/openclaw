@@ -53,6 +53,56 @@
 - Lint/format: `pnpm check`
 - Tests: `pnpm test` (vitest); coverage: `pnpm test:coverage`
 
+## Dev Environment
+
+When running `pnpm dev:all`, the gateway uses `~/.openclaw-dev/` as the state directory. Key things to know:
+
+### Auth Profile Locations
+
+Auth profiles are stored per-agent:
+- Main agent: `~/.openclaw-dev/agents/main/agent/auth-profiles.json`
+- Dev agent: `~/.openclaw-dev/agents/dev/agent/auth-profiles.json`
+
+**Important:** The gateway uses the `main` agent by default, not `dev`. When adding/updating auth tokens for dev, update `agents/main/agent/auth-profiles.json`.
+
+### `lastGood` Controls Profile Selection
+
+The profile marked as `lastGood` in `auth-profiles.json` is used first:
+```json
+"lastGood": {
+  "anthropic": "anthropic:manual"
+}
+```
+
+Even with multiple profiles available, only `lastGood` is used unless it fails.
+
+### dev-all.sh Syncs Prod → Dev
+
+`scripts/dev-all.sh` syncs `~/.openclaw/openclaw.json` (prod) → `~/.openclaw-dev/openclaw.json` (dev) when prod is newer. This can overwrite dev-specific settings like:
+- `gateway.http.endpoints.chatCompletions.enabled`
+- Custom auth profiles in the config (not auth-profiles.json)
+
+To preserve dev auth profiles after a sync, ensure they are in `auth-profiles.json` (not inline in `openclaw.json`).
+
+### Updating Auth Tokens in Dev
+
+```bash
+# Add token to dev main agent (recommended)
+openclaw models auth paste-token --provider anthropic
+
+# Or edit directly and set lastGood
+# ~/.openclaw-dev/agents/main/agent/auth-profiles.json
+```
+
+### Testing Auth Changes
+
+Use the test gateway to verify auth works before relying on it:
+```bash
+OPENCLAW_STATE_DIR=~/.openclaw-dev pnpm agent:start
+# Test with curl...
+pnpm agent:stop -- <AGENT_ID>
+```
+
 ## Coding Style & Naming Conventions
 
 - Language: TypeScript (ESM). Prefer strict typing; avoid `any`.

@@ -358,15 +358,18 @@ export function renderChatPane(props: ChatPaneProps) {
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="9" height="9" rx="1.5"/><path d="M5 11H3.5A1.5 1.5 0 012 9.5v-7A1.5 1.5 0 013.5 1h7A1.5 1.5 0 0112 2.5V5"/></svg></button>
         <button
           class="split-pane__titlebar-reset"
-          data-tooltip="Reset session"
+          data-tooltip="New session"
           @click=${(e: Event) => {
             e.stopPropagation();
-            state.chatMessage = "";
-            state.chatMessages = [];
-            state.chatToolMessages = [];
-            state.chatStream = null;
-            state.chatStreamStartedAt = null;
-            state.chatRunId = null;
+            // Create a fresh thread (new server-side session) instead of just clearing UI
+            const parentKey = state.sessionKey.split(":thread:")[0];
+            const desc = createThreadDescriptor(parentKey);
+            const freshThread = createThreadState(desc);
+            state.threads.set(desc.id, freshThread);
+            state.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+            saveThreadDescriptors(state.getThreadDescriptors());
+            state.threads = new Map(state.threads);
+            state.setThreadInPane(leaf.id, desc.sessionKey);
             state.resetToolStream();
             state.resetChatScroll();
           }}

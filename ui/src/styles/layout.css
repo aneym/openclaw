@@ -62,9 +62,37 @@
   padding: 8px;
 }
 
-.shell--nav-collapsed .topbar .brand,
-.shell--nav-collapsed .topbar .topbar-status {
+.shell--nav-collapsed .topbar .brand {
   display: none;
+}
+
+/* Hide status pills on non-chat pages when nav is collapsed */
+.shell--nav-collapsed:not(.shell--chat) .topbar .topbar-status {
+  display: none;
+}
+
+/* In chat mode with nav collapsed, float the topbar full-width so
+   the hamburger sits left and status pills sit right */
+.shell--nav-collapsed.shell--chat .topbar {
+  right: 0;
+  pointer-events: none;
+}
+
+.shell--nav-collapsed.shell--chat .topbar > * {
+  pointer-events: auto;
+}
+
+.shell--nav-collapsed.shell--chat .topbar-status {
+  background: color-mix(in srgb, var(--bg) 80%, transparent);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 10px;
+  padding: 4px 8px;
+}
+
+/* Push content below the floating topbar so pane headers aren't covered */
+.shell--nav-collapsed.shell--chat .content {
+  padding-top: 48px;
 }
 
 .shell--chat .content-header {
