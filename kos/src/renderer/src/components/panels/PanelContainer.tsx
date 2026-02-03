@@ -39,6 +39,13 @@ interface RenderNodeProps {
 
 function RenderNode({ node, threadId }: RenderNodeProps) {
   const [isVisible, setIsVisible] = useState(false);
+  const setFocusedPanelId = usePanelStore((s) => s.setFocusedPanelId);
+  // Track focused panel for visual indicator
+  const focusedPanelIdsMap = usePanelStore((s) => s.focusedPanelIds);
+  const isFocused = useMemo(
+    () => node.type === "leaf" && focusedPanelIdsMap.get(threadId) === node.panelId,
+    [focusedPanelIdsMap, threadId, node],
+  );
 
   // Trigger entrance animation on mount
   useEffect(() => {
@@ -46,13 +53,22 @@ function RenderNode({ node, threadId }: RenderNodeProps) {
     return () => clearTimeout(timer);
   }, []);
 
+  // Handle click to set focus on this panel
+  const handleFocus = () => {
+    if (node.type === "leaf") {
+      setFocusedPanelId(threadId, node.panelId);
+    }
+  };
+
   // Leaf node: render the panel content with toolbar
   if (node.type === "leaf") {
     return (
       <div
+        onClick={handleFocus}
+        onFocus={handleFocus}
         className={`h-full w-full flex flex-col transition-all duration-200 ease-out ${
           isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
-        }`}
+        } ${isFocused ? "ring-1 ring-primary/50" : ""}`}
       >
         <PanelToolbar panelId={node.panelId} panelType={node.panelType} threadId={threadId} />
         <div className="flex-1 overflow-hidden">
