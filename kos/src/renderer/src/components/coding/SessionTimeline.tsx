@@ -12,7 +12,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import type { CodingPhase } from './CodingSessionPanel'
+import type { CodingPhase } from './PhaseIndicator'
 
 interface CodingEvent {
   id: string

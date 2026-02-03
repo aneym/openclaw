@@ -68,13 +68,13 @@
 - [x] Build CodingSessionPanel — monitors agent coding sessions in real-time. Header with phase indicator + session name + duration.
 - [x] Build phase detection (useCodingSession hook) — parse tool events to detect phase: exploring (Read/search), planning (long text), building (Write/Edit/exec), testing (exec with test commands), complete, error.
 - [x] Build SessionTimeline — event timeline within a session. Each event shows tool icon + description + duration.
-- [ ] Build PhaseIndicator — colored badge per phase (🔍 blue, 🧠 purple, 🔨 amber, 🧪 green, ✅ green, ❌ red).
-- [ ] Wire CodingSessionPanel into PanelContent as the 'coding-session' panel type.
+- [x] Build PhaseIndicator — colored badge per phase (🔍 blue, 🧠 purple, 🔨 amber, 🧪 green, ✅ green, ❌ red).
+- [x] Wire CodingSessionPanel into PanelContent as the 'coding-session' panel type.
 
 ## Section 8: Keyboard Shortcuts & Polish
 > PRD: KOS-7, KOS-8
 
-- [ ] Implement keyboard shortcuts: Cmd+\ (toggle sidebar), Cmd+K (thread search), Cmd+N (new thread), Cmd+W (close panel), Cmd+Shift+\ (split panel right).
+- [x] Implement keyboard shortcuts: Cmd+\ (toggle sidebar), Cmd+K (thread search), Cmd+N (new thread), Cmd+W (close panel), Cmd+Shift+\ (split panel right).
 - [ ] Build notification toasts for important events (connection lost/restored, thread created, errors). Use shadcn toast/sonner.
 - [ ] Add panel open/close animations (200ms ease-out transitions).
 - [ ] Improve StatusBar — show active agent status, session info, current model.

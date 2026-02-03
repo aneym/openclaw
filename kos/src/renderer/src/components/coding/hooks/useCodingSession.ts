@@ -11,7 +11,7 @@
  */
 
 import { useState, useEffect } from 'react'
-import type { CodingPhase } from '../CodingSessionPanel'
+import type { CodingPhase } from '../PhaseIndicator'
 import type { ChatMessage, ToolCallPart, ToolResultPart } from '../../../types/message'
 import { useGatewayStore } from '../../../stores/gateway-store'
 import { normalizeMessage } from '../../../gateway/normalize'
