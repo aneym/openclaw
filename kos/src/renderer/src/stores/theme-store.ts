@@ -19,7 +19,7 @@ export const useThemeStore = create<ThemeState>()(
   persist(
     (set, get) => ({
       themes: builtInThemes,
-      activeThemeId: 'default',
+      activeThemeId: 'twitter',
       mode: 'dark',
 
       setActiveTheme: (id: string) => {

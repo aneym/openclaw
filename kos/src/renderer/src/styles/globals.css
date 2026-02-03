@@ -3,10 +3,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-sans: var(--font-sans);
-  --font-mono: var(--font-mono);
-  --font-serif: var(--font-serif);
-  --radius: var(--radius);
+  --font-sans: Open Sans, sans-serif;
+  --font-mono: Menlo, monospace;
+  --font-serif: Georgia, serif;
+  --radius: 1.3rem;
   --tracking-tighter: calc(var(--tracking-normal) - 0.05em);
   --tracking-tight: calc(var(--tracking-normal) - 0.025em);
   --tracking-normal: var(--tracking-normal);
@@ -71,6 +71,7 @@
 }
 
 :root {
+  --titlebar-height: 0px;
   --background: oklch(1.0000 0 0);
   --foreground: oklch(0.1884 0.0128 248.5103);
   --card: oklch(0.9784 0.0011 197.1387);
@@ -107,7 +108,7 @@
   --font-sans: Open Sans, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
-  --shadow-color: rgba(29, 161, 242, 0.15);
+  --shadow-color: rgba(29,161,242,0.15);
   --shadow-opacity: 0;
   --shadow-blur: 0px;
   --shadow-spread: 0px;
@@ -163,7 +164,7 @@
   --font-sans: Open Sans, sans-serif;
   --font-serif: Georgia, serif;
   --font-mono: Menlo, monospace;
-  --shadow-color: rgba(29, 161, 242, 0.25);
+  --shadow-color: rgba(29,161,242,0.25);
   --shadow-opacity: 0;
   --shadow-blur: 0px;
   --shadow-spread: 0px;
@@ -190,4 +191,10 @@ body {
   color: var(--color-foreground);
   font-feature-settings: "rlig" 1, "calt" 1;
   letter-spacing: var(--tracking-normal);
+}
+
+@layer base {
+  body {
+    letter-spacing: var(--tracking-normal);
+  }
 }

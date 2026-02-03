@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { Palette } from 'lucide-react';
+import { Palette, Eye } from 'lucide-react';
 import { AppearanceSettings } from './AppearanceSettings';
+import { ThemeShowcase } from '../ThemeShowcase';
 
-type SettingsSection = 'appearance';
+type SettingsSection = 'appearance' | 'preview';
 
 const sections = [
   { id: 'appearance' as const, label: 'Appearance', icon: Palette },
+  { id: 'preview' as const, label: 'Preview', icon: Eye },
 ];
 
 export function Settings() {
@@ -35,12 +37,15 @@ export function Settings() {
       </div>
 
       {/* Settings content */}
-      <div className="flex-1 overflow-y-auto p-8 max-w-2xl">
+      <div className="flex-1 overflow-hidden">
         {activeSection === 'appearance' && (
-          <div>
+          <div className="overflow-y-auto h-full p-8 max-w-2xl">
             <h2 className="text-2xl font-bold mb-6">Appearance</h2>
             <AppearanceSettings />
           </div>
+        )}
+        {activeSection === 'preview' && (
+          <ThemeShowcase />
         )}
       </div>
     </div>
