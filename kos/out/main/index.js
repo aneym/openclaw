@@ -1,9 +1,10 @@
 "use strict";
+const utils = require("@electron-toolkit/utils");
 const electron = require("electron");
-const path = require("path");
 const fs = require("fs");
 const os = require("os");
-const utils = require("@electron-toolkit/utils");
+const path = require("path");
+const icon = path.join(__dirname, "../../resources/icon.png");
 const STATE_FILE = path.join(os.homedir(), ".kos", "window-state.json");
 let debounceTimer = null;
 function restoreWindowState() {
@@ -40,7 +41,6 @@ function trackWindowState(win) {
   win.on("move", saveState);
   win.on("close", saveState);
 }
-const icon = path.join(__dirname, "../../resources/icon.png");
 if (utils.is.dev) {
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
