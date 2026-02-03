@@ -3,6 +3,7 @@ import { ChatMessage } from '@/types/message'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Bot, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { TextPart } from './TextPart'
 
 interface MessageGroupProps {
   messages: ChatMessage[]
@@ -139,9 +140,11 @@ export function MessageGroup({ messages, role, isStreaming }: MessageGroupProps)
             {msg.parts.map((part, idx) => {
               if (part.type === 'text') {
                 return (
-                  <div key={idx} className="whitespace-pre-wrap">
-                    {part.text}
-                  </div>
+                  <TextPart
+                    key={idx}
+                    text={part.text}
+                    isStreaming={isStreaming && msg === messages.at(-1)}
+                  />
                 )
               }
               if (part.type === 'reasoning') {

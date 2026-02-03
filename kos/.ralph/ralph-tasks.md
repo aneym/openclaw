@@ -27,8 +27,8 @@
 - [x] Build useStreaming hook — track streaming state per session (stream.start, stream.delta, stream.end events).
 - [x] Build MessageList with auto-scroll (IntersectionObserver on sentinel element). "New messages" badge when scrolled up.
 - [x] Build MessageGroup — groups consecutive same-role messages. Avatar + grouped bubbles + timestamp footer.
-- [ ] Build TextPart — markdown rendering with marked.js + DOMPurify + highlight.js syntax highlighting. Code blocks get copy button.
-- [ ] Build ComposeBar — auto-resizing textarea, Enter=send, Shift+Enter=newline. Send via gateway RPC. Disable when disconnected.
+- [x] Build TextPart — markdown rendering with marked.js + DOMPurify + highlight.js syntax highlighting. Code blocks get copy button.
+- [x] Build ComposeBar — auto-resizing textarea, Enter=send, Shift+Enter=newline. Send via gateway RPC. Disable when disconnected.
 - [ ] Wire ChatPanel together: MessageList + ComposeBar. Replace the chat stub in PanelContent.
 
 ## Section 4: Chat UI — Advanced (KOS-13, KOS-5)
