@@ -12,6 +12,7 @@ interface MessageGroupProps {
   role: "user" | "assistant" | "system" | "tool";
   isStreaming?: boolean;
   streamText?: string;
+  showTimestamp?: boolean;
 }
 
 function formatTimestamp(timestamp: number): string {
@@ -104,7 +105,13 @@ function extractPartsByType(messages: ChatMessage[]) {
  * 3. Text content - actual chat message
  * 4. Images
  */
-export function MessageGroup({ messages, role, isStreaming, streamText }: MessageGroupProps) {
+export function MessageGroup({
+  messages,
+  role,
+  isStreaming,
+  streamText,
+  showTimestamp = true,
+}: MessageGroupProps) {
   const { toolParts, reasoningParts, textParts, imageParts } = useMemo(
     () => extractPartsByType(messages),
     [messages],
@@ -119,7 +126,7 @@ export function MessageGroup({ messages, role, isStreaming, streamText }: Messag
       role: "tool",
       parts: toolParts as MessagePart[],
       createdAt: messages[0]?.createdAt ?? Date.now(),
-      threadId: messages[0]?.threadId ?? "",
+      chatId: messages[0]?.chatId ?? "",
     };
     return [syntheticMessage];
   }, [toolParts, messages]);
@@ -173,7 +180,7 @@ export function MessageGroup({ messages, role, isStreaming, streamText }: Messag
       ))}
 
       {/* 4. Timestamp pinned at bottom of entire turn */}
-      <GroupFooter role={role} timestamp={messages[0].createdAt} />
+      {showTimestamp && <GroupFooter role={role} timestamp={messages[0].createdAt} />}
     </div>
   );
 }

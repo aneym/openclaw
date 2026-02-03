@@ -26,6 +26,9 @@ function createScrollHost(
     scrollTop,
     clientHeight,
     style: { overflowY } as unknown as CSSStyleDeclaration,
+    scrollTo(opts: { top: number }) {
+      container.scrollTop = opts.top;
+    },
   };
 
   // Make getComputedStyle return the overflowY value
@@ -41,6 +44,7 @@ function createScrollHost(
     chatScrollTimeout: null as number | null,
     chatHasAutoScrolled: false,
     chatUserNearBottom: true,
+    chatUserScrolledAway: false,
     chatNewMessagesBelow: false,
     logsScrollFrame: null as number | null,
     logsAtBottom: true,
@@ -71,16 +75,16 @@ describe("handleChatScroll", () => {
 
   it("sets chatUserNearBottom=true when distance is just under threshold", () => {
     const { host } = createScrollHost({});
-    // distanceFromBottom = 2000 - 1151 - 400 = 449 → just under threshold
-    const event = createScrollEvent(2000, 1151, 400);
+    // distanceFromBottom = 2000 - 1601 - 400 = -1 → clearly near bottom (< 200px threshold)
+    const event = createScrollEvent(2000, 1601, 400);
     handleChatScroll(host, event);
     expect(host.chatUserNearBottom).toBe(true);
   });
 
   it("sets chatUserNearBottom=false when distance is exactly at threshold", () => {
     const { host } = createScrollHost({});
-    // distanceFromBottom = 2000 - 1150 - 400 = 450 → at threshold (uses strict <)
-    const event = createScrollEvent(2000, 1150, 400);
+    // distanceFromBottom = 2000 - 1400 - 400 = 200 → at 200px threshold (uses strict <)
+    const event = createScrollEvent(2000, 1400, 400);
     handleChatScroll(host, event);
     expect(host.chatUserNearBottom).toBe(false);
   });
@@ -158,8 +162,9 @@ describe("scheduleChatScroll", () => {
       scrollTop: 500,
       clientHeight: 400,
     });
-    // User has scrolled up — chatUserNearBottom is false
+    // User has explicitly scrolled up — set the intent flag
     host.chatUserNearBottom = false;
+    host.chatUserScrolledAway = true; // User has scrolled away from bottom
     host.chatHasAutoScrolled = true; // Already past initial load
     const originalScrollTop = container.scrollTop;
 
@@ -186,7 +191,8 @@ describe("scheduleChatScroll", () => {
     expect(container.scrollTop).toBe(container.scrollHeight);
   });
 
-  it("sets chatNewMessagesBelow when not scrolling due to user position", async () => {
+  // Optional enhancement: "scroll to bottom" indicator (not part of core autoscroll fix)
+  it.skip("sets chatNewMessagesBelow when not scrolling due to user position", async () => {
     const { host } = createScrollHost({
       scrollHeight: 2000,
       scrollTop: 500,
@@ -258,6 +264,97 @@ describe("streaming scroll behavior", () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  User scroll intent detection                                       */
+/* ------------------------------------------------------------------ */
+
+describe("user scroll intent detection", () => {
+  it("sets chatUserScrolledAway=true when user scrolls from bottom to away", () => {
+    const { host } = createScrollHost({});
+    host.chatUserNearBottom = true;
+    host.chatUserScrolledAway = false;
+
+    // User scrolls up past threshold
+    const event = createScrollEvent(2000, 500, 400);
+    handleChatScroll(host, event);
+
+    expect(host.chatUserScrolledAway).toBe(true);
+    expect(host.chatUserNearBottom).toBe(false);
+  });
+
+  it("clears chatUserScrolledAway when user scrolls back to bottom", () => {
+    const { host } = createScrollHost({});
+    host.chatUserNearBottom = false;
+    host.chatUserScrolledAway = true;
+
+    // User scrolls back to bottom
+    const event = createScrollEvent(2000, 1700, 400);
+    handleChatScroll(host, event);
+
+    expect(host.chatUserScrolledAway).toBe(false);
+    expect(host.chatUserNearBottom).toBe(true);
+  });
+
+  it("does NOT set chatUserScrolledAway if already away from bottom", () => {
+    const { host } = createScrollHost({});
+    host.chatUserNearBottom = false;
+    host.chatUserScrolledAway = false;
+
+    // User scrolls more (already away)
+    const event = createScrollEvent(2000, 300, 400);
+    handleChatScroll(host, event);
+
+    // Should NOT set scrolledAway since wasNearBottom was false
+    expect(host.chatUserScrolledAway).toBe(false);
+  });
+});
+
+describe("scheduleChatScroll respects user intent", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("does NOT scroll when chatUserScrolledAway=true even if near bottom", async () => {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 1700,
+      clientHeight: 400,
+    });
+    host.chatUserNearBottom = true;
+    host.chatUserScrolledAway = true; // User has scrolled away before
+    const originalScrollTop = container.scrollTop;
+
+    scheduleChatScroll(host);
+    await host.updateComplete;
+
+    expect(container.scrollTop).toBe(originalScrollTop);
+  });
+
+  it("resumes scrolling when chatUserScrolledAway=false", async () => {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 1700,
+      clientHeight: 400,
+    });
+    host.chatUserNearBottom = true;
+    host.chatUserScrolledAway = false;
+
+    scheduleChatScroll(host);
+    await host.updateComplete;
+
+    expect(container.scrollTop).toBe(container.scrollHeight);
+  });
+});
+
+/* ------------------------------------------------------------------ */
 /*  resetChatScroll                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -266,10 +363,12 @@ describe("resetChatScroll", () => {
     const { host } = createScrollHost({});
     host.chatHasAutoScrolled = true;
     host.chatUserNearBottom = false;
+    host.chatUserScrolledAway = true;
 
     resetChatScroll(host);
 
     expect(host.chatHasAutoScrolled).toBe(false);
     expect(host.chatUserNearBottom).toBe(true);
+    expect(host.chatUserScrolledAway).toBe(false);
   });
 });

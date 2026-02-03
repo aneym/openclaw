@@ -1,39 +1,40 @@
 import { useMemo } from "react";
+import type { Chat } from "../../types";
 import { useStreaming } from "../../hooks/use-streaming";
-import { useThreadStore } from "../../stores/thread-store";
+import { useChatStore } from "../../stores/chat-store";
 import { ComposeBar } from "../chat/ComposeBar";
 import { useMessages } from "../chat/hooks/useMessages";
 import { MessageList } from "../chat/MessageList";
 
 interface ChatPanelProps {
-  threadId: string;
+  chatId: string;
 }
 
-export function ChatPanel({ threadId }: ChatPanelProps) {
+export function ChatPanel({ chatId }: ChatPanelProps) {
   // Select raw Map to avoid calling method in selector (causes infinite loops)
-  const threadsMap = useThreadStore((s) => s.threads);
+  const chatsMap = useChatStore((s) => s.chats);
 
-  // Derive thread outside selector with useMemo
-  const thread = useMemo(() => threadsMap.get(threadId), [threadsMap, threadId]);
+  // Derive chat outside selector with useMemo
+  const chat = useMemo(() => chatsMap.get(chatId) as Chat | undefined, [chatsMap, chatId]);
 
-  // If thread doesn't exist or has no sessionKey, show error state
-  if (!thread?.sessionKey) {
+  const sessionKey = chat?.sessionKey ?? "";
+
+  // Fetch messages and track streaming state (hooks must be called unconditionally)
+  const { messages, loading, error, addMessage } = useMessages(sessionKey, chatId);
+  const { isStreaming, streamText } = useStreaming(sessionKey);
+
+  // If chat doesn't exist or has no sessionKey, show error state
+  if (!chat?.sessionKey) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-        <p className="text-sm">Thread not found or session key missing</p>
-        <p className="text-xs mt-2 text-muted-foreground/60">Thread ID: {threadId}</p>
+        <p className="text-sm">Chat not found or session key missing</p>
+        <p className="text-xs mt-2 text-muted-foreground/60">Chat ID: {chatId}</p>
       </div>
     );
   }
 
-  const sessionKey = thread.sessionKey;
-
-  // Fetch messages and track streaming state
-  const { messages, loading, error, addMessage } = useMessages(sessionKey, threadId);
-  const { isStreaming, streamText } = useStreaming(sessionKey);
-
-  // Show loading state
-  if (loading) {
+  // Show loading state only on initial load (when no messages yet)
+  if (loading && messages.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
         <p className="text-sm">Loading messages...</p>
@@ -60,7 +61,7 @@ export function ChatPanel({ threadId }: ChatPanelProps) {
       {/* Compose bar (fixed at bottom) */}
       <ComposeBar
         sessionKey={sessionKey}
-        threadId={threadId}
+        chatId={chatId}
         disabled={isStreaming}
         onAddMessage={addMessage}
       />

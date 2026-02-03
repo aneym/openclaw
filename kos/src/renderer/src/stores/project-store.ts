@@ -1,105 +1,145 @@
-import { create } from 'zustand'
-import { persist } from 'zustand/middleware'
-import type { Project } from '../types'
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
+import type { Project } from "../types";
+
+// Mock data per spec
+const MOCK_PROJECTS: Project[] = [
+  {
+    id: "proj-payme",
+    name: "PayMe",
+    icon: "💰",
+    linearTeamId: "team-pay",
+    repositoryPath: "/repos/payme",
+    createdAt: Date.now() - 86400000 * 30,
+  },
+  {
+    id: "proj-relay",
+    name: "Relay",
+    icon: "🔗",
+    linearTeamId: "team-rel",
+    repositoryPath: "/repos/relay",
+    createdAt: Date.now() - 86400000 * 20,
+  },
+  {
+    id: "proj-kos",
+    name: "kOS",
+    icon: "🤖",
+    linearTeamId: "team-kos",
+    repositoryPath: "/repos/kos",
+    createdAt: Date.now() - 86400000 * 10,
+  },
+  {
+    id: "proj-wedding",
+    name: "Wedding",
+    icon: "💒",
+    repositoryPath: undefined, // non-code project
+    createdAt: Date.now() - 86400000 * 5,
+  },
+];
 
 interface ProjectState {
-  projects: Map<string, Project>
-  expandedProjectIds: Set<string>
-  selectedProjectId: string | null
+  projects: Map<string, Project>;
+  activeProjectId: string | null;
 
-  addProject: (project: Project) => void
-  updateProject: (id: string, patch: Partial<Project>) => void
-  getProject: (id: string) => Project | undefined
-  getProjectsByWorkspace: (workspaceId: string) => Project[]
-  toggleExpanded: (id: string) => void
-  isExpanded: (id: string) => boolean
-  setSelectedProject: (id: string | null) => void
+  // Actions
+  setActiveProject: (id: string) => void;
+  addProject: (project: Project) => void;
+  updateProject: (id: string, updates: Partial<Project>) => void;
+  deleteProject: (id: string) => void;
+
+  // Selectors (use outside of selectors with useMemo)
+  getProject: (id: string) => Project | undefined;
+  getActiveProject: () => Project | undefined;
+  getAllProjects: () => Project[];
 }
+
+// Initialize with mock data
+const initialProjects = new Map<string, Project>();
+MOCK_PROJECTS.forEach((p) => initialProjects.set(p.id, p));
 
 export const useProjectStore = create<ProjectState>()(
   persist(
     (set, get) => ({
-      projects: new Map(),
-      expandedProjectIds: new Set(),
-      selectedProjectId: null,
+      projects: initialProjects,
+      activeProjectId: "proj-payme",
 
-      addProject: (project: Project) => {
-        const { projects } = get()
-        const updated = new Map(projects)
-        updated.set(project.id, project)
-        set({ projects: updated })
+      setActiveProject: (id: string) => {
+        const project = get().projects.get(id);
+        if (project) {
+          set({ activeProjectId: id });
+        }
       },
 
-      updateProject: (id: string, patch: Partial<Project>) => {
-        const { projects } = get()
-        const project = projects.get(id)
+      addProject: (project: Project) => {
+        const { projects } = get();
+        const updated = new Map(projects);
+        updated.set(project.id, project);
+        set({ projects: updated });
+      },
+
+      updateProject: (id: string, updates: Partial<Project>) => {
+        const { projects } = get();
+        const project = projects.get(id);
         if (project) {
-          const updated = new Map(projects)
-          updated.set(id, { ...project, ...patch })
-          set({ projects: updated })
+          const updated = new Map(projects);
+          updated.set(id, { ...project, ...updates });
+          set({ projects: updated });
         }
+      },
+
+      deleteProject: (id: string) => {
+        const { projects, activeProjectId } = get();
+        const updated = new Map(projects);
+        updated.delete(id);
+        set({
+          projects: updated,
+          activeProjectId: activeProjectId === id ? null : activeProjectId,
+        });
       },
 
       getProject: (id: string) => {
-        return get().projects.get(id)
+        return get().projects.get(id);
       },
 
-      getProjectsByWorkspace: (workspaceId: string) => {
-        const { projects } = get()
-        return Array.from(projects.values())
-          .filter((p) => p.workspaceId === workspaceId)
-          .sort((a, b) => a.name.localeCompare(b.name))
+      getActiveProject: () => {
+        const { projects, activeProjectId } = get();
+        return activeProjectId ? projects.get(activeProjectId) : undefined;
       },
 
-      toggleExpanded: (id: string) => {
-        const { expandedProjectIds } = get()
-        const updated = new Set(expandedProjectIds)
-        if (updated.has(id)) {
-          updated.delete(id)
-        } else {
-          updated.add(id)
-        }
-        set({ expandedProjectIds: updated })
+      getAllProjects: () => {
+        return Array.from(get().projects.values() as Iterable<Project>).sort((a, b) =>
+          a.name.localeCompare(b.name),
+        );
       },
-
-      isExpanded: (id: string) => {
-        return get().expandedProjectIds.has(id)
-      },
-
-      setSelectedProject: (id: string | null) => {
-        set({ selectedProjectId: id })
-      }
     }),
     {
-      name: 'kos-projects',
+      name: "kos-projects-v2",
       storage: {
         getItem: (name) => {
-          const str = localStorage.getItem(name)
-          if (!str) return null
-          const { state } = JSON.parse(str)
+          const str = localStorage.getItem(name);
+          if (!str) return null;
+          const { state } = JSON.parse(str);
           return {
             state: {
               ...state,
               projects: new Map(state.projects || []),
-              expandedProjectIds: new Set(state.expandedProjectIds || [])
-            }
-          }
+            },
+          };
         },
         setItem: (name, value) => {
-          const { state } = value
+          const { state } = value;
           localStorage.setItem(
             name,
             JSON.stringify({
               state: {
                 ...state,
                 projects: Array.from(state.projects.entries()),
-                expandedProjectIds: Array.from(state.expandedProjectIds)
-              }
-            })
-          )
+              },
+            }),
+          );
         },
-        removeItem: (name) => localStorage.removeItem(name)
-      }
-    }
-  )
-)
+        removeItem: (name) => localStorage.removeItem(name),
+      },
+    },
+  ),
+);

@@ -18,12 +18,23 @@ interface MessageGrouping {
   messages: ChatMessage[];
 }
 
+function normalizeRoleForGrouping(role: string): string {
+  // Treat tool messages as part of assistant turns
+  if (role === "tool") {
+    return "assistant";
+  }
+  return role;
+}
+
 function groupConsecutiveMessages(messages: ChatMessage[]): MessageGrouping[] {
   const groups: MessageGrouping[] = [];
   let currentGroup: MessageGrouping | null = null;
 
   for (const message of messages) {
-    if (currentGroup && currentGroup.role === message.role) {
+    const normalizedRole = normalizeRoleForGrouping(message.role);
+    const currentNormalizedRole = currentGroup ? normalizeRoleForGrouping(currentGroup.role) : null;
+
+    if (currentGroup && currentNormalizedRole === normalizedRole) {
       // Add to current group
       currentGroup.messages.push(message);
     } else {
@@ -123,6 +134,9 @@ export function MessageList({ messages, isStreaming, streamText, className }: Me
               const isLastGroup = idx === messageGroups.length - 1;
               // Only show streaming indicator on assistant messages, not user messages
               const shouldShowStreaming = isLastGroup && isStreaming && group.role === "assistant";
+              // Show timestamp only at turn boundaries (last group before role change or end)
+              const nextGroup = messageGroups[idx + 1];
+              const isEndOfTurn = !nextGroup || nextGroup.role !== group.role;
 
               return (
                 <MessageGroup
@@ -131,6 +145,7 @@ export function MessageList({ messages, isStreaming, streamText, className }: Me
                   role={group.role}
                   isStreaming={shouldShowStreaming}
                   streamText={shouldShowStreaming ? streamText : undefined}
+                  showTimestamp={isEndOfTurn}
                 />
               );
             })}

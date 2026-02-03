@@ -1,6 +1,5 @@
 import {
   Clock,
-  FolderPlus,
   Home,
   MessageSquare,
   Moon,
@@ -12,11 +11,11 @@ import {
   Monitor,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { Chat, Project } from "../../types";
 import { formatDistanceToNow } from "../../lib/date-utils";
+import { useChatStore } from "../../stores/chat-store";
 import { useProjectStore } from "../../stores/project-store";
-import { useTabStore } from "../../stores/tab-store";
 import { useThemeStore } from "../../stores/theme-store";
-import { useThreadStore } from "../../stores/thread-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
 import {
   CommandDialog,
@@ -34,8 +33,6 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   onNavigate: (view: "home" | "settings") => void;
   onToggleSidebar: () => void;
-  onNewThread: () => void;
-  onOpenProjectPicker: () => void;
 }
 
 export function CommandPalette({
@@ -43,27 +40,21 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
   onToggleSidebar,
-  onNewThread,
-  onOpenProjectPicker,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
 
-  // Workspace store
-  const workspaces = useWorkspaceStore((s) => s.config.workspaces);
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
-
-  // Thread store
-  const threadsMap = useThreadStore((s) => s.threads);
-  const setActiveThread = useThreadStore((s) => s.setActiveThread);
-
   // Project store
   const projectsMap = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+  const setActiveProject = useProjectStore((s) => s.setActiveProject);
 
-  // Tab store
-  const openProjectTab = useTabStore((s) => s.openProjectTab);
-  const openHomeTab = useTabStore((s) => s.openHomeTab);
-  const setTabActiveThread = useTabStore((s) => s.setActiveThread);
+  // Workspace store
+  const activeWorkspaceByProject = useWorkspaceStore((s) => s.activeWorkspaceByProject);
+
+  // Chat store
+  const chatsMap = useChatStore((s) => s.chats);
+  const setActiveChat = useChatStore((s) => s.setActiveChat);
+  const addChat = useChatStore((s) => s.addChat);
 
   // Theme store
   const themes = useThemeStore((s) => s.themes);
@@ -73,26 +64,30 @@ export function CommandPalette({
   const setMode = useThemeStore((s) => s.setMode);
 
   // Derived data
-  const threads = useMemo(
-    () =>
-      Array.from(threadsMap.values())
-        .filter((t) => t.status !== "archived")
-        .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
-        .slice(0, 10), // Limit to 10 recent threads
-    [threadsMap],
-  );
-
   const projects = useMemo(
     () =>
-      Array.from(projectsMap.values())
-        .filter((p) => p.workspaceId === activeWorkspace?.id)
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [projectsMap, activeWorkspace?.id],
+      Array.from(projectsMap.values() as Iterable<Project>).sort((a, b) =>
+        a.name.localeCompare(b.name),
+      ),
+    [projectsMap],
   );
 
-  const otherWorkspaces = useMemo(
-    () => workspaces.filter((w) => w.id !== activeWorkspace?.id),
-    [workspaces, activeWorkspace?.id],
+  const activeWorkspaceId = useMemo(() => {
+    if (!activeProjectId) return null;
+    return activeWorkspaceByProject.get(activeProjectId);
+  }, [activeProjectId, activeWorkspaceByProject]);
+
+  const recentChats = useMemo(() => {
+    if (!activeWorkspaceId) return [];
+    return Array.from(chatsMap.values() as Iterable<Chat>)
+      .filter((c) => c.workspaceId === activeWorkspaceId && c.status !== "archived")
+      .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+      .slice(0, 10);
+  }, [chatsMap, activeWorkspaceId]);
+
+  const otherProjects = useMemo(
+    () => projects.filter((p) => p.id !== activeProjectId),
+    [projects, activeProjectId],
   );
 
   // Reset search when dialog closes
@@ -111,34 +106,40 @@ export function CommandPalette({
     [onOpenChange],
   );
 
-  const handleSelectThread = useCallback(
-    (threadId: string, tabId: string) => {
+  const handleNewChat = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    closeAndRun(() => {
+      const newChat = {
+        id: `chat-${Date.now()}`,
+        workspaceId: activeWorkspaceId,
+        sessionKey: `sess-${Date.now()}`,
+        title: "New Chat",
+        status: "active" as const,
+        lastMessageAt: Date.now(),
+        createdAt: Date.now(),
+      };
+      addChat(newChat);
+    });
+  }, [closeAndRun, activeWorkspaceId, addChat]);
+
+  const handleSelectChat = useCallback(
+    (chatId: string, workspaceId: string) => {
       closeAndRun(() => {
-        setActiveThread(threadId);
-        setTabActiveThread(tabId, threadId);
+        setActiveChat(workspaceId, chatId);
+        onNavigate("home");
       });
     },
-    [closeAndRun, setActiveThread, setTabActiveThread],
+    [closeAndRun, setActiveChat, onNavigate],
   );
 
   const handleSelectProject = useCallback(
     (projectId: string) => {
-      if (!activeWorkspace) return;
       closeAndRun(() => {
-        openProjectTab(activeWorkspace.id, projectId);
+        setActiveProject(projectId);
+        onNavigate("home");
       });
     },
-    [closeAndRun, activeWorkspace, openProjectTab],
-  );
-
-  const handleSwitchWorkspace = useCallback(
-    (workspaceId: string) => {
-      closeAndRun(() => {
-        setActiveWorkspace(workspaceId);
-        openHomeTab(workspaceId);
-      });
-    },
-    [closeAndRun, setActiveWorkspace, openHomeTab],
+    [closeAndRun, setActiveProject, onNavigate],
   );
 
   const handleSelectTheme = useCallback(
@@ -171,26 +172,10 @@ export function CommandPalette({
 
         {/* Actions */}
         <CommandGroup heading="Actions">
-          <CommandItem
-            onSelect={() =>
-              closeAndRun(() => {
-                onNewThread();
-              })
-            }
-          >
+          <CommandItem onSelect={handleNewChat} disabled={!activeWorkspaceId}>
             <Plus className="mr-2 h-4 w-4" />
-            <span>New Thread</span>
+            <span>New Chat</span>
             <CommandShortcut>⌘N</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            onSelect={() =>
-              closeAndRun(() => {
-                onOpenProjectPicker();
-              })
-            }
-          >
-            <FolderPlus className="mr-2 h-4 w-4" />
-            <span>New Project Tab</span>
           </CommandItem>
           <CommandItem
             onSelect={() =>
@@ -257,30 +242,12 @@ export function CommandPalette({
           </>
         )}
 
-        {/* Workspaces */}
-        {otherWorkspaces.length > 0 && (
-          <>
-            <CommandSeparator />
-            <CommandGroup heading="Switch Workspace">
-              {otherWorkspaces.map((workspace) => (
-                <CommandItem
-                  key={workspace.id}
-                  onSelect={() => handleSwitchWorkspace(workspace.id)}
-                >
-                  <span className="mr-2 text-base">{workspace.icon}</span>
-                  <span>{workspace.name}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </>
-        )}
-
         {/* Projects */}
-        {projects.length > 0 && (
+        {otherProjects.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Projects">
-              {projects.map((project) => (
+            <CommandGroup heading="Switch Project">
+              {otherProjects.map((project) => (
                 <CommandItem key={project.id} onSelect={() => handleSelectProject(project.id)}>
                   <span className="mr-2 text-base">{project.icon ?? "📁"}</span>
                   <span>{project.name}</span>
@@ -290,22 +257,22 @@ export function CommandPalette({
           </>
         )}
 
-        {/* Recent Threads */}
-        {threads.length > 0 && (
+        {/* Recent Chats */}
+        {recentChats.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Recent Threads">
-              {threads.map((thread) => (
+            <CommandGroup heading="Recent Chats">
+              {recentChats.map((chat) => (
                 <CommandItem
-                  key={thread.id}
-                  value={`thread ${thread.title}`}
-                  onSelect={() => handleSelectThread(thread.id, thread.tabId)}
+                  key={chat.id}
+                  value={`chat ${chat.title}`}
+                  onSelect={() => handleSelectChat(chat.id, chat.workspaceId)}
                 >
                   <MessageSquare className="mr-2 h-4 w-4" />
-                  <span className="flex-1 truncate">{thread.title}</span>
+                  <span className="flex-1 truncate">{chat.title}</span>
                   <span className="ml-2 flex items-center text-xs text-muted-foreground">
                     <Clock className="h-3 w-3 mr-1" />
-                    {formatDistanceToNow(thread.lastMessageAt)}
+                    {formatDistanceToNow(chat.lastMessageAt)}
                   </span>
                 </CommandItem>
               ))}

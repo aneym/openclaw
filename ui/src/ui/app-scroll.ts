@@ -6,6 +6,7 @@ type ScrollHost = {
   chatScrollTimeout: number | null;
   chatHasAutoScrolled: boolean;
   chatUserNearBottom: boolean;
+  chatUserScrolledAway: boolean; // true when user intentionally scrolled up
   logsScrollFrame: number | null;
   logsAtBottom: boolean;
   topbarObserver: ResizeObserver | null;
@@ -38,15 +39,22 @@ export function scheduleChatScroll(host: ScrollHost, force = false, paneId?: str
       host.chatScrollFrame = null;
       const target = pickScrollTarget();
       if (!target) return;
-      const distanceFromBottom =
-        target.scrollHeight - target.scrollTop - target.clientHeight;
-      const shouldStick = force || host.chatUserNearBottom || distanceFromBottom < 200;
+      const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
+      // Respect user scroll intent: don't autoscroll if user has scrolled away
+      // force=true overrides on initial load, but respects user intent after
+      const forceOnInitial = force && !host.chatHasAutoScrolled;
+      const shouldStick =
+        forceOnInitial ||
+        (!host.chatUserScrolledAway && (host.chatUserNearBottom || distanceFromBottom < 200));
       if (!shouldStick) return;
       if (force) host.chatHasAutoScrolled = true;
       // Smooth for small jumps, instant for large ones (initial load, history swap)
       const behavior = distanceFromBottom > 800 ? ("instant" as const) : ("smooth" as const);
       target.scrollTo({ top: target.scrollHeight, behavior });
-      host.chatUserNearBottom = true;
+      // Only mark as near bottom if user hasn't scrolled away
+      if (!host.chatUserScrolledAway) {
+        host.chatUserNearBottom = true;
+      }
       const retryDelay = force ? 150 : 120;
       host.chatScrollTimeout = window.setTimeout(() => {
         host.chatScrollTimeout = null;
@@ -54,12 +62,18 @@ export function scheduleChatScroll(host: ScrollHost, force = false, paneId?: str
         if (!latest) return;
         const latestDistanceFromBottom =
           latest.scrollHeight - latest.scrollTop - latest.clientHeight;
+        // Respect user scroll intent on retry too (force only on initial load)
+        const forceOnInitialRetry = force && !host.chatHasAutoScrolled;
         const shouldStickRetry =
-          force || host.chatUserNearBottom || latestDistanceFromBottom < 200;
+          forceOnInitialRetry ||
+          (!host.chatUserScrolledAway &&
+            (host.chatUserNearBottom || latestDistanceFromBottom < 200));
         if (!shouldStickRetry) return;
         // Retry is always instant (just a small correction)
         latest.scrollTop = latest.scrollHeight;
-        host.chatUserNearBottom = true;
+        if (!host.chatUserScrolledAway) {
+          host.chatUserNearBottom = true;
+        }
       }, retryDelay);
     });
   });
@@ -84,22 +98,33 @@ export function scheduleLogsScroll(host: ScrollHost, force = false) {
 export function handleChatScroll(host: ScrollHost, event: Event) {
   const container = event.currentTarget as HTMLElement | null;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+  const wasNearBottom = host.chatUserNearBottom;
   host.chatUserNearBottom = distanceFromBottom < 200;
+
+  // User scrolled away from bottom → pause autoscroll
+  if (wasNearBottom && !host.chatUserNearBottom) {
+    host.chatUserScrolledAway = true;
+  }
+
+  // User scrolled back to bottom → resume autoscroll
+  if (host.chatUserNearBottom && host.chatUserScrolledAway) {
+    host.chatUserScrolledAway = false;
+  }
 }
 
 export function handleLogsScroll(host: ScrollHost, event: Event) {
   const container = event.currentTarget as HTMLElement | null;
   if (!container) return;
-  const distanceFromBottom =
-    container.scrollHeight - container.scrollTop - container.clientHeight;
+  const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
   host.logsAtBottom = distanceFromBottom < 80;
 }
 
 export function resetChatScroll(host: ScrollHost) {
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
+  host.chatUserScrolledAway = false; // Reset on thread switch
 }
 
 /**

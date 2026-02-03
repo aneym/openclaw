@@ -4,6 +4,7 @@ import type { ChatMessage } from "../../types/message";
 import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
 import { useImageAttachments } from "../../hooks/use-image-attachments";
 import { useStreaming } from "../../hooks/use-streaming";
+import { klog } from "../../lib/klog";
 import { cn } from "../../lib/utils";
 import { generateUUID } from "../../lib/uuid";
 import { useGatewayStore } from "../../stores/gateway-store";
@@ -12,14 +13,14 @@ import { MessageQueue } from "./MessageQueue";
 
 interface ComposeBarProps {
   sessionKey: string;
-  threadId: string;
+  chatId: string;
   disabled?: boolean;
   onAddMessage?: (message: ChatMessage) => void;
 }
 
 export function ComposeBar({
   sessionKey,
-  threadId,
+  chatId,
   disabled = false,
   onAddMessage,
 }: ComposeBarProps) {
@@ -69,43 +70,57 @@ export function ComposeBar({
     setText("");
     clearImages();
 
+    klog.compose("handleSend called", {
+      sessionKey,
+      chatId,
+      messageId,
+      textLength: messageText.length,
+      immediate,
+      isStreaming,
+    });
+
     // If agent is streaming and not immediate, queue the message
     if (isStreaming && !immediate) {
-      addToQueue(threadId, messageText);
+      klog.compose("Queueing message (agent is streaming)");
+      addToQueue(chatId, messageText);
       // Note: images are not queued, only text messages
       return;
     }
 
     // If immediate and streaming, abort current run first
     if (immediate && isStreaming) {
+      klog.compose("Aborting current run before immediate send");
       try {
         await request("chat.abort", { sessionKey });
       } catch (err) {
-        console.error("[compose] abort failed:", err);
+        klog.composeError("abort failed:", err);
       }
     }
 
     // Add user message locally (optimistic update)
     if (onAddMessage) {
+      klog.compose("Adding optimistic user message");
       onAddMessage({
         id: messageId,
         role: "user",
         parts: [{ type: "text", text: messageText }],
         createdAt: Date.now(),
-        threadId,
+        chatId,
       });
     }
 
     try {
+      klog.compose("Sending chat.send request", { sessionKey, messageId });
       // TODO: Add image attachments support
-      await request("chat.send", {
+      const result = await request("chat.send", {
         sessionKey,
         message: messageText,
         deliver: false,
         idempotencyKey: messageId,
       });
+      klog.compose("chat.send response:", result);
     } catch (err) {
-      console.error("[compose] send failed:", err);
+      klog.composeError("send failed:", err);
     }
   };
 
@@ -117,7 +132,7 @@ export function ComposeBar({
       console.error("[compose] abort failed:", err);
     }
 
-    const firstMessage = dequeue(threadId);
+    const firstMessage = dequeue(chatId);
     if (firstMessage) {
       try {
         await request("chat.send", {
@@ -147,7 +162,7 @@ export function ComposeBar({
 
   return (
     <>
-      <MessageQueue threadId={threadId} onSendNow={handleSendNow} />
+      <MessageQueue chatId={chatId} onSendNow={handleSendNow} />
       <div className="border-t border-border bg-background p-3">
         <div className="space-y-2">
           {/* Image preview thumbnails */}

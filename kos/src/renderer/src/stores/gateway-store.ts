@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { GatewayEventFrame, GatewayHelloOk } from "../gateway/types";
 import { GatewayClient } from "../gateway/client";
+import { klog } from "../lib/klog";
 import { notifications } from "../lib/notifications";
 
 type EventHandler = (payload: unknown) => void;
@@ -42,15 +43,25 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         }
       },
       onEvent: (evt: GatewayEventFrame) => {
+        // Log all incoming events for debugging
+        klog.gateway("event received", {
+          event: evt.event,
+          seq: evt.seq,
+          payload: evt.payload,
+        });
+
         const handlers = get().eventHandlers.get(evt.event);
         if (handlers) {
+          klog.gateway(`dispatching to ${handlers.size} handler(s)`);
           handlers.forEach((handler) => {
             try {
               handler(evt.payload);
             } catch (err) {
-              console.error("[gateway] event handler error:", err);
+              klog.gatewayError("event handler error:", err);
             }
           });
+        } else {
+          klog.gateway(`no handlers registered for event "${evt.event}"`);
         }
       },
       onClose: (info) => {
@@ -89,7 +100,15 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     if (!client) {
       throw new Error("Gateway not connected");
     }
-    return client.request<T>(method, params);
+    klog.gateway(`request: ${method}`, params);
+    try {
+      const result = await client.request<T>(method, params);
+      klog.gateway(`response: ${method}`, result);
+      return result;
+    } catch (err) {
+      klog.gatewayError(`request failed: ${method}`, err);
+      throw err;
+    }
   },
 
   subscribe: (event: string, handler: EventHandler) => {

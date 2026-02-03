@@ -4,48 +4,36 @@ import { Toaster } from "./components/ui/sonner";
 import { useSessionSync } from "./hooks/use-session-sync";
 import { useTheme } from "./hooks/use-theme";
 import { useGatewayStore } from "./stores/gateway-store";
-import { useWorkspaceStore } from "./stores/workspace-store";
 import "./styles/globals.css";
 
+// Default gateway URL for local development
+const DEFAULT_GATEWAY_URL = "ws://localhost:18789";
+
 function App() {
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
+  // Gateway state
   const connect = useGatewayStore((s) => s.connect);
+  const connected = useGatewayStore((s) => s.connected);
 
   // Initialize theme system — applies CSS vars and dark/light class on <html>
   useTheme();
   useSessionSync();
 
-  // Auto-discover gateway config from OpenClaw config on first launch
+  // Connect to gateway on startup
+  // TODO: Get gateway URL/token from settings
   useEffect(() => {
-    if (!activeWorkspace) return;
+    // Only connect once on initial mount
+    if (connected) return;
 
-    // If the workspace already has a token, no need to discover
-    if (activeWorkspace.gatewayToken) return;
-
+    // Try to get gateway config from Electron API if available
     if (window.api?.getGatewayConfig) {
       window.api.getGatewayConfig().then((config) => {
-        if (config.token || config.url !== activeWorkspace.gatewayUrl) {
-          updateWorkspace(activeWorkspace.id, {
-            gatewayUrl: config.url,
-            gatewayToken: config.token,
-          });
-        }
+        connect(config.url || DEFAULT_GATEWAY_URL, config.token);
       });
+    } else {
+      // Fallback for web preview or when API is unavailable
+      connect(DEFAULT_GATEWAY_URL, undefined);
     }
-  }, [activeWorkspace?.id]);
-
-  // Connect to gateway when workspace config is ready
-  // Use a small delay to handle React strict mode double-mount
-  useEffect(() => {
-    if (!activeWorkspace?.gatewayUrl) return;
-
-    const timer = setTimeout(() => {
-      connect(activeWorkspace.gatewayUrl, activeWorkspace.gatewayToken);
-    }, 50);
-
-    return () => clearTimeout(timer);
-  }, [activeWorkspace?.gatewayUrl, activeWorkspace?.gatewayToken, connect]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="h-screen w-screen overflow-hidden">

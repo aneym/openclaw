@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import type { ChatMessage } from "../../../types/message";
 import { normalizeMessage } from "../../../gateway/normalize";
+import { klog } from "../../../lib/klog";
 import { useGatewayStore } from "../../../stores/gateway-store";
 
 interface SessionHistoryResponse {
@@ -25,17 +26,9 @@ interface ChatEventPayload {
   errorMessage?: string;
 }
 
-// Debug logging for streaming events (set to true to enable)
-const DEBUG_STREAMING = false;
-function debugLog(...args: unknown[]) {
-  if (DEBUG_STREAMING) {
-    console.log("[useMessages]", ...args);
-  }
-}
-
-export function useMessages(sessionKey: string, threadId: string) {
+export function useMessages(sessionKey: string, chatId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const { request, subscribe, connected } = useGatewayStore();
 
@@ -48,7 +41,7 @@ export function useMessages(sessionKey: string, threadId: string) {
       return;
     }
 
-    debugLog("Loading history for session:", sessionKey);
+    klog.messages("Loading history for session:", sessionKey);
 
     try {
       const history = await request<SessionHistoryResponse>("chat.history", {
@@ -56,34 +49,34 @@ export function useMessages(sessionKey: string, threadId: string) {
         limit: 200,
       });
 
-      debugLog("History loaded, message count:", history.messages.length);
+      klog.messages("History loaded, message count:", history.messages.length);
       history.messages.forEach((m, i) => {
         const msg = m as Record<string, unknown>;
-        debugLog(`  [${i}] id=${msg.id}, role=${msg.role}`);
+        klog.messages(`  [${i}] id=${msg.id}, role=${msg.role}`);
       });
 
-      const normalized = history.messages.map((m) => normalizeMessage(m, threadId));
+      const normalized = history.messages.map((m) => normalizeMessage(m, chatId));
       setMessages(normalized);
       setError(null);
     } catch (err) {
       console.error("[useMessages] failed to fetch history:", err);
       setError(err instanceof Error ? err.message : "Failed to fetch messages");
     }
-  }, [sessionKey, threadId, request, connected]);
+  }, [sessionKey, chatId, request, connected]);
 
   // Add a message locally (for optimistic user messages)
   const addMessage = useCallback((message: ChatMessage) => {
-    debugLog("Adding optimistic message:", { id: message.id, role: message.role });
+    klog.messages("Adding optimistic message:", { id: message.id, role: message.role });
     setMessages((prev) => {
       // Check if message already exists
       const existingIndex = prev.findIndex((m) => m.id === message.id);
       if (existingIndex >= 0) {
-        debugLog("Updating existing optimistic message at index", existingIndex);
+        klog.messages("Updating existing optimistic message at index", existingIndex);
         const updated = [...prev];
         updated[existingIndex] = message;
         return updated;
       }
-      debugLog("Appending optimistic message, total will be", prev.length + 1);
+      klog.messages("Appending optimistic message, total will be", prev.length + 1);
       return [...prev, message];
     });
   }, []);
@@ -91,7 +84,7 @@ export function useMessages(sessionKey: string, threadId: string) {
   // Initial history load when connected
   useEffect(() => {
     if (!sessionKey) {
-      setLoading(false);
+      setInitialLoading(false);
       return;
     }
 
@@ -100,8 +93,12 @@ export function useMessages(sessionKey: string, threadId: string) {
       return;
     }
 
-    setLoading(true);
-    loadHistory().finally(() => setLoading(false));
+    // Only show loading state on initial load (when messages are empty)
+    if (messages.length === 0) {
+      setInitialLoading(true);
+    }
+    loadHistory().finally(() => setInitialLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on sessionKey/connected change, not messages
   }, [sessionKey, connected, loadHistory]);
 
   // Subscribe to chat events
@@ -113,7 +110,7 @@ export function useMessages(sessionKey: string, threadId: string) {
     const unsubscribe = subscribe("chat", (payload) => {
       const event = payload as ChatEventPayload;
 
-      debugLog("Received chat event:", {
+      klog.messages("Received chat event:", {
         state: event.state,
         runId: event.runId,
         sessionKey: event.sessionKey,
@@ -122,14 +119,14 @@ export function useMessages(sessionKey: string, threadId: string) {
       });
 
       if (event.sessionKey !== sessionKey) {
-        debugLog("Ignoring event for different session");
+        klog.messages("Ignoring event for different session");
         return;
       }
 
       // Track the current run
       if (event.state === "delta" && event.runId) {
         if (currentRunIdRef.current !== event.runId) {
-          debugLog("New run started:", event.runId);
+          klog.messages("New run started:", event.runId);
           currentRunIdRef.current = event.runId;
         }
         // Don't process delta events for messages - streaming text is handled by useStreaming
@@ -139,7 +136,7 @@ export function useMessages(sessionKey: string, threadId: string) {
       // On 'final', 'aborted', or 'error' - reload history from server
       // This ensures we get the complete, server-authoritative message list
       if (event.state === "final" || event.state === "aborted" || event.state === "error") {
-        debugLog(`Run ended (${event.state}), reloading history`);
+        klog.messages(`Run ended (${event.state}), reloading history`);
         currentRunIdRef.current = null;
 
         // Reload history to get the final message from the server
@@ -151,5 +148,5 @@ export function useMessages(sessionKey: string, threadId: string) {
     return unsubscribe;
   }, [sessionKey, subscribe, loadHistory]);
 
-  return { messages, loading, error, addMessage };
+  return { messages, loading: initialLoading, error, addMessage };
 }

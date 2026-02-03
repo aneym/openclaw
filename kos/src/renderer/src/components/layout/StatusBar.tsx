@@ -1,9 +1,11 @@
 import { Activity, Circle, Zap } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
+import type { Chat, Project, Workspace } from "../../types";
 import { useStreaming } from "../../hooks/use-streaming";
+import { useChatStore } from "../../stores/chat-store";
 import { useGatewayStore } from "../../stores/gateway-store";
-import { useThreadStore } from "../../stores/thread-store";
+import { useProjectStore } from "../../stores/project-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
 
 interface AgentEventPayload {
@@ -23,24 +25,58 @@ export function StatusBar() {
   const connected = useGatewayStore((s) => s.connected);
   const error = useGatewayStore((s) => s.error);
   const subscribe = useGatewayStore((s) => s.subscribe);
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const activeThreadId = useThreadStore((s) => s.activeThreadId);
-  // Select raw Map to avoid calling method in selector (causes infinite loops)
-  const threadsMap = useThreadStore((s) => s.threads);
 
-  // Derive activeThread outside selector with useMemo
-  const activeThread = useMemo(
-    () => (activeThreadId ? threadsMap.get(activeThreadId) : null),
-    [threadsMap, activeThreadId],
+  // Project state
+  const projectsMap = useProjectStore((s) => s.projects);
+  const activeProjectId = useProjectStore((s) => s.activeProjectId);
+
+  // Workspace state
+  const workspacesMap = useWorkspaceStore((s) => s.workspaces);
+  const activeWorkspaceByProject = useWorkspaceStore((s) => s.activeWorkspaceByProject);
+
+  // Chat state
+  const chatsMap = useChatStore((s) => s.chats);
+  const activeChatByWorkspace = useChatStore((s) => s.activeChatByWorkspace);
+
+  // Derive active project
+  const activeProject = useMemo(
+    () => (activeProjectId ? (projectsMap.get(activeProjectId) as Project | undefined) : undefined),
+    [projectsMap, activeProjectId],
   );
-  const { isStreaming, runId } = useStreaming(activeThread?.sessionKey ?? "");
+
+  // Derive active workspace
+  const activeWorkspaceId = useMemo(() => {
+    if (!activeProjectId) return undefined;
+    return activeWorkspaceByProject.get(activeProjectId);
+  }, [activeProjectId, activeWorkspaceByProject]);
+
+  const activeWorkspace = useMemo(
+    () =>
+      activeWorkspaceId
+        ? (workspacesMap.get(activeWorkspaceId) as Workspace | undefined)
+        : undefined,
+    [workspacesMap, activeWorkspaceId],
+  );
+
+  // Derive active chat
+  const activeChatId = useMemo(() => {
+    if (!activeWorkspaceId) return undefined;
+    return activeChatByWorkspace.get(activeWorkspaceId);
+  }, [activeWorkspaceId, activeChatByWorkspace]);
+
+  const activeChat = useMemo(
+    () => (activeChatId ? (chatsMap.get(activeChatId) as Chat | undefined) : undefined),
+    [chatsMap, activeChatId],
+  );
+
+  const { isStreaming, runId } = useStreaming(activeChat?.sessionKey ?? "");
 
   // Track current model and agent from events
   const [currentModel, setCurrentModel] = useState<string | null>(null);
   const [currentAgentId, setCurrentAgentId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!activeThread?.sessionKey) {
+    if (!activeChat?.sessionKey) {
       return;
     }
 
@@ -48,7 +84,7 @@ export function StatusBar() {
     const unsubscribe = subscribe("agent", (payload: unknown) => {
       const agentPayload = payload as AgentEventPayload;
 
-      if (agentPayload.sessionKey !== activeThread.sessionKey) {
+      if (agentPayload.sessionKey !== activeChat.sessionKey) {
         return;
       }
 
@@ -78,15 +114,15 @@ export function StatusBar() {
     return () => {
       unsubscribe();
     };
-  }, [activeThread?.sessionKey, subscribe]);
+  }, [activeChat?.sessionKey, subscribe]);
 
-  // Reset model/agent when thread changes
+  // Reset model/agent when chat changes
   useEffect(() => {
-    if (!activeThread) {
+    if (!activeChat) {
       setCurrentModel(null);
       setCurrentAgentId(null);
     }
-  }, [activeThread?.id]);
+  }, [activeChat?.id]);
 
   const statusColor = connected ? "bg-green-500" : error ? "bg-red-500" : "bg-yellow-500";
   const statusText = connected ? "Connected" : error ? "Disconnected" : "Connecting...";
@@ -100,8 +136,8 @@ export function StatusBar() {
           <span>{statusText}</span>
         </div>
 
-        {/* Active thread streaming status */}
-        {activeThread && (
+        {/* Active chat streaming status */}
+        {activeChat && (
           <div className="flex items-center gap-1.5">
             {isStreaming ? (
               <>
@@ -144,11 +180,14 @@ export function StatusBar() {
           </div>
         )}
 
-        {/* Workspace */}
-        {activeWorkspace && (
+        {/* Project + Workspace */}
+        {activeProject && (
           <div className="flex items-center gap-1.5 border-l border-border pl-3">
-            <span>{activeWorkspace.icon || "🏠"}</span>
-            <span>{activeWorkspace.name}</span>
+            <span>{activeProject.icon || "📁"}</span>
+            <span>{activeProject.name}</span>
+            {activeWorkspace && activeWorkspace.name !== "main" && (
+              <span className="text-muted-foreground/60">/ {activeWorkspace.name}</span>
+            )}
           </div>
         )}
       </div>

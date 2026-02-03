@@ -9,20 +9,20 @@ import { cn } from "../../lib/utils";
 import { useMessageQueueStore } from "../../stores/message-queue-store";
 
 interface MessageQueueProps {
-  threadId: string;
+  chatId: string;
   onSendNow: () => void;
 }
 
 // Empty array constant to avoid creating new arrays on each render
 const EMPTY_QUEUE: never[] = [];
 
-export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
+export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
   const queuesMap = useMessageQueueStore((state) => state.queues);
   const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
   const clearQueue = useMessageQueueStore((state) => state.clearQueue);
 
   // Memoize to avoid infinite loop from new array reference
-  const queue = useMemo(() => queuesMap.get(threadId) ?? EMPTY_QUEUE, [queuesMap, threadId]);
+  const queue = useMemo(() => queuesMap.get(chatId) ?? EMPTY_QUEUE, [queuesMap, chatId]);
 
   if (queue.length === 0) {
     return null;
@@ -59,7 +59,7 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
             Send Now
           </button>
           <button
-            onClick={() => clearQueue(threadId)}
+            onClick={() => clearQueue(chatId)}
             className={cn(
               "text-xs px-2 py-1 rounded bg-muted text-muted-foreground",
               "hover:bg-muted/80 transition-colors",
@@ -87,7 +87,7 @@ export function MessageQueue({ threadId, onSendNow }: MessageQueueProps) {
               </span>
             </div>
             <button
-              onClick={() => removeFromQueue(threadId, msg.id)}
+              onClick={() => removeFromQueue(chatId, msg.id)}
               className={cn(
                 "shrink-0 p-0.5 rounded hover:bg-muted transition-colors",
                 "text-muted-foreground hover:text-foreground",

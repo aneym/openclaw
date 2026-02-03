@@ -1,83 +1,53 @@
 import type { PanelType } from "../../types";
-import { useThreadStore } from "../../stores/thread-store";
-import { useWorkspaceStore } from "../../stores/workspace-store";
 import { CodingSessionPanel } from "../coding/CodingSessionPanel";
-import { LinearBoard } from "../linear/LinearBoard";
 import { ChatPanel } from "./ChatPanel";
 
 interface PanelContentProps {
   type: PanelType;
-  props?: Record<string, unknown>;
-  threadId: string;
+  data?: Record<string, unknown>;
+  workspaceId: string;
+  activeChatId?: string;
 }
 
-export function PanelContent({ type, props, threadId }: PanelContentProps) {
-  const activeWorkspace = useWorkspaceStore((state) => state.activeWorkspace);
-  // Select raw Map to avoid calling method in selector (causes infinite loops)
-  const threadsMap = useThreadStore((state) => state.threads);
-
+export function PanelContent({ type, data, workspaceId, activeChatId }: PanelContentProps) {
   switch (type) {
     case "chat":
-      return <ChatPanel threadId={threadId} />;
+      if (!activeChatId) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+            <p className="text-sm">No chat selected</p>
+            <p className="text-xs mt-2">Create a new chat to get started</p>
+          </div>
+        );
+      }
+      return <ChatPanel chatId={activeChatId} />;
 
-    case "code-editor": {
-      const filePath = props?.filePath;
-      return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Code Editor Panel</p>
-          {filePath != null && <p className="text-xs mt-2">File: {String(filePath)}</p>}
-        </div>
-      );
+    case "coding-session": {
+      const sessionKey = data?.sessionKey as string | undefined;
+      if (!sessionKey) {
+        return (
+          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+            <p className="text-sm">No coding session</p>
+          </div>
+        );
+      }
+      return <CodingSessionPanel sessionKey={sessionKey} />;
     }
 
     case "terminal":
       return (
         <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
           <p className="text-sm">Terminal Panel</p>
+          <p className="text-xs mt-2 text-muted-foreground/60">Workspace: {workspaceId}</p>
         </div>
       );
 
-    case "coding-session": {
-      const sessionKey = props?.sessionKey ?? threadId;
-      return <CodingSessionPanel sessionKey={String(sessionKey)} />;
-    }
-
-    case "linear-board": {
-      // Get teamId from panel props or thread
-      const teamId = props?.teamId as string | undefined;
-      const linearApiKey = activeWorkspace?.linearApiKey;
-
-      if (!teamId) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-            <p className="text-sm">No Linear team configured</p>
-            <p className="text-xs mt-2">Configure a Linear team for this project</p>
-          </div>
-        );
-      }
-
-      if (!linearApiKey) {
-        return (
-          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-            <p className="text-sm">No Linear API key configured</p>
-            <p className="text-xs mt-2">Add a Linear API key in workspace settings</p>
-          </div>
-        );
-      }
-
-      // Get projectId from thread (derived from Map in render)
-      const thread = threadsMap.get(threadId);
-      const projectId = thread?.projectId;
-
-      return <LinearBoard teamId={teamId} apiKey={linearApiKey} projectId={projectId} />;
-    }
-
     case "browser": {
-      const url = props?.url;
+      const url = data?.url as string | undefined;
       return (
         <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
           <p className="text-sm">Browser Panel</p>
-          {url != null && <p className="text-xs mt-2">URL: {String(url)}</p>}
+          {url && <p className="text-xs mt-2">URL: {url}</p>}
         </div>
       );
     }
@@ -86,13 +56,23 @@ export function PanelContent({ type, props, threadId }: PanelContentProps) {
       return (
         <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
           <p className="text-sm">Preview Panel</p>
+          <p className="text-xs mt-2 text-muted-foreground/60">iOS Simulator / Web Preview</p>
         </div>
       );
 
-    case "diff":
+    case "tasks":
       return (
         <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Diff Panel</p>
+          <p className="text-sm">Tasks Panel</p>
+          <p className="text-xs mt-2 text-muted-foreground/60">Kanban board coming soon</p>
+        </div>
+      );
+
+    case "code":
+      return (
+        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
+          <p className="text-sm">Code Panel</p>
+          <p className="text-xs mt-2 text-muted-foreground/60">Diff view / File browser</p>
         </div>
       );
 

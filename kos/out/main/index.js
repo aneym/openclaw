@@ -41,6 +41,14 @@ function trackWindowState(win) {
   win.on("move", saveState);
   win.on("close", saveState);
 }
+let kosNative = null;
+if (process.platform === "darwin") {
+  try {
+    kosNative = require("kos-native");
+  } catch (err) {
+    console.warn("Failed to load kos-native addon:", err);
+  }
+}
 if (utils.is.dev) {
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
@@ -61,6 +69,79 @@ electron.ipcMain.handle("dialog:openDirectory", async () => {
     properties: ["openDirectory", "createDirectory"],
   });
   return result;
+});
+const activeCaptures = /* @__PURE__ */ new Map();
+electron.ipcMain.handle("simulator:list-windows", async () => {
+  if (!kosNative) return [];
+  return kosNative.listSimulatorWindows();
+});
+electron.ipcMain.handle("simulator:has-screen-permission", () => {
+  if (!kosNative) return false;
+  return kosNative.hasScreenRecordingPermission();
+});
+electron.ipcMain.handle("simulator:request-screen-permission", () => {
+  if (!kosNative) return;
+  kosNative.requestScreenRecordingPermission();
+});
+electron.ipcMain.handle("simulator:has-accessibility-permission", () => {
+  if (!kosNative) return false;
+  return kosNative.hasAccessibilityPermission();
+});
+electron.ipcMain.handle("simulator:request-accessibility-permission", () => {
+  if (!kosNative) return;
+  kosNative.requestAccessibilityPermission();
+});
+electron.ipcMain.handle("simulator:start-capture", async (event, windowId, config) => {
+  if (!kosNative) return { success: false, error: "Native addon not available" };
+  const existingStop = activeCaptures.get(windowId);
+  if (existingStop) {
+    existingStop();
+    activeCaptures.delete(windowId);
+  }
+  try {
+    const stopFn = await kosNative.startCapture(
+      windowId,
+      config,
+      (frame) => {
+        event.sender.send("simulator:frame", windowId, {
+          buffer: frame.buffer,
+          width: frame.width,
+          height: frame.height,
+          bytesPerRow: frame.bytesPerRow,
+          timestamp: frame.timestamp,
+        });
+      },
+      (error) => {
+        event.sender.send("simulator:error", windowId, error.message);
+      },
+    );
+    activeCaptures.set(windowId, stopFn);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
+});
+electron.ipcMain.handle("simulator:stop-capture", (_, windowId) => {
+  const stopFn = activeCaptures.get(windowId);
+  if (stopFn) {
+    stopFn();
+    activeCaptures.delete(windowId);
+  }
+});
+electron.ipcMain.handle("simulator:inject-tap", (_, windowId, x, y) => {
+  if (!kosNative) return;
+  kosNative.injectTap(windowId, x, y);
+});
+electron.ipcMain.handle(
+  "simulator:inject-swipe",
+  (_, windowId, startX, startY, endX, endY, durationMs) => {
+    if (!kosNative) return;
+    kosNative.injectSwipe(windowId, startX, startY, endX, endY, durationMs);
+  },
+);
+electron.ipcMain.handle("simulator:inject-text", (_, windowId, text) => {
+  if (!kosNative) return;
+  kosNative.injectText(windowId, text);
 });
 function createMenu() {
   const isMac = process.platform === "darwin";

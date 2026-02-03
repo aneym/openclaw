@@ -8,7 +8,7 @@ import type { ChatMessage, MessagePart } from "../types/message";
 /**
  * Normalize a raw gateway message into our ChatMessage parts model.
  */
-export function normalizeMessage(raw: unknown, threadId: string): ChatMessage {
+export function normalizeMessage(raw: unknown, chatId: string): ChatMessage {
   const m = raw as Record<string, unknown>;
 
   const parts: MessagePart[] = [];
@@ -65,7 +65,7 @@ export function normalizeMessage(raw: unknown, threadId: string): ChatMessage {
     role: normalizeRole(m.role as string),
     parts,
     createdAt: (m.timestamp as number) ?? Date.now(),
-    threadId,
+    chatId,
     metadata: m.metadata as Record<string, unknown> | undefined,
   };
 }

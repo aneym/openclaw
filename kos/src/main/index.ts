@@ -6,6 +6,16 @@ import { join } from "path";
 import icon from "../../resources/icon.png?asset";
 import { restoreWindowState, trackWindowState } from "./window-state";
 
+// Conditionally import native addon (macOS only)
+let kosNative: typeof import("kos-native") | null = null;
+if (process.platform === "darwin") {
+  try {
+    kosNative = require("kos-native");
+  } catch (err) {
+    console.warn("Failed to load kos-native addon:", err);
+  }
+}
+
 // Suppress CSP warning in dev mode (unsafe-eval is required for Vite HMR)
 // The warning says it won't show in packaged apps anyway
 if (is.dev) {
@@ -32,6 +42,107 @@ ipcMain.handle("dialog:openDirectory", async () => {
     properties: ["openDirectory", "createDirectory"],
   });
   return result;
+});
+
+// iOS Simulator capture handlers (macOS only)
+const activeCaptures = new Map<number, () => void>();
+
+ipcMain.handle("simulator:list-windows", async () => {
+  if (!kosNative) return [];
+  return kosNative.listSimulatorWindows();
+});
+
+ipcMain.handle("simulator:has-screen-permission", () => {
+  if (!kosNative) return false;
+  return kosNative.hasScreenRecordingPermission();
+});
+
+ipcMain.handle("simulator:request-screen-permission", () => {
+  if (!kosNative) return;
+  kosNative.requestScreenRecordingPermission();
+});
+
+ipcMain.handle("simulator:has-accessibility-permission", () => {
+  if (!kosNative) return false;
+  return kosNative.hasAccessibilityPermission();
+});
+
+ipcMain.handle("simulator:request-accessibility-permission", () => {
+  if (!kosNative) return;
+  kosNative.requestAccessibilityPermission();
+});
+
+ipcMain.handle(
+  "simulator:start-capture",
+  async (event, windowId: number, config: { fps?: number; scaleFactor?: number }) => {
+    if (!kosNative) return { success: false, error: "Native addon not available" };
+
+    // Stop any existing capture for this window
+    const existingStop = activeCaptures.get(windowId);
+    if (existingStop) {
+      existingStop();
+      activeCaptures.delete(windowId);
+    }
+
+    try {
+      const stopFn = await kosNative.startCapture(
+        windowId,
+        config,
+        (frame) => {
+          // Send frame to renderer
+          event.sender.send("simulator:frame", windowId, {
+            buffer: frame.buffer,
+            width: frame.width,
+            height: frame.height,
+            bytesPerRow: frame.bytesPerRow,
+            timestamp: frame.timestamp,
+          });
+        },
+        (error) => {
+          event.sender.send("simulator:error", windowId, error.message);
+        },
+      );
+
+      activeCaptures.set(windowId, stopFn);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  },
+);
+
+ipcMain.handle("simulator:stop-capture", (_, windowId: number) => {
+  const stopFn = activeCaptures.get(windowId);
+  if (stopFn) {
+    stopFn();
+    activeCaptures.delete(windowId);
+  }
+});
+
+ipcMain.handle("simulator:inject-tap", (_, windowId: number, x: number, y: number) => {
+  if (!kosNative) return;
+  kosNative.injectTap(windowId, x, y);
+});
+
+ipcMain.handle(
+  "simulator:inject-swipe",
+  (
+    _,
+    windowId: number,
+    startX: number,
+    startY: number,
+    endX: number,
+    endY: number,
+    durationMs: number,
+  ) => {
+    if (!kosNative) return;
+    kosNative.injectSwipe(windowId, startX, startY, endX, endY, durationMs);
+  },
+);
+
+ipcMain.handle("simulator:inject-text", (_, windowId: number, text: string) => {
+  if (!kosNative) return;
+  kosNative.injectText(windowId, text);
 });
 
 function createMenu(): void {

@@ -1,85 +1,37 @@
-import { useEffect, useMemo, useState } from "react";
-import { useWorkspaceStore } from "../../stores/workspace-store";
-import { Button } from "../ui/button";
-import { Input } from "../ui/input";
-import { Label } from "../ui/label";
+import { useGatewayStore } from "../../stores/gateway-store";
 
 export function ConnectionSettings() {
-  const activeWorkspace = useWorkspaceStore((s) => s.activeWorkspace);
-  const updateWorkspace = useWorkspaceStore((s) => s.updateWorkspace);
-  const [gatewayUrl, setGatewayUrl] = useState(activeWorkspace?.gatewayUrl ?? "");
-  const [gatewayToken, setGatewayToken] = useState(activeWorkspace?.gatewayToken ?? "");
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    setGatewayUrl(activeWorkspace?.gatewayUrl ?? "");
-    setGatewayToken(activeWorkspace?.gatewayToken ?? "");
-  }, [activeWorkspace?.id]);
-
-  const canSave = useMemo(() => {
-    if (!activeWorkspace) {
-      return false;
-    }
-    return (
-      gatewayUrl.trim() !== (activeWorkspace.gatewayUrl ?? "") ||
-      gatewayToken.trim() !== (activeWorkspace.gatewayToken ?? "")
-    );
-  }, [activeWorkspace, gatewayToken, gatewayUrl]);
-
-  const handleSave = () => {
-    if (!activeWorkspace) {
-      return;
-    }
-    setSaving(true);
-    updateWorkspace(activeWorkspace.id, {
-      gatewayUrl: gatewayUrl.trim(),
-      gatewayToken: gatewayToken.trim() || undefined,
-    });
-    setSaving(false);
-  };
-
-  if (!activeWorkspace) {
-    return null;
-  }
+  const connected = useGatewayStore((s) => s.connected);
+  const error = useGatewayStore((s) => s.error);
 
   return (
     <div className="space-y-6">
       <div>
         <h2 className="text-2xl font-bold mb-2">Connection</h2>
         <p className="text-sm text-muted-foreground">
-          Configure the gateway URL and token for this workspace.
+          Gateway connection status and configuration.
         </p>
       </div>
 
       <div className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="gateway-url">Gateway URL</Label>
-          <Input
-            id="gateway-url"
-            value={gatewayUrl}
-            onChange={(e) => setGatewayUrl(e.target.value)}
-            placeholder="ws://localhost:18789"
-          />
+        <div className="p-4 rounded-lg border border-border bg-muted/30">
+          <div className="flex items-center gap-3">
+            <div
+              className={`w-3 h-3 rounded-full ${connected ? "bg-green-500" : error ? "bg-red-500" : "bg-yellow-500"}`}
+            />
+            <div>
+              <div className="font-medium">
+                {connected ? "Connected" : error ? "Disconnected" : "Connecting..."}
+              </div>
+              {error && <div className="text-sm text-destructive">{error}</div>}
+            </div>
+          </div>
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="gateway-token">Gateway Token</Label>
-          <Input
-            id="gateway-token"
-            type="password"
-            value={gatewayToken}
-            onChange={(e) => setGatewayToken(e.target.value)}
-            placeholder="Paste your gateway token"
-          />
-          <p className="text-xs text-muted-foreground">
-            Required when gateway auth mode is token (default).
-          </p>
-        </div>
-      </div>
 
-      <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={!canSave || saving}>
-          {saving ? "Saving..." : "Save"}
-        </Button>
+        <p className="text-xs text-muted-foreground">
+          Gateway URL is auto-detected from your OpenClaw configuration. To change the gateway URL
+          or token, update your OpenClaw config file.
+        </p>
       </div>
     </div>
   );

@@ -7,10 +7,10 @@ import {
   Archive,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import type { PanelType } from "../../types";
+import type { Chat, PanelType } from "../../types";
 import { useSession } from "../../gateway/hooks";
 import { useSessionActions } from "../../hooks/use-session-actions";
-import { useThreadStore } from "../../stores/thread-store";
+import { useChatStore } from "../../stores/chat-store";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -24,22 +24,32 @@ interface PanelToolbarProps {
   panelId: string;
   panelType: PanelType;
   title?: string;
-  threadId: string;
+  workspaceId: string;
+  activeChatId?: string;
   onSplit?: (direction: "horizontal" | "vertical") => void;
   onClose?: () => void;
 }
 
-export function PanelToolbar({ panelType, title, threadId, onSplit, onClose }: PanelToolbarProps) {
-  // Get thread data for session actions
-  const threadsMap = useThreadStore((s) => s.threads);
-  const thread = useMemo(() => threadsMap.get(threadId), [threadsMap, threadId]);
-  const sessionKey = thread?.sessionKey ?? "";
+export function PanelToolbar({
+  panelType,
+  title,
+  activeChatId,
+  onSplit,
+  onClose,
+}: PanelToolbarProps) {
+  // Get chat data for session actions
+  const chatsMap = useChatStore((s) => s.chats);
+  const chat = useMemo(
+    () => (activeChatId ? (chatsMap.get(activeChatId) as Chat | undefined) : undefined),
+    [chatsMap, activeChatId],
+  );
+  const sessionKey = chat?.sessionKey ?? "";
 
   // Session state and actions (only used for chat panels)
   const { isStreaming } = useSession(sessionKey);
   const { archive, reload, copySessionKey, isLoading, connected } = useSessionActions(
     sessionKey,
-    threadId,
+    activeChatId ?? "",
   );
 
   const [isReloading, setIsReloading] = useState(false);
@@ -155,20 +165,18 @@ function getPanelIcon(type: PanelType): string {
   switch (type) {
     case "chat":
       return "💬";
-    case "code-editor":
-      return "📄";
-    case "terminal":
-      return "⌨️";
     case "coding-session":
       return "🔨";
-    case "linear-board":
-      return "📋";
+    case "terminal":
+      return "⌨️";
     case "browser":
       return "🌐";
     case "preview":
       return "👁️";
-    case "diff":
-      return "🔄";
+    case "tasks":
+      return "📋";
+    case "code":
+      return "📄";
     case "empty":
       return "⬜";
     default:
@@ -180,20 +188,18 @@ function getPanelTitle(type: PanelType): string {
   switch (type) {
     case "chat":
       return "Chat";
-    case "code-editor":
-      return "Code Editor";
-    case "terminal":
-      return "Terminal";
     case "coding-session":
       return "Coding Session";
-    case "linear-board":
-      return "Linear Board";
+    case "terminal":
+      return "Terminal";
     case "browser":
       return "Browser";
     case "preview":
       return "Preview";
-    case "diff":
-      return "Diff";
+    case "tasks":
+      return "Tasks";
+    case "code":
+      return "Code";
     case "empty":
       return "Empty Panel";
     default:

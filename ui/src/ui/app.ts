@@ -365,6 +365,7 @@ export class OpenClawApp extends LitElement {
   private chatScrollTimeout: number | null = null;
   private chatHasAutoScrolled = false;
   private chatUserNearBottom = true;
+  private chatUserScrolledAway = false;
   nodesPollInterval: number | null = null;
   logsPollInterval: number | null = null;
   debugPollInterval: number | null = null;
@@ -1502,6 +1503,11 @@ export class OpenClawApp extends LitElement {
       this._focusPaneTimer = null;
       // Stale-check: if focus moved elsewhere before this timer fired, bail.
       if (this.focusedPaneId !== paneId) {
+        return;
+      }
+      // Don't steal focus if user is selecting text (e.g. copy-paste from messages)
+      const sel = window.getSelection();
+      if (sel && sel.toString().length > 0) {
         return;
       }
       const paneEl = document.querySelector(`.split-pane[data-pane-id="${paneId}"]`);

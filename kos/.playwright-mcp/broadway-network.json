@@ -1,0 +1,16 @@
+[POST] https://checkout.broadway.com/_fs-ch-1T1wmsGaOgGaSxcX/pat?token=Ady1z4f8KCN3ZY3gbV1uTikRS9-aBLkAFAuHT8FdhYyKqMUAelnybwvrWPsF1GQNuB9sOH2GACjbvdSUNYGTjN1WLCI7orIMX9tDob8_TOxZGrF8Yvqg32SKwrufdmvMSMNzHZKKX1xT1YvxgttCcMv4Q_qyn7w6sFQvJR-5-vFXLKTdDrFVI3k01mZBQb6wA_KKRQSN-roNPJZLfqnASMCcr6NnHnCgjWpGq5cZMjbQVCc7Kt6uObfvRULqwMG90vt3lHsyzL0JM5nzZhRr-Cyno2mx_FoCgf-YRdY1-uGTXbsHduJY2-Cnp_uV7HiNDU6QsLMFfudUYw9Bx0zS_DWtAuSiRPu29OH4n5eqXSJFro1qjJQCRFEMXZr_e8XPJ0XYg2GpVQMxG94LnYc9YKhSmdu3ixpSAV4iE5ZDtT8= => [401] 
+[POST] https://checkout.broadway.com/_fs-ch-1T1wmsGaOgGaSxcX/fst-post-back => [200] 
+[GET] https://pagead2.googlesyndication.com/pagead/gen_204?id=av-js&type=fle-fetch-later2 => [204] 
+[GET] https://pagead2.googlesyndication.com/pagead/gen_204?id=av-js&type=fle-fetch-later2
+[GET] https://pagead2.googlesyndication.com/pagead/gen_204?id=av-js&type=fle-fetch-later2
+[GET] https://checkout.broadway.com/fastly/logo => [200] 
+[POST] https://checkout.broadway.com/_fs-ch-1T1wmsGaOgGaSxcX/fst-post-back => [200] 
+[GET] https://checkout.broadway.com/_fs-ch-1T1wmsGaOgGaSxcX/check-detection => [200] 
+[GET] https://cdn.cookielaw.org/consent/359011cc-1e09-4df1-8708-fc5787e9f206/359011cc-1e09-4df1-8708-fc5787e9f206.json => [200] 
+[GET] https://geolocation.onetrust.com/cookieconsentpub/v1/geo/location => [200] 
+[GET] https://cdn.cookielaw.org/consent/359011cc-1e09-4df1-8708-fc5787e9f206/019ae58c-f6b8-7650-8520-7f90145fbc15/en.json => [200] 
+[GET] https://checkout.broadway.com/every-brilliant-thing/13228/calendar/2026/02/
+[GET] https://cdn.optimizely.com/datafiles/S17qKEy2JxC6mikgnTTmaC.json
+[GET] https://cdn.cookielaw.org/scripttemplates/202508.2.0/assets/otFloatingRounded.json => [200] 
+[GET] https://cdn.cookielaw.org/scripttemplates/202508.2.0/assets/v2/otPcCenter.json => [200] 
+[GET] https://cdn.cookielaw.org/scripttemplates/202508.2.0/assets/otCommonStyles.css => [200] 

@@ -1,14 +1,14 @@
 import { useCallback, useState } from "react";
 import { notifications } from "../lib/notifications";
+import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
-import { useThreadStore } from "../stores/thread-store";
 
 interface SessionActionsState {
   isLoading: boolean;
   error: string | null;
 }
 
-export function useSessionActions(sessionKey: string, threadId: string) {
+export function useSessionActions(sessionKey: string, chatId: string) {
   const [state, setState] = useState<SessionActionsState>({
     isLoading: false,
     error: null,
@@ -16,8 +16,7 @@ export function useSessionActions(sessionKey: string, threadId: string) {
 
   const request = useGatewayStore((s) => s.request);
   const connected = useGatewayStore((s) => s.connected);
-  const archiveThread = useThreadStore((s) => s.archiveThread);
-  const unarchiveThread = useThreadStore((s) => s.unarchiveThread);
+  const archiveChat = useChatStore((s) => s.archiveChat);
 
   const archive = useCallback(async () => {
     if (!connected) {
@@ -29,7 +28,7 @@ export function useSessionActions(sessionKey: string, threadId: string) {
 
     try {
       await request("sessions.patch", { key: sessionKey, archived: true });
-      archiveThread(threadId);
+      archiveChat(chatId);
       notifications.sessionArchived(sessionKey);
       setState({ isLoading: false, error: null });
       return true;
@@ -39,29 +38,7 @@ export function useSessionActions(sessionKey: string, threadId: string) {
       notifications.rpcError("sessions.patch", message);
       return false;
     }
-  }, [connected, request, sessionKey, threadId, archiveThread]);
-
-  const unarchive = useCallback(async () => {
-    if (!connected) {
-      notifications.error("Not connected", "Cannot unarchive session while disconnected");
-      return false;
-    }
-
-    setState({ isLoading: true, error: null });
-
-    try {
-      await request("sessions.patch", { key: sessionKey, archived: false });
-      unarchiveThread(threadId);
-      notifications.sessionUnarchived(sessionKey);
-      setState({ isLoading: false, error: null });
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setState({ isLoading: false, error: message });
-      notifications.rpcError("sessions.patch", message);
-      return false;
-    }
-  }, [connected, request, sessionKey, threadId, unarchiveThread]);
+  }, [connected, request, sessionKey, chatId, archiveChat]);
 
   const reload = useCallback(async () => {
     if (!connected) {
@@ -99,7 +76,6 @@ export function useSessionActions(sessionKey: string, threadId: string) {
     ...state,
     connected,
     archive,
-    unarchive,
     reload,
     copySessionKey,
   };
