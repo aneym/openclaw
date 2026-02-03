@@ -10,7 +10,6 @@ import type { GatewayBrowserClient, GatewayHelloOk } from "./gateway";
 import type { Tab } from "./navigation";
 import type { SplitPaneLayout, SplitDirection } from "./split-tree";
 import type { ResolvedTheme, ThemeMode } from "./theme";
-import { parseStreamEvents, detectCurrentPhase } from "./views/coding-panel.js";
 import type { ThreadState } from "./thread-state";
 import type {
   AgentsListResult,
@@ -121,6 +120,7 @@ import {
   type ModelCatalogEntry,
   type SlashCommandEntry,
 } from "./ui-types";
+import { parseStreamEvents, detectCurrentPhase } from "./views/coding-panel.js";
 
 declare global {
   interface Window {
@@ -195,10 +195,11 @@ export class OpenClawApp extends LitElement {
 
   // Coding sessions panel
   @state() codingPanelOpen = false;
-  @state() codingSessions: import('./views/coding-panel').CodingSession[] = [];
+  @state() codingSessions: import("./views/coding-panel").CodingSession[] = [];
   @state() codingExpanded: Set<string> = new Set();
-  @state() codingSessionEvents: Map<string, import('./views/coding-panel').StreamEvent[]> = new Map();
-  @state() codingSessionPhases: Map<string, import('./views/coding-panel').Phase> = new Map();
+  @state() codingSessionEvents: Map<string, import("./views/coding-panel").StreamEvent[]> =
+    new Map();
+  @state() codingSessionPhases: Map<string, import("./views/coding-panel").Phase> = new Map();
   @state() codingTerminalOpen: string | null = null;
   @state() codingQuestions: Map<string, { question: string; toolUseId: string }> = new Map();
   private codingPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -735,7 +736,9 @@ export class OpenClawApp extends LitElement {
   }
 
   private get codingBaseUrl() {
-    return this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`;
+    return (
+      this.settings.gatewayUrl?.replace(/^ws/, "http") || `${location.protocol}//${location.host}`
+    );
   }
 
   async fetchCodingSessions() {
@@ -746,18 +749,28 @@ export class OpenClawApp extends LitElement {
         this.codingSessions = data.sessions || [];
         // Fetch logs for all active or expanded sessions
         for (const s of this.codingSessions) {
-          if (s.execSessionId && (s.status === "running" || s.status === "starting" || this.codingExpanded.has(s.id) || this.codingTerminalOpen === s.id)) {
+          if (
+            s.execSessionId &&
+            (s.status === "running" ||
+              s.status === "starting" ||
+              this.codingExpanded.has(s.id) ||
+              this.codingTerminalOpen === s.id)
+          ) {
             void this.fetchCodingLog(s.id);
           }
         }
       }
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   }
 
   async fetchCodingLog(id: string) {
     try {
       const offset = this.codingLogOffsets.get(id) || 0;
-      const res = await fetch(`${this.codingBaseUrl}/api/coding-sessions/${id}/log?offset=${offset}&limit=200`);
+      const res = await fetch(
+        `${this.codingBaseUrl}/api/coding-sessions/${id}/log?offset=${offset}&limit=200`,
+      );
       if (!res.ok) return;
       const data = await res.json();
       if (!data.lines && data.totalLines === 0) return;
@@ -780,10 +793,15 @@ export class OpenClawApp extends LitElement {
         this.codingSessionPhases = nextPhases;
 
         // Detect pending questions (AskUserQuestion tool calls)
-        const lastQuestion = [...newEvents].reverse().find(e => e.type === "question" && e.question);
+        const lastQuestion = [...newEvents]
+          .reverse()
+          .find((e) => e.type === "question" && e.question);
         const nextQuestions = new Map(this.codingQuestions);
         if (lastQuestion?.question && lastQuestion?.toolUseId) {
-          nextQuestions.set(id, { question: lastQuestion.question, toolUseId: lastQuestion.toolUseId });
+          nextQuestions.set(id, {
+            question: lastQuestion.question,
+            toolUseId: lastQuestion.toolUseId,
+          });
         }
         this.codingQuestions = nextQuestions;
       }
@@ -792,7 +810,9 @@ export class OpenClawApp extends LitElement {
       if (data.totalLines > 0) {
         this.codingLogOffsets.set(id, data.totalLines);
       }
-    } catch { /* silent */ }
+    } catch {
+      /* silent */
+    }
   }
 
   startCodingPoll() {
@@ -1057,9 +1077,7 @@ export class OpenClawApp extends LitElement {
       // Flush queued messages — if this thread's run completed while it was
       // in the background, its queue was never flushed (the background handler
       // clears chatRunId but doesn't trigger a flush).
-      void flushChatQueueForEvent(
-        this as unknown as Parameters<typeof flushChatQueueForEvent>[0],
-      );
+      void flushChatQueueForEvent(this as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
     });
 
     // Persist active thread
@@ -1947,7 +1965,9 @@ export class OpenClawApp extends LitElement {
     try {
       const res = await this.client.request("models.list", {});
       const payload = res as { models?: unknown[] } | undefined;
-      this.modelsList = (Array.isArray(payload?.models) ? payload.models : []) as ModelCatalogEntry[];
+      this.modelsList = (
+        Array.isArray(payload?.models) ? payload.models : []
+      ) as ModelCatalogEntry[];
       this.modelsError = null;
     } catch (err) {
       this.modelsError = String(err);
@@ -1957,10 +1977,16 @@ export class OpenClawApp extends LitElement {
   }
 
   async handleModelSelect(modelRef: string) {
-    this.applySettings({
-      ...this.settings,
-      selectedModel: modelRef,
-    });
+    this.applySettings({ ...this.settings, selectedModel: modelRef });
+    if (!this.client || !this.connected || !this.sessionKey) return;
+    try {
+      await this.client.request("sessions.patch", {
+        key: this.sessionKey,
+        model: modelRef || null,
+      });
+    } catch {
+      /* non-critical */
+    }
   }
 
   async handleModelsConfigLoad() {
@@ -1970,8 +1996,27 @@ export class OpenClawApp extends LitElement {
     try {
       // Load both the model catalog (effective providers) and raw config
       const [catalogResult, configResult] = await Promise.all([
-        this.client.request<{ models?: Array<{ provider: string; id: string; name: string; contextWindow?: number; maxTokens?: number; reasoning?: boolean; input?: string[]; cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number } }> }>("models.list", {}),
-        this.client.request<{ hash: string; config?: { models?: { providers?: Record<string, import("./views/models").ModelProvider>; visibleModels?: string[] } } }>("config.get", {}),
+        this.client.request<{
+          models?: Array<{
+            provider: string;
+            id: string;
+            name: string;
+            contextWindow?: number;
+            maxTokens?: number;
+            reasoning?: boolean;
+            input?: string[];
+            cost?: { input: number; output: number; cacheRead?: number; cacheWrite?: number };
+          }>;
+        }>("models.list", {}),
+        this.client.request<{
+          hash: string;
+          config?: {
+            models?: {
+              providers?: Record<string, import("./views/models").ModelProvider>;
+              visibleModels?: string[];
+            };
+          };
+        }>("config.get", {}),
       ]);
 
       // Store the config hash for optimistic concurrency
@@ -2020,7 +2065,7 @@ export class OpenClawApp extends LitElement {
             name: providerName,
             baseUrl: "",
             apiKey: "",
-            models: sortedModels.map(m => ({
+            models: sortedModels.map((m) => ({
               id: m.id,
               name: m.name,
               api: "anthropic-messages" as const,
@@ -2069,7 +2114,10 @@ export class OpenClawApp extends LitElement {
       }
 
       // Convert Array<Provider> to Record<string, Provider>, filtering out implicit providers
-      const providersRecord: Record<string, Omit<import("./views/models").ModelProvider, "name" | "isImplicit">> = {};
+      const providersRecord: Record<
+        string,
+        Omit<import("./views/models").ModelProvider, "name" | "isImplicit">
+      > = {};
       for (const provider of this.modelsConfig.providers) {
         if (provider.isImplicit) continue; // Skip auth-based providers like Anthropic
         const { name, isImplicit, ...providerConfig } = provider;
@@ -2078,7 +2126,9 @@ export class OpenClawApp extends LitElement {
 
       // Use config.set with baseHash for optimistic concurrency
       await this.client.request("config.set", {
-        raw: JSON.stringify({ models: { providers: providersRecord, visibleModels: this.visibleModels } }),
+        raw: JSON.stringify({
+          models: { providers: providersRecord, visibleModels: this.visibleModels },
+        }),
         baseHash,
       });
 
@@ -2095,7 +2145,7 @@ export class OpenClawApp extends LitElement {
     if (visible) {
       this.visibleModels = [...this.visibleModels, modelRef];
     } else {
-      this.visibleModels = this.visibleModels.filter(m => m !== modelRef);
+      this.visibleModels = this.visibleModels.filter((m) => m !== modelRef);
     }
   }
 

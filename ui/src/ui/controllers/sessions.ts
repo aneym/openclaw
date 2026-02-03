@@ -1,6 +1,6 @@
 import type { GatewayBrowserClient } from "../gateway";
-import { toNumber } from "../format";
 import type { SessionsListResult } from "../types";
+import { toNumber } from "../format";
 
 export type SessionsState = {
   client: GatewayBrowserClient | null;
@@ -30,8 +30,7 @@ export async function loadSessions(
   try {
     const includeGlobal = overrides?.includeGlobal ?? state.sessionsIncludeGlobal;
     const includeUnknown = overrides?.includeUnknown ?? state.sessionsIncludeUnknown;
-    const activeMinutes =
-      overrides?.activeMinutes ?? toNumber(state.sessionsFilterActive, 0);
+    const activeMinutes = overrides?.activeMinutes ?? toNumber(state.sessionsFilterActive, 0);
     const limit = overrides?.limit ?? toNumber(state.sessionsFilterLimit, 0);
     const params: Record<string, unknown> = {
       includeGlobal,
@@ -60,6 +59,7 @@ export async function patchSession(
     thinkingLevel?: string | null;
     verboseLevel?: string | null;
     reasoningLevel?: string | null;
+    model?: string | null;
     archived?: boolean | null;
   },
 ) {
@@ -70,6 +70,7 @@ export async function patchSession(
   if ("thinkingLevel" in patch) params.thinkingLevel = patch.thinkingLevel;
   if ("verboseLevel" in patch) params.verboseLevel = patch.verboseLevel;
   if ("reasoningLevel" in patch) params.reasoningLevel = patch.reasoningLevel;
+  if ("model" in patch) params.model = patch.model;
   if ("archived" in patch) params.archived = patch.archived;
   try {
     await state.client.request("sessions.patch", params);
