@@ -83,7 +83,7 @@ import {
 } from "./app-tool-stream";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity";
-import { loadChatHistory } from "./controllers/chat";
+import { loadChatHistory, markAbortPending } from "./controllers/chat";
 import { fetchFileContent } from "./controllers/file";
 import { patchSession } from "./controllers/sessions";
 import { loadDraft, loadAttachments, loadQueue } from "./draft-storage";
@@ -489,6 +489,7 @@ export class OpenClawApp extends LitElement {
 
   async abortThreadRun(sessionKey: string, runId: string): Promise<boolean> {
     if (!this.client || !this.connected) {
+      markAbortPending(sessionKey);
       return false;
     }
     try {
@@ -496,6 +497,7 @@ export class OpenClawApp extends LitElement {
       return true;
     } catch (err) {
       this.lastError = String(err);
+      markAbortPending(sessionKey);
       return false;
     }
   }

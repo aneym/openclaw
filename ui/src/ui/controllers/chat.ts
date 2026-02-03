@@ -4,6 +4,24 @@ import type { ChatAttachment } from "../ui-types";
 import { extractText } from "../chat/message-extract";
 import { generateUUID } from "../uuid";
 
+// ── Pending abort tracking ──────────────────────────────────────────
+// When the user clicks stop while disconnected (or the abort RPC fails),
+// the intent is preserved here and retried after reconnect.
+const pendingAbortSessionKeys = new Set<string>();
+
+export function markAbortPending(sessionKey: string) {
+  pendingAbortSessionKeys.add(sessionKey);
+}
+
+export function clearAbortPending(sessionKey: string) {
+  pendingAbortSessionKeys.delete(sessionKey);
+}
+
+export function hasPendingAbort(sessionKey: string): boolean {
+  return pendingAbortSessionKeys.has(sessionKey);
+}
+// ─────────────────────────────────────────────────────────────────────
+
 export type ChatState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
@@ -151,6 +169,8 @@ export async function sendChatMessage(
 
 export async function abortChatRun(state: ChatState): Promise<boolean> {
   if (!state.client || !state.connected) {
+    // Connection is down — queue the abort intent for retry after reconnect.
+    markAbortPending(state.sessionKey);
     return false;
   }
   const runId = state.chatRunId;
@@ -159,9 +179,12 @@ export async function abortChatRun(state: ChatState): Promise<boolean> {
       "chat.abort",
       runId ? { sessionKey: state.sessionKey, runId } : { sessionKey: state.sessionKey },
     );
+    clearAbortPending(state.sessionKey);
     return true;
   } catch (err) {
     state.lastError = String(err);
+    // RPC failed (e.g. WS dropped mid-request) — queue for retry.
+    markAbortPending(state.sessionKey);
     return false;
   }
 }
@@ -205,16 +228,19 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    clearAbortPending(state.sessionKey);
   } else if (payload.state === "aborted") {
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
+    clearAbortPending(state.sessionKey);
   } else if (payload.state === "error") {
     console.log('[UI-CHAT] Received error state:', payload.errorMessage);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     state.lastError = payload.errorMessage ?? "chat error";
+    clearAbortPending(state.sessionKey);
   }
   return payload.state;
 }

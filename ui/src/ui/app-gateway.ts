@@ -28,7 +28,12 @@ import {
 } from "./app-tool-stream";
 import { loadAgents } from "./controllers/agents";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
-import { loadChatHistory } from "./controllers/chat";
+import {
+  abortChatRun,
+  clearAbortPending,
+  hasPendingAbort,
+  loadChatHistory,
+} from "./controllers/chat";
 import {
   handleChatEvent,
   handleChatEventForThread,
@@ -224,6 +229,29 @@ export function connectGateway(host: GatewayHost) {
             resetToolStreamForThread(thread);
           }
         }
+
+        // ── Retry pending aborts ──────────────────────────────────────
+        // If the user clicked stop while disconnected (or the abort RPC
+        // failed mid-flight), the intent was queued. Now that we're
+        // reconnected and know which runs are active, retry the abort.
+        if (hasPendingAbort(host.sessionKey) && host.chatRunId) {
+          clearAbortPending(host.sessionKey);
+          void abortChatRun(host as unknown as OpenClawApp);
+        }
+        // Also check visible split-pane threads
+        for (const thread of host.threads.values()) {
+          const threadSessionKey = thread.descriptor?.sessionKey;
+          if (threadSessionKey && hasPendingAbort(threadSessionKey) && thread.chatRunId) {
+            clearAbortPending(threadSessionKey);
+            if (host.client && host.connected) {
+              void host.client.request("chat.abort", {
+                sessionKey: threadSessionKey,
+                runId: thread.chatRunId,
+              }).catch(() => {});
+            }
+          }
+        }
+        // ──────────────────────────────────────────────────────────────
 
         // Flush queued messages — after reconnect, if no run is active,
         // queued messages would sit forever without this explicit flush.
