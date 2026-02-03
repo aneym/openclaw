@@ -300,11 +300,13 @@ export function renderChatPane(props: ChatPaneProps) {
         if (leaf.id !== state.focusedPaneId) {
           state.focusPane(leaf.id);
         } else {
-          // Already focused — still focus the textarea on click
-          // (unless the user clicked an interactive element)
+          // Already focused — focus the textarea on click, but only if
+          // the user isn't interacting with message content (text selection)
+          // or other interactive elements.
           const target = e.target as HTMLElement;
           const isInteractive = target.closest('button, a, input, textarea, select, [contenteditable], .chat-compose');
-          if (!isInteractive) {
+          const isMessageContent = target.closest('.chat-bubble, .chat-group-messages, .chat-message-images');
+          if (!isInteractive && !isMessageContent) {
             const paneEl = (e.currentTarget as HTMLElement);
             const textarea = paneEl.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
             if (textarea && !textarea.disabled) {

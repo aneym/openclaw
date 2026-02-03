@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGatewayStore } from '../stores/gateway-store';
 
 /** Individual selectors to avoid object creation on every render */
