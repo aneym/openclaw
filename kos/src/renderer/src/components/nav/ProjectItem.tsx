@@ -1,4 +1,4 @@
-import { ChevronRight, ChevronDown } from 'lucide-react'
+import { ChevronRight, ChevronDown, Settings } from 'lucide-react'
 import type { Project } from '../../types'
 import { useProjectStore } from '../../stores/project-store'
 
@@ -6,9 +6,10 @@ interface ProjectItemProps {
   project: Project
   threadCount: number
   onClick?: () => void
+  onSettingsClick?: () => void
 }
 
-export function ProjectItem({ project, threadCount, onClick }: ProjectItemProps) {
+export function ProjectItem({ project, threadCount, onClick, onSettingsClick }: ProjectItemProps) {
   const isExpanded = useProjectStore((s) => s.isExpanded(project.id))
   const toggleExpanded = useProjectStore((s) => s.toggleExpanded)
 
@@ -19,6 +20,11 @@ export function ProjectItem({ project, threadCount, onClick }: ProjectItemProps)
 
   const handleClick = () => {
     onClick?.()
+  }
+
+  const handleSettingsClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onSettingsClick?.()
   }
 
   return (
@@ -50,6 +56,15 @@ export function ProjectItem({ project, threadCount, onClick }: ProjectItemProps)
           {threadCount}
         </span>
       )}
+
+      {/* Settings button (visible on hover) */}
+      <button
+        onClick={handleSettingsClick}
+        className="shrink-0 opacity-0 group-hover:opacity-60 hover:opacity-100 transition-opacity"
+        title="Project settings"
+      >
+        <Settings className="h-3.5 w-3.5" />
+      </button>
     </button>
   )
 }

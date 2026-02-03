@@ -4,7 +4,9 @@ import { electronAPI } from '@electron-toolkit/preload'
 // Custom APIs for renderer
 const api = {
   getGatewayConfig: (): Promise<{ url: string; token?: string }> =>
-    ipcRenderer.invoke('get-gateway-config')
+    ipcRenderer.invoke('get-gateway-config'),
+  openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
+    ipcRenderer.invoke('dialog:openDirectory')
 }
 
 // Use `contextBridge` APIs to expose Electron APIs to

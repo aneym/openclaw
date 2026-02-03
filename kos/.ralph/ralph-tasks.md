@@ -59,7 +59,7 @@
 
 - [x] Build ProjectList in sidebar — expandable projects with thread count badge.
 - [x] Build WorkspaceSwitcher dropdown at top of sidebar — shows active workspace, switch between workspaces.
-- [ ] Build ProjectSettings modal/drawer — project name, icon, color, Linear team connection, repo path, enabled skills.
+- [x] Build ProjectSettings modal/drawer — project name, icon, color, Linear team connection, repo path, enabled skills.
 - [ ] Wire project click behavior: expand to show threads, or show Linear board in main area if no active thread.
 
 ## Section 7: Coding Session Panel (KOS-5)

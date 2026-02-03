@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { join } from 'path'
 import { readFileSync } from 'fs'
 import { homedir } from 'os'
@@ -18,6 +18,14 @@ ipcMain.handle('get-gateway-config', () => {
   } catch {
     return { url: 'ws://localhost:18789' }
   }
+})
+
+// Directory picker for project repository path
+ipcMain.handle('dialog:openDirectory', async () => {
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'createDirectory']
+  })
+  return result
 })
 
 function createWindow(): void {
