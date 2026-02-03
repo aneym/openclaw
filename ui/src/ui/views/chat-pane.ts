@@ -7,6 +7,7 @@ import type { AppViewState } from "../app-view-state";
 import type { PaneContextMenuCallbacks } from "../components/pane-context-menu";
 import type { PaneState } from "../pane-state";
 import type { SplitLeaf } from "../split-tree";
+import { renderModelPicker } from "../app-render.helpers";
 import { patchSession } from "../controllers/sessions";
 import { saveDraft, saveAttachments } from "../draft-storage";
 import {
@@ -20,11 +21,10 @@ import {
 } from "../split-dnd";
 import { allLeafIds, allLeaves } from "../split-tree";
 import { createThreadDescriptor, createThreadState } from "../thread-state";
-import { saveThreadDescriptors } from "../thread-storage";
 import "../components/pane-context-menu";
+import { saveThreadDescriptors } from "../thread-storage";
 import { renderChat, type ChatProps } from "./chat";
 import { humanizeSessionKey } from "./thread-list";
-import { renderModelPicker } from "../app-render.helpers";
 
 export interface ChatPaneProps {
   leaf: SplitLeaf;
@@ -156,6 +156,21 @@ export function renderChatPane(props: ChatPaneProps) {
     assistantAvatar: state.assistantAvatar,
     openSessionKeys,
     slashCommands: state.slashCommands,
+    onInteractiveSubmit: (payload) => {
+      // Send interactive payload as a user message
+      if (isActiveSession) {
+        state.chatMessage = payload;
+        void state.handleSendChat();
+      } else if (thread) {
+        thread.chatMessage = payload;
+        // Trigger a send for the thread by switching context temporarily
+        const prevKey = state.sessionKey;
+        state.sessionKey = sessionKey;
+        void state.handleSendChat().then(() => {
+          state.sessionKey = prevKey;
+        });
+      }
+    },
   };
 
   const handleDragOver = (e: DragEvent) => {
@@ -316,11 +331,15 @@ export function renderChatPane(props: ChatPaneProps) {
           // the user isn't interacting with message content (text selection)
           // or other interactive elements.
           const target = e.target as HTMLElement;
-          const isInteractive = target.closest('button, a, input, textarea, select, [contenteditable], .chat-compose');
-          const isMessageContent = target.closest('.chat-bubble, .chat-group-messages, .chat-message-images');
+          const isInteractive = target.closest(
+            "button, a, input, textarea, select, [contenteditable], .chat-compose",
+          );
+          const isMessageContent = target.closest(
+            ".chat-bubble, .chat-group-messages, .chat-message-images",
+          );
           if (!isInteractive && !isMessageContent) {
-            const paneEl = (e.currentTarget as HTMLElement);
-            const textarea = paneEl.querySelector<HTMLTextAreaElement>('.chat-compose textarea');
+            const paneEl = e.currentTarget as HTMLElement;
+            const textarea = paneEl.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
             if (textarea && !textarea.disabled) {
               textarea.focus();
             }

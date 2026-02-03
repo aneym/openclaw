@@ -6,6 +6,18 @@ import { icons } from "../icons";
 import { toSanitizedMarkdownHtml } from "../markdown";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
 import {
+  extractInteractiveBlocks,
+  formatButtonPayload,
+  formatSubmitPayload,
+  getBlockState,
+  isBlockInteractive,
+  markBlockCancelled,
+  markBlockSubmitted,
+  setBlockValue,
+  type InteractiveBlock,
+  type InteractiveElement,
+} from "./interactive-types";
+import {
   extractTextCached,
   extractThinkingCached,
   formatReasoningMarkdown,
@@ -134,6 +146,183 @@ function renderAudioPlayers(audioFiles: AudioBlock[]) {
           </div>
         `,
       )}
+    </div>
+  `;
+}
+
+// ── Interactive Component Rendering ─────────────────────────────────────────
+
+/**
+ * Dispatch a custom event to send an interactive submission as a chat message.
+ * The event bubbles up to the chat view which handles sending.
+ */
+function dispatchInteractiveSubmit(target: EventTarget, payload: string): void {
+  target.dispatchEvent(
+    new CustomEvent("interactive-submit", {
+      bubbles: true,
+      composed: true,
+      detail: { payload },
+    }),
+  );
+}
+
+/**
+ * Render a single checkbox element.
+ */
+function renderCheckboxElement(
+  block: InteractiveBlock,
+  el: Extract<InteractiveElement, { kind: "checkbox" }>,
+  state: ReturnType<typeof getBlockState>,
+  disabled: boolean,
+): unknown {
+  const checked = Boolean(state.values[el.id]);
+  const isDisabled = disabled || el.disabled;
+
+  const handleChange = (e: Event) => {
+    const input = e.target as HTMLInputElement;
+    setBlockValue(block.id, el.id, input.checked);
+    // Force re-render by dispatching a no-op event
+    input.dispatchEvent(new CustomEvent("interactive-update", { bubbles: true }));
+  };
+
+  return html`
+    <label class="interactive-checkbox ${isDisabled ? "interactive-checkbox--disabled" : ""}">
+      <input
+        type="checkbox"
+        class="interactive-checkbox__input"
+        .checked=${checked}
+        ?disabled=${isDisabled}
+        @change=${handleChange}
+      />
+      <span class="interactive-checkbox__label">${el.label}</span>
+    </label>
+  `;
+}
+
+/**
+ * Render a single button element.
+ */
+function renderButtonElement(
+  block: InteractiveBlock,
+  el: Extract<InteractiveElement, { kind: "button" }>,
+  disabled: boolean,
+): unknown {
+  const styleClass = el.style ? `interactive-button--${el.style}` : "";
+
+  const handleClick = (e: Event) => {
+    if (disabled) return;
+    const payload = formatButtonPayload(block.id, el.id);
+    dispatchInteractiveSubmit(e.target as EventTarget, payload);
+  };
+
+  return html`
+    <button
+      type="button"
+      class="interactive-button ${styleClass}"
+      ?disabled=${disabled}
+      @click=${handleClick}
+    >
+      ${el.label}
+    </button>
+  `;
+}
+
+/**
+ * Render a single interactive element based on its kind.
+ * M1+M2: Only checkbox and button are implemented.
+ */
+function renderInteractiveElement(
+  block: InteractiveBlock,
+  el: InteractiveElement,
+  state: ReturnType<typeof getBlockState>,
+  disabled: boolean,
+): unknown {
+  switch (el.kind) {
+    case "checkbox":
+      return renderCheckboxElement(block, el, state, disabled);
+    case "button":
+      return renderButtonElement(block, el, disabled);
+    // M3: radio, select, text elements
+    default:
+      return nothing;
+  }
+}
+
+/**
+ * Render a complete interactive block with elements and Done/Cancel buttons.
+ */
+function renderInteractiveBlock(block: InteractiveBlock): unknown {
+  const state = getBlockState(block);
+  const isInteractive = isBlockInteractive(block.id);
+  const disabled = !isInteractive;
+
+  const submitLabel = block.submitLabel ?? "Done";
+  const cancelLabel = block.cancelLabel ?? "Cancel";
+
+  // Group elements by kind for better layout
+  const checkboxes = block.elements.filter((el) => el.kind === "checkbox");
+  const buttons = block.elements.filter((el) => el.kind === "button");
+
+  const handleSubmit = (e: Event) => {
+    markBlockSubmitted(block.id);
+    const payload = formatSubmitPayload(block.id, state.values);
+    dispatchInteractiveSubmit(e.target as EventTarget, payload);
+  };
+
+  const handleCancel = (e: Event) => {
+    markBlockCancelled(block.id);
+    // Force re-render
+    (e.target as HTMLElement).dispatchEvent(
+      new CustomEvent("interactive-update", { bubbles: true }),
+    );
+  };
+
+  // Determine block state class
+  const stateClass = state.submitted
+    ? "interactive-block--submitted"
+    : state.cancelled
+      ? "interactive-block--cancelled"
+      : "";
+
+  return html`
+    <div class="interactive-block ${stateClass} ${disabled ? "interactive-block--disabled" : ""}">
+      <div class="interactive-elements">
+        ${checkboxes.map((el) => renderInteractiveElement(block, el, state, disabled))}
+        ${
+          buttons.length > 0
+            ? html`<div class="interactive-buttons">
+              ${buttons.map((el) => renderInteractiveElement(block, el, state, disabled))}
+            </div>`
+            : nothing
+        }
+      </div>
+
+      ${
+        isInteractive
+          ? html`
+            <div class="interactive-actions">
+              <button
+                type="button"
+                class="interactive-actions__btn interactive-actions__btn--cancel"
+                @click=${handleCancel}
+              >
+                ${cancelLabel}
+              </button>
+              <button
+                type="button"
+                class="interactive-actions__btn interactive-actions__btn--submit"
+                @click=${handleSubmit}
+              >
+                ${submitLabel}
+              </button>
+            </div>
+          `
+          : html`
+            <div class="interactive-status ${state.submitted ? "interactive-status--submitted" : "interactive-status--cancelled"}">
+              ${state.submitted ? "Submitted" : "Cancelled"}
+            </div>
+          `
+      }
     </div>
   `;
 }
@@ -473,6 +662,8 @@ function renderGroupedMessage(
   const hasToolCards = toolCards.length > 0;
   const images = extractImages(message);
   const hasImages = images.length > 0;
+  const interactiveBlocks = extractInteractiveBlocks(message);
+  const hasInteractive = interactiveBlocks.length > 0;
 
   const extractedText = extractTextCached(message);
   const extractedThinking =
@@ -515,7 +706,7 @@ function renderGroupedMessage(
   }
   const showInlineChips = hasToolCards && role !== "assistant";
 
-  if (!markdown && !showInlineChips && !hasImages && !hasAudio) return nothing;
+  if (!markdown && !showInlineChips && !hasImages && !hasAudio && !hasInteractive) return nothing;
 
   return html`
     <div class="${bubbleClasses}">
@@ -541,6 +732,7 @@ function renderGroupedMessage(
             )}</div>`
           : nothing
       }
+      ${hasInteractive ? interactiveBlocks.map((block) => renderInteractiveBlock(block)) : nothing}
     </div>
   `;
 }

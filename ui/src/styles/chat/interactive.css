@@ -1,0 +1,239 @@
+/* =============================================
+   INTERACTIVE COMPONENTS
+   ============================================= */
+
+.interactive-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  margin-top: 8px;
+}
+
+.interactive-block--disabled {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.interactive-block--submitted {
+  border-color: var(--ok-subtle);
+  background: rgba(34, 197, 94, 0.05);
+}
+
+.interactive-block--cancelled {
+  border-color: var(--border);
+  background: var(--bg-secondary);
+}
+
+/* ── Elements Container ── */
+.interactive-elements {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ── Checkbox Element ── */
+.interactive-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 6px 8px;
+  margin: -6px -8px;
+  border-radius: var(--radius-md);
+  transition: background 120ms ease-out;
+}
+
+.interactive-checkbox:hover {
+  background: var(--bg-hover);
+}
+
+.interactive-checkbox--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.interactive-checkbox--disabled:hover {
+  background: transparent;
+}
+
+.interactive-checkbox__input {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  appearance: none;
+  position: relative;
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out;
+  flex-shrink: 0;
+}
+
+.interactive-checkbox__input:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.interactive-checkbox__input:checked::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.interactive-checkbox__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.interactive-checkbox__label {
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--text-primary);
+  flex: 1;
+}
+
+/* ── Button Element ── */
+.interactive-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out,
+    transform 80ms ease-out;
+}
+
+.interactive-button:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+
+.interactive-button:active {
+  transform: scale(0.98);
+}
+
+.interactive-button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.interactive-button--primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.interactive-button--danger {
+  background: var(--danger-subtle);
+  border-color: var(--danger-subtle);
+  color: var(--danger);
+}
+
+.interactive-button--danger:hover {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: white;
+}
+
+/* ── Actions Footer (Done / Cancel) ── */
+.interactive-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.interactive-actions__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out;
+}
+
+.interactive-actions__btn:hover {
+  background: var(--bg-hover);
+}
+
+.interactive-actions__btn--submit {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.interactive-actions__btn--submit:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.interactive-actions__btn--cancel {
+  background: transparent;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+.interactive-actions__btn--cancel:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ── Status Badges ── */
+.interactive-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.interactive-status--submitted {
+  color: var(--ok);
+  background: var(--ok-subtle);
+}
+
+.interactive-status--submitted::before {
+  content: "✓";
+}
+
+.interactive-status--cancelled {
+  color: var(--muted);
+}
+
+.interactive-status--cancelled::before {
+  content: "—";
+}

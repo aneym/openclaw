@@ -17,8 +17,8 @@ import {
 import { extractToolCards } from "../chat/tool-cards";
 import { icons } from "../icons";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
-import { humanizeSessionKey, cleanSessionTitle } from "./thread-list";
 import { renderSlashAutocomplete, getFilteredCommands } from "./slash-autocomplete";
+import { humanizeSessionKey, cleanSessionTitle } from "./thread-list";
 import "../components/resizable-divider";
 
 export type CompactionIndicatorStatus = {
@@ -88,6 +88,8 @@ export type ChatProps = {
   slashCommands?: SlashCommandEntry[];
   // Sub-agent status
   subagentRuns?: import("../types").SubagentRunInfo[];
+  // Interactive component callback
+  onInteractiveSubmit?: (payload: string) => void;
 };
 
 const COMPACTION_TOAST_DURATION_MS = 5000;
@@ -157,9 +159,7 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
   if (!runs || runs.length === 0) return nothing;
 
   const active = runs.filter((r) => !r.endedAt);
-  const justFinished = runs.filter(
-    (r) => r.endedAt && Date.now() - r.endedAt < 4000,
-  );
+  const justFinished = runs.filter((r) => r.endedAt && Date.now() - r.endedAt < 4000);
 
   // Nothing to show
   if (active.length === 0 && justFinished.length === 0) return nothing;
@@ -181,9 +181,7 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
   const earliest = Math.min(...active.map((r) => r.startedAt ?? r.createdAt));
   const elapsedSec = Math.max(0, Math.round((Date.now() - earliest) / 1000));
   const elapsedStr =
-    elapsedSec < 60
-      ? `${elapsedSec}s`
-      : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
+    elapsedSec < 60 ? `${elapsedSec}s` : `${Math.floor(elapsedSec / 60)}m ${elapsedSec % 60}s`;
 
   const summary =
     active.length === 1
@@ -202,8 +200,9 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
       <span class="subagent-banner__text">${summary}</span>
       <span class="subagent-banner__time">${elapsedStr}</span>
     </div>
-    ${!subagentBannerCollapsed && active.length > 1
-      ? html`
+    ${
+      !subagentBannerCollapsed && active.length > 1
+        ? html`
         <div class="subagent-banner__list">
           ${active.map(
             (r) => html`
@@ -215,7 +214,8 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
           )}
         </div>
       `
-      : nothing}
+        : nothing
+    }
   `;
 }
 
@@ -586,11 +586,30 @@ export function renderChat(props: ChatProps) {
     if (!encoded) return;
     try {
       const text = decodeURIComponent(escape(atob(encoded)));
-      navigator.clipboard.writeText(text).then(() => {
-        copyBtn.dataset.copied = "1";
-        setTimeout(() => { delete copyBtn.dataset.copied; }, 1500);
-      }).catch(() => {});
-    } catch { /* ignore decode errors */ }
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          copyBtn.dataset.copied = "1";
+          setTimeout(() => {
+            delete copyBtn.dataset.copied;
+          }, 1500);
+        })
+        .catch(() => {});
+    } catch {
+      /* ignore decode errors */
+    }
+  };
+
+  const handleInteractiveSubmit = (e: CustomEvent<{ payload: string }>) => {
+    if (props.onInteractiveSubmit) {
+      props.onInteractiveSubmit(e.detail.payload);
+    }
+  };
+
+  // Force re-render when interactive state updates
+  const handleInteractiveUpdate = () => {
+    // Trigger a re-render by touching draft (no-op change)
+    props.onDraftChange(props.draft);
   };
 
   const thread = html`
@@ -600,6 +619,8 @@ export function renderChat(props: ChatProps) {
       aria-live="polite"
       @scroll=${handleThreadScroll}
       @click=${handleThreadClick}
+      @interactive-submit=${handleInteractiveSubmit}
+      @interactive-update=${handleInteractiveUpdate}
     >
       ${
         showPicker
@@ -872,7 +893,8 @@ export function renderChat(props: ChatProps) {
                     }
                     if (e.key === "Enter" || e.key === "Tab") {
                       e.preventDefault();
-                      const selected = filtered[Math.min(acState.selectedIndex, filtered.length - 1)];
+                      const selected =
+                        filtered[Math.min(acState.selectedIndex, filtered.length - 1)];
                       if (selected) {
                         acState.visible = false;
                         acState.selectedIndex = 0;
