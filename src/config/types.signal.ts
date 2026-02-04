@@ -87,6 +87,8 @@ export type SignalAccountConfig = {
 };
 
 export type SignalConfig = {
+  /** Model override for Signal sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Signal configuration (multi-account). */
   accounts?: Record<string, SignalAccountConfig>;
 } & SignalAccountConfig;

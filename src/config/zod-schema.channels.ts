@@ -8,3 +8,6 @@ export const ChannelHeartbeatVisibilitySchema = z
   })
   .strict()
   .optional();
+
+/** Optional model override for channel sessions (provider/model string or alias). */
+export const ChannelModelSchema = z.string().optional();

@@ -43,6 +43,8 @@ export type MSTeamsTeamConfig = {
 };
 
 export type MSTeamsConfig = {
+  /** Model override for MS Teams sessions (provider/model string or alias). */
+  model?: string;
   /** If false, do not start the MS Teams provider. Default: true. */
   enabled?: boolean;
   /** Optional provider capability tags used for agent/runtime guidance. */

@@ -101,6 +101,8 @@ export type GoogleChatAccountConfig = {
 };
 
 export type GoogleChatConfig = {
+  /** Model override for Google Chat sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Google Chat configuration (multi-account). */
   accounts?: Record<string, GoogleChatAccountConfig>;
   /** Optional default account id when multiple accounts are configured. */

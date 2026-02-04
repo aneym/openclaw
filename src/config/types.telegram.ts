@@ -162,6 +162,8 @@ export type TelegramGroupConfig = {
 };
 
 export type TelegramConfig = {
+  /** Model override for Telegram sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Telegram configuration (multi-account). */
   accounts?: Record<string, TelegramAccountConfig>;
 } & TelegramAccountConfig;

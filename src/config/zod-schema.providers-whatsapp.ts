@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { ToolPolicySchema } from "./zod-schema.agent-runtime.js";
-import { ChannelHeartbeatVisibilitySchema } from "./zod-schema.channels.js";
+import { ChannelHeartbeatVisibilitySchema, ChannelModelSchema } from "./zod-schema.channels.js";
 import {
   BlockStreamingCoalesceSchema,
   DmConfigSchema,
@@ -77,6 +77,7 @@ export const WhatsAppAccountSchema = z
 
 export const WhatsAppConfigSchema = z
   .object({
+    model: ChannelModelSchema,
     accounts: z.record(z.string(), WhatsAppAccountSchema.optional()).optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,

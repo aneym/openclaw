@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ChannelHeartbeatVisibilitySchema } from "./zod-schema.channels.js";
+import { ChannelHeartbeatVisibilitySchema, ChannelModelSchema } from "./zod-schema.channels.js";
 import { GroupPolicySchema } from "./zod-schema.core.js";
 import {
   BlueBubblesConfigSchema,
@@ -23,6 +23,7 @@ export const ChannelsSchema = z
       .object({
         groupPolicy: GroupPolicySchema.optional(),
         heartbeat: ChannelHeartbeatVisibilitySchema,
+        model: ChannelModelSchema,
       })
       .strict()
       .optional(),

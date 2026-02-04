@@ -5,7 +5,7 @@ import {
   resolveTelegramCustomCommands,
 } from "./telegram-custom-commands.js";
 import { ToolPolicySchema } from "./zod-schema.agent-runtime.js";
-import { ChannelHeartbeatVisibilitySchema } from "./zod-schema.channels.js";
+import { ChannelHeartbeatVisibilitySchema, ChannelModelSchema } from "./zod-schema.channels.js";
 import {
   BlockStreamingChunkSchema,
   BlockStreamingCoalesceSchema,
@@ -153,6 +153,7 @@ export const TelegramAccountSchema = TelegramAccountSchemaBase.superRefine((valu
 });
 
 export const TelegramConfigSchema = TelegramAccountSchemaBase.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), TelegramAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -324,6 +325,7 @@ export const DiscordAccountSchema = z
   .strict();
 
 export const DiscordConfigSchema = DiscordAccountSchema.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), DiscordAccountSchema.optional()).optional(),
 });
 
@@ -394,6 +396,7 @@ export const GoogleChatAccountSchema = z
   .strict();
 
 export const GoogleChatConfigSchema = GoogleChatAccountSchema.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), GoogleChatAccountSchema.optional()).optional(),
   defaultAccount: z.string().optional(),
 });
@@ -510,6 +513,7 @@ export const SlackAccountSchema = z
   .strict();
 
 export const SlackConfigSchema = SlackAccountSchema.extend({
+  model: ChannelModelSchema,
   mode: z.enum(["socket", "http"]).optional().default("socket"),
   signingSecret: z.string().optional(),
   webhookPath: z.string().optional().default("/slack/events"),
@@ -603,6 +607,7 @@ export const SignalAccountSchema = SignalAccountSchemaBase.superRefine((value, c
 });
 
 export const SignalConfigSchema = SignalAccountSchemaBase.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), SignalAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -668,6 +673,7 @@ export const IMessageAccountSchema = IMessageAccountSchemaBase.superRefine((valu
 });
 
 export const IMessageConfigSchema = IMessageAccountSchemaBase.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), IMessageAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -746,6 +752,7 @@ export const BlueBubblesAccountSchema = BlueBubblesAccountSchemaBase.superRefine
 });
 
 export const BlueBubblesConfigSchema = BlueBubblesAccountSchemaBase.extend({
+  model: ChannelModelSchema,
   accounts: z.record(z.string(), BlueBubblesAccountSchema.optional()).optional(),
   actions: BlueBubblesActionSchema,
 }).superRefine((value, ctx) => {
@@ -780,6 +787,7 @@ export const MSTeamsTeamSchema = z
 
 export const MSTeamsConfigSchema = z
   .object({
+    model: ChannelModelSchema,
     enabled: z.boolean().optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,

@@ -15,6 +15,8 @@ export type WhatsAppActionConfig = {
 };
 
 export type WhatsAppConfig = {
+  /** Model override for WhatsApp sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account WhatsApp configuration (multi-account). */
   accounts?: Record<string, WhatsAppAccountConfig>;
   /** Optional provider capability tags used for agent/runtime guidance. */

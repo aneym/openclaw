@@ -96,6 +96,32 @@ export async function getReplyFromConfig(
     }
   }
 
+  // Channel-level model override: channels.<channel>.model > channels.defaults.model > agent default
+  if (!opts?.isHeartbeat) {
+    const channelKey = ctx.Provider?.trim().toLowerCase();
+    const channelCfg = channelKey
+      ? (cfg.channels?.[channelKey] as Record<string, unknown> | undefined)
+      : undefined;
+    const channelModelRaw =
+      (channelCfg?.model as string | undefined)?.trim() ??
+      (cfg.channels?.defaults?.model as string | undefined)?.trim() ??
+      "";
+    if (channelModelRaw) {
+      const channelModelRef = resolveModelRefFromString({
+        raw: channelModelRaw,
+        defaultProvider,
+        aliasIndex,
+      });
+      if (channelModelRef) {
+        provider = channelModelRef.ref.provider;
+        model = channelModelRef.ref.model;
+        console.log(
+          `[MODEL-ROUTING] channel model override: channel=${channelKey} model=${provider}/${model}`,
+        );
+      }
+    }
+  }
+
   const workspaceDirRaw = resolveAgentWorkspaceDir(cfg, agentId) ?? DEFAULT_AGENT_WORKSPACE_DIR;
   const workspace = await ensureAgentWorkspace({
     dir: workspaceDirRaw,

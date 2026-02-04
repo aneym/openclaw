@@ -149,6 +149,8 @@ export type SlackAccountConfig = {
 };
 
 export type SlackConfig = {
+  /** Model override for Slack sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Slack configuration (multi-account). */
   accounts?: Record<string, SlackAccountConfig>;
 } & SlackAccountConfig;
