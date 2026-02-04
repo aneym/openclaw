@@ -1,5 +1,215 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
 
+// Config types
+export interface GlobalConfig {
+  version: 1;
+  defaultGatewayUrl: string;
+  theme: "light" | "dark" | "system";
+  sidebarWidth: number;
+}
+
+export interface GitHubConfig {
+  token: string;
+  username: string;
+  validatedAt: number;
+}
+
+export interface LinearConfig {
+  apiKey: string;
+  userId: string;
+  userName: string;
+  validatedAt: number;
+}
+
+// Project types
+export interface RepoConfig {
+  id: string;
+  path: string;
+  name?: string;
+  remoteUrl?: string;
+  defaultBranch?: string;
+  isMainRepo?: boolean;
+}
+
+export interface Project {
+  id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  linearTeamId?: string;
+  workspacePath?: string;
+  repositories: RepoConfig[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Git types
+export interface RepoInfo {
+  remoteUrl?: string;
+  defaultBranch?: string;
+  currentBranch?: string;
+}
+
+export interface WorktreeInfo {
+  path: string;
+  branch: string;
+  commit: string;
+  isMain: boolean;
+  isPrunable: boolean;
+}
+
+export interface BranchList {
+  local: string[];
+  remote: string[];
+}
+
+export interface RepoStatus {
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+}
+
+export interface PullPushResult {
+  success: boolean;
+  error?: string;
+}
+
+export interface DiscoveredRepo {
+  path: string;
+  name: string;
+  remoteUrl?: string;
+  defaultBranch?: string;
+}
+
+// GitHub types
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  cloneUrl: string;
+  sshUrl: string;
+  private: boolean;
+  defaultBranch: string;
+}
+
+export interface GitHubValidationResult {
+  valid: boolean;
+  username?: string;
+  error?: string;
+}
+
+// Linear types
+export interface LinearUser {
+  id: string;
+  name: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
+export interface LinearState {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  type: "backlog" | "unstarted" | "started" | "completed" | "canceled";
+}
+
+export interface LinearLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
+export interface LinearRelation {
+  type: "blocks" | "is_blocked_by" | "related" | "duplicate";
+  relatedIssue: {
+    id: string;
+    identifier: string;
+    title: string;
+    state: { name: string };
+  };
+}
+
+export interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string;
+  priority: number;
+  state: LinearState;
+  assignee?: LinearUser;
+  labels: LinearLabel[];
+  relations: LinearRelation[];
+  isBlocked?: boolean;
+  downstreamCount?: number;
+}
+
+export interface LinearTeam {
+  id: string;
+  name: string;
+  key: string;
+  states: LinearState[];
+}
+
+export interface LinearValidationResult {
+  valid: boolean;
+  user?: LinearUser;
+  error?: string;
+}
+
+// Config API
+export interface ConfigAPI {
+  getGlobal: () => Promise<GlobalConfig>;
+  saveGlobal: (config: GlobalConfig) => Promise<void>;
+  getGitHub: () => Promise<GitHubConfig | null>;
+  saveGitHub: (config: GitHubConfig) => Promise<void>;
+  clearGitHub: () => Promise<void>;
+  getLinear: () => Promise<LinearConfig | null>;
+  saveLinear: (config: LinearConfig) => Promise<void>;
+  clearLinear: () => Promise<void>;
+}
+
+// Project API
+export interface ProjectsAPI {
+  list: () => Promise<Project[]>;
+  get: (id: string) => Promise<Project | null>;
+  save: (project: Project) => Promise<void>;
+  delete: (id: string) => Promise<void>;
+  generateId: () => Promise<string>;
+}
+
+// Git API
+export interface GitAPI {
+  isRepo: (path: string) => Promise<boolean>;
+  getRepoInfo: (path: string) => Promise<RepoInfo>;
+  listWorktrees: (path: string) => Promise<WorktreeInfo[]>;
+  createWorktree: (repoPath: string, branch: string, targetPath: string) => Promise<void>;
+  removeWorktree: (path: string) => Promise<void>;
+  listBranches: (path: string) => Promise<BranchList>;
+  getStatus: (path: string) => Promise<RepoStatus>;
+  pull: (path: string) => Promise<PullPushResult>;
+  push: (path: string) => Promise<PullPushResult>;
+  clone: (url: string, targetPath: string) => Promise<void>;
+  getDisplayName: (path: string) => Promise<string>;
+  onCloneProgress: (callback: (message: string) => void) => () => void;
+  scanForRepos: (rootPath: string, maxDepth?: number) => Promise<DiscoveredRepo[]>;
+}
+
+// GitHub API
+export interface GitHubAPI {
+  validate: (token: string) => Promise<GitHubValidationResult>;
+  listRepos: () => Promise<GitHubRepo[]>;
+  searchRepos: (query: string) => Promise<GitHubRepo[]>;
+}
+
+// Linear API
+export interface LinearAPI {
+  validate: (apiKey: string) => Promise<LinearValidationResult>;
+  listTeams: () => Promise<LinearTeam[]>;
+  getTeamIssues: (teamId: string) => Promise<LinearIssue[]>;
+  updateIssueState: (issueId: string, stateId: string) => Promise<void>;
+}
+
 export interface SimulatorWindow {
   windowId: number;
   pid: number;
@@ -28,14 +238,52 @@ export interface Rectangle {
   height: number;
 }
 
+export interface BrowserTabInfo {
+  id: string;
+  url: string;
+  title: string;
+  active: boolean;
+}
+
+// Terminal types
+export interface TerminalAPI {
+  create: (
+    cwd: string | undefined,
+    cols: number,
+    rows: number,
+  ) => Promise<{ id: string; pid: number }>;
+  write: (id: string, data: string) => Promise<void>;
+  resize: (id: string, cols: number, rows: number) => Promise<void>;
+  kill: (id: string) => Promise<void>;
+  onData: (callback: (id: string, data: string) => void) => () => void;
+  onExit: (callback: (id: string, code: number) => void) => () => void;
+}
+
 export interface BrowserAPI {
-  create: (bounds: Rectangle) => Promise<void>;
+  // Initialize browser panel, returns initial tab ID
+  create: (bounds: Rectangle) => Promise<string>;
+  // Destroy all tabs
   destroy: () => Promise<void>;
+  // Update bounds for active tab
   setBounds: (bounds: Rectangle) => Promise<void>;
-  navigate: (url: string) => Promise<void>;
-  cdp: (method: string, params?: object) => Promise<unknown>;
-  openDevTools: () => Promise<void>;
-  getCdpUrl: () => Promise<string | null>;
+  // Navigate active tab (or specific tab)
+  navigate: (url: string, tabId?: string) => Promise<void>;
+  // Execute CDP command on active tab (or specific tab)
+  cdp: (method: string, params?: object, tabId?: string) => Promise<unknown>;
+  // Open DevTools for active tab (or specific tab)
+  openDevTools: (tabId?: string) => Promise<void>;
+  // Get CDP URL for active tab (or specific tab)
+  getCdpUrl: (tabId?: string) => Promise<string | null>;
+  // Focus active tab
+  focus: () => Promise<void>;
+
+  // Tab management
+  createTab: (url?: string) => Promise<string>;
+  closeTab: (tabId: string) => Promise<boolean>;
+  switchTab: (tabId: string) => Promise<boolean>;
+  listTabs: () => Promise<BrowserTabInfo[]>;
+  getTab: (tabId: string) => Promise<BrowserTabInfo | null>;
+  getActiveTab: () => Promise<string | null>;
 }
 
 export interface SimulatorAPI {
@@ -69,8 +317,14 @@ declare global {
     api: {
       getGatewayConfig: () => Promise<{ url: string; token?: string; source?: string }>;
       openDirectoryDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+      config: ConfigAPI;
+      projects: ProjectsAPI;
+      git: GitAPI;
+      github: GitHubAPI;
+      linear: LinearAPI;
       simulator: SimulatorAPI;
       browser: BrowserAPI;
+      terminal: TerminalAPI;
     };
   }
 }

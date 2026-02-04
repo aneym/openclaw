@@ -5,6 +5,7 @@ import { homedir } from "os";
 import { join } from "path";
 import icon from "../../resources/icon.png?asset";
 import { initBrowserPanel } from "./browser-panel";
+import { registerAllIpc, cleanupTerminals } from "./ipc";
 import { restoreWindowState, trackWindowState } from "./window-state";
 
 // Conditionally import native addon (macOS only)
@@ -311,6 +312,9 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(() => {
+  // Register IPC handlers for project management, git, GitHub, Linear
+  registerAllIpc();
+
   // Set up application menu with zoom shortcuts (Cmd+0, Cmd+-, Cmd+=)
   createMenu();
 
@@ -336,4 +340,9 @@ app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+// Cleanup terminal processes before quitting
+app.on("before-quit", () => {
+  cleanupTerminals();
 });

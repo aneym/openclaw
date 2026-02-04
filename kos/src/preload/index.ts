@@ -30,12 +30,236 @@ interface Rectangle {
   height: number;
 }
 
+// Config types
+interface GlobalConfig {
+  version: 1;
+  defaultGatewayUrl: string;
+  theme: "light" | "dark" | "system";
+  sidebarWidth: number;
+}
+
+interface GitHubConfig {
+  token: string;
+  username: string;
+  validatedAt: number;
+}
+
+interface LinearConfig {
+  apiKey: string;
+  userId: string;
+  userName: string;
+  validatedAt: number;
+}
+
+// Project types
+interface RepoConfig {
+  id: string;
+  path: string;
+  name?: string;
+  remoteUrl?: string;
+  defaultBranch?: string;
+  isMainRepo?: boolean;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  icon?: string;
+  color?: string;
+  linearTeamId?: string;
+  workspacePath?: string;
+  repositories: RepoConfig[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// Git types
+interface RepoInfo {
+  remoteUrl?: string;
+  defaultBranch?: string;
+  currentBranch?: string;
+}
+
+interface WorktreeInfo {
+  path: string;
+  branch: string;
+  commit: string;
+  isMain: boolean;
+  isPrunable: boolean;
+}
+
+interface BranchList {
+  local: string[];
+  remote: string[];
+}
+
+interface RepoStatus {
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+}
+
+interface PullPushResult {
+  success: boolean;
+  error?: string;
+}
+
+// GitHub types
+interface GitHubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  cloneUrl: string;
+  sshUrl: string;
+  private: boolean;
+  defaultBranch: string;
+}
+
+interface GitHubValidationResult {
+  valid: boolean;
+  username?: string;
+  error?: string;
+}
+
+// Linear types
+interface LinearUser {
+  id: string;
+  name: string;
+  displayName: string;
+  avatarUrl?: string;
+}
+
+interface LinearState {
+  id: string;
+  name: string;
+  color: string;
+  position: number;
+  type: "backlog" | "unstarted" | "started" | "completed" | "canceled";
+}
+
+interface LinearLabel {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface LinearRelation {
+  type: "blocks" | "is_blocked_by" | "related" | "duplicate";
+  relatedIssue: {
+    id: string;
+    identifier: string;
+    title: string;
+    state: { name: string };
+  };
+}
+
+interface LinearIssue {
+  id: string;
+  identifier: string;
+  title: string;
+  description?: string;
+  priority: number;
+  state: LinearState;
+  assignee?: LinearUser;
+  labels: LinearLabel[];
+  relations: LinearRelation[];
+  isBlocked?: boolean;
+  downstreamCount?: number;
+}
+
+interface LinearTeam {
+  id: string;
+  name: string;
+  key: string;
+  states: LinearState[];
+}
+
+interface LinearValidationResult {
+  valid: boolean;
+  user?: LinearUser;
+  error?: string;
+}
+
 // Custom APIs for renderer
 const api = {
   getGatewayConfig: (): Promise<{ url: string; token?: string; source?: string }> =>
     ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
     ipcRenderer.invoke("dialog:openDirectory"),
+
+  // Config APIs
+  config: {
+    getGlobal: (): Promise<GlobalConfig> => ipcRenderer.invoke("config:getGlobal"),
+    saveGlobal: (config: GlobalConfig): Promise<void> =>
+      ipcRenderer.invoke("config:saveGlobal", config),
+    getGitHub: (): Promise<GitHubConfig | null> => ipcRenderer.invoke("config:getGitHub"),
+    saveGitHub: (config: GitHubConfig): Promise<void> =>
+      ipcRenderer.invoke("config:saveGitHub", config),
+    clearGitHub: (): Promise<void> => ipcRenderer.invoke("config:clearGitHub"),
+    getLinear: (): Promise<LinearConfig | null> => ipcRenderer.invoke("config:getLinear"),
+    saveLinear: (config: LinearConfig): Promise<void> =>
+      ipcRenderer.invoke("config:saveLinear", config),
+    clearLinear: (): Promise<void> => ipcRenderer.invoke("config:clearLinear"),
+  },
+
+  // Project APIs
+  projects: {
+    list: (): Promise<Project[]> => ipcRenderer.invoke("projects:list"),
+    get: (id: string): Promise<Project | null> => ipcRenderer.invoke("projects:get", id),
+    save: (project: Project): Promise<void> => ipcRenderer.invoke("projects:save", project),
+    delete: (id: string): Promise<void> => ipcRenderer.invoke("projects:delete", id),
+    generateId: (): Promise<string> => ipcRenderer.invoke("projects:generateId"),
+  },
+
+  // Git APIs
+  git: {
+    isRepo: (path: string): Promise<boolean> => ipcRenderer.invoke("git:isRepo", path),
+    getRepoInfo: (path: string): Promise<RepoInfo> => ipcRenderer.invoke("git:getRepoInfo", path),
+    listWorktrees: (path: string): Promise<WorktreeInfo[]> =>
+      ipcRenderer.invoke("git:listWorktrees", path),
+    createWorktree: (repoPath: string, branch: string, targetPath: string): Promise<void> =>
+      ipcRenderer.invoke("git:createWorktree", repoPath, branch, targetPath),
+    removeWorktree: (path: string): Promise<void> => ipcRenderer.invoke("git:removeWorktree", path),
+    listBranches: (path: string): Promise<BranchList> =>
+      ipcRenderer.invoke("git:listBranches", path),
+    getStatus: (path: string): Promise<RepoStatus> => ipcRenderer.invoke("git:getStatus", path),
+    pull: (path: string): Promise<PullPushResult> => ipcRenderer.invoke("git:pull", path),
+    push: (path: string): Promise<PullPushResult> => ipcRenderer.invoke("git:push", path),
+    clone: (url: string, targetPath: string): Promise<void> =>
+      ipcRenderer.invoke("git:clone", url, targetPath),
+    getDisplayName: (path: string): Promise<string> =>
+      ipcRenderer.invoke("git:getDisplayName", path),
+    onCloneProgress: (callback: (message: string) => void) => {
+      const listener = (_: unknown, message: string) => callback(message);
+      ipcRenderer.on("git:clone-progress", listener);
+      return () => ipcRenderer.removeListener("git:clone-progress", listener);
+    },
+    scanForRepos: (
+      rootPath: string,
+      maxDepth?: number,
+    ): Promise<{ path: string; name: string; remoteUrl?: string; defaultBranch?: string }[]> =>
+      ipcRenderer.invoke("git:scanForRepos", rootPath, maxDepth),
+  },
+
+  // GitHub APIs
+  github: {
+    validate: (token: string): Promise<GitHubValidationResult> =>
+      ipcRenderer.invoke("github:validate", token),
+    listRepos: (): Promise<GitHubRepo[]> => ipcRenderer.invoke("github:listRepos"),
+    searchRepos: (query: string): Promise<GitHubRepo[]> =>
+      ipcRenderer.invoke("github:searchRepos", query),
+  },
+
+  // Linear APIs
+  linear: {
+    validate: (apiKey: string): Promise<LinearValidationResult> =>
+      ipcRenderer.invoke("linear:validate", apiKey),
+    listTeams: (): Promise<LinearTeam[]> => ipcRenderer.invoke("linear:listTeams"),
+    getTeamIssues: (teamId: string): Promise<LinearIssue[]> =>
+      ipcRenderer.invoke("linear:getTeamIssues", teamId),
+    updateIssueState: (issueId: string, stateId: string): Promise<void> =>
+      ipcRenderer.invoke("linear:updateIssueState", issueId, stateId),
+  },
 
   // iOS Simulator APIs
   simulator: {
@@ -89,17 +313,65 @@ const api = {
     },
   },
 
-  // Browser panel APIs
+  // Terminal APIs
+  terminal: {
+    create: (
+      cwd: string | undefined,
+      cols: number,
+      rows: number,
+    ): Promise<{ id: string; pid: number }> =>
+      ipcRenderer.invoke("terminal:create", cwd, cols, rows),
+    write: (id: string, data: string): Promise<void> =>
+      ipcRenderer.invoke("terminal:write", id, data),
+    resize: (id: string, cols: number, rows: number): Promise<void> =>
+      ipcRenderer.invoke("terminal:resize", id, cols, rows),
+    kill: (id: string): Promise<void> => ipcRenderer.invoke("terminal:kill", id),
+    onData: (callback: (id: string, data: string) => void) => {
+      const listener = (_: unknown, id: string, data: string) => callback(id, data);
+      ipcRenderer.on("terminal:data", listener);
+      return () => ipcRenderer.removeListener("terminal:data", listener);
+    },
+    onExit: (callback: (id: string, code: number) => void) => {
+      const listener = (_: unknown, id: string, code: number) => callback(id, code);
+      ipcRenderer.on("terminal:exit", listener);
+      return () => ipcRenderer.removeListener("terminal:exit", listener);
+    },
+  },
+
+  // Browser panel APIs (multi-tab support)
   browser: {
-    create: (bounds: Rectangle): Promise<void> => ipcRenderer.invoke("browser:create", bounds),
+    // Initialize browser panel, returns initial tab ID
+    create: (bounds: Rectangle): Promise<string> => ipcRenderer.invoke("browser:create", bounds),
+    // Destroy all tabs
     destroy: (): Promise<void> => ipcRenderer.invoke("browser:destroy"),
+    // Update bounds for active tab
     setBounds: (bounds: Rectangle): Promise<void> =>
       ipcRenderer.invoke("browser:set-bounds", bounds),
-    navigate: (url: string): Promise<void> => ipcRenderer.invoke("browser:navigate", url),
-    cdp: (method: string, params?: object): Promise<unknown> =>
-      ipcRenderer.invoke("browser:cdp", method, params),
-    openDevTools: (): Promise<void> => ipcRenderer.invoke("browser:devtools"),
-    getCdpUrl: (): Promise<string | null> => ipcRenderer.invoke("browser:get-cdp-url"),
+    // Navigate active tab (or specific tab)
+    navigate: (url: string, tabId?: string): Promise<void> =>
+      ipcRenderer.invoke("browser:navigate", url, tabId),
+    // Execute CDP command on active tab (or specific tab)
+    cdp: (method: string, params?: object, tabId?: string): Promise<unknown> =>
+      ipcRenderer.invoke("browser:cdp", method, params, tabId),
+    // Open DevTools for active tab (or specific tab)
+    openDevTools: (tabId?: string): Promise<void> => ipcRenderer.invoke("browser:devtools", tabId),
+    // Get CDP URL for active tab (or specific tab)
+    getCdpUrl: (tabId?: string): Promise<string | null> =>
+      ipcRenderer.invoke("browser:get-cdp-url", tabId),
+    // Focus active tab
+    focus: (): Promise<void> => ipcRenderer.invoke("browser:focus"),
+
+    // Tab management
+    createTab: (url?: string): Promise<string> => ipcRenderer.invoke("browser:create-tab", url),
+    closeTab: (tabId: string): Promise<boolean> => ipcRenderer.invoke("browser:close-tab", tabId),
+    switchTab: (tabId: string): Promise<boolean> => ipcRenderer.invoke("browser:switch-tab", tabId),
+    listTabs: (): Promise<{ id: string; url: string; title: string; active: boolean }[]> =>
+      ipcRenderer.invoke("browser:list-tabs"),
+    getTab: (
+      tabId: string,
+    ): Promise<{ id: string; url: string; title: string; active: boolean } | null> =>
+      ipcRenderer.invoke("browser:get-tab", tabId),
+    getActiveTab: (): Promise<string | null> => ipcRenderer.invoke("browser:get-active-tab"),
   },
 };
 
