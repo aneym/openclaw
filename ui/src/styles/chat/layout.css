@@ -749,6 +749,45 @@
   height: 14px;
 }
 
+/* Drag-and-drop zone overlay */
+.chat-compose__drop-zone {
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--accent-rgb, 99, 102, 241), 0.15);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-md);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+
+.chat-compose__drop-zone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.chat-compose__drop-zone-content svg {
+  width: 32px;
+  height: 32px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.5px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+:root[data-theme="light"] .chat-compose__drop-zone {
+  background: rgba(var(--accent-rgb, 99, 102, 241), 0.1);
+}
+
 /* Chat controls - moved to content-header area, left aligned */
 .chat-controls {
   display: flex;

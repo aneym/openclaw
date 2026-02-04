@@ -339,6 +339,88 @@ function handlePaste(e: ClipboardEvent, props: ChatProps) {
   }
 }
 
+// ── Drag-and-drop state (module-scoped, keyed by session) ──
+const dragStates = new Map<string, { active: boolean }>();
+
+function getDragState(sessionKey: string): { active: boolean } {
+  let state = dragStates.get(sessionKey);
+  if (!state) {
+    state = { active: false };
+    dragStates.set(sessionKey, state);
+  }
+  return state;
+}
+
+function handleDragOver(e: DragEvent, sessionKey: string) {
+  // Only handle if files are being dragged
+  if (!e.dataTransfer?.types.includes("Files")) {
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  e.dataTransfer.dropEffect = "copy";
+  const dragState = getDragState(sessionKey);
+  if (!dragState.active) {
+    dragState.active = true;
+  }
+}
+
+function handleDragEnter(e: DragEvent, sessionKey: string) {
+  if (!e.dataTransfer?.types.includes("Files")) {
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+  const dragState = getDragState(sessionKey);
+  dragState.active = true;
+}
+
+function handleDragLeave(e: DragEvent, sessionKey: string, composeEl: HTMLElement) {
+  e.preventDefault();
+  e.stopPropagation();
+  // Only deactivate if leaving the compose area entirely
+  const related = e.relatedTarget as Node | null;
+  if (related && composeEl.contains(related)) {
+    return;
+  }
+  const dragState = getDragState(sessionKey);
+  dragState.active = false;
+}
+
+function handleDrop(e: DragEvent, props: ChatProps) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const dragState = getDragState(props.sessionKey);
+  dragState.active = false;
+
+  const files = e.dataTransfer?.files;
+  if (!files || files.length === 0 || !props.onAttachmentsChange) {
+    return;
+  }
+
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    if (!file.type.startsWith("image/")) {
+      continue;
+    }
+
+    const reader = new FileReader();
+    reader.addEventListener("load", async () => {
+      const rawDataUrl = reader.result as string;
+      const { dataUrl, mimeType } = await compressImage(rawDataUrl, file.type);
+      const newAttachment: ChatAttachment = {
+        id: generateAttachmentId(),
+        dataUrl,
+        mimeType,
+      };
+      const current = props.attachments ?? [];
+      props.onAttachmentsChange?.([...current, newAttachment]);
+    });
+    reader.readAsDataURL(file);
+  }
+}
+
 function renderAttachmentPreview(props: ChatProps) {
   const attachments = props.attachments ?? [];
   if (attachments.length === 0) {
@@ -854,7 +936,34 @@ export function renderChat(props: ChatProps) {
           const acState = getAutocompleteState(props.sessionKey);
           acState.selectedIndex = e.detail.index;
         }}
+        @dragover=${(e: DragEvent) => {
+          handleDragOver(e, props.sessionKey);
+          // Force re-render to show drop zone
+          props.onDraftChange(props.draft);
+        }}
+        @dragenter=${(e: DragEvent) => {
+          handleDragEnter(e, props.sessionKey);
+          props.onDraftChange(props.draft);
+        }}
+        @dragleave=${(e: DragEvent) => {
+          const el = e.currentTarget as HTMLElement;
+          handleDragLeave(e, props.sessionKey, el);
+          props.onDraftChange(props.draft);
+        }}
+        @drop=${(e: DragEvent) => handleDrop(e, props)}
       >
+        ${
+          getDragState(props.sessionKey).active
+            ? html`
+          <div class="chat-compose__drop-zone">
+            <div class="chat-compose__drop-zone-content">
+              ${icons.image ?? icons.paperclip}
+              <span>Drop images here</span>
+            </div>
+          </div>
+        `
+            : nothing
+        }
         ${renderAttachmentPreview(props)}
         ${renderAutocompleteOverlay(props)}
         <div class="chat-compose__row">
