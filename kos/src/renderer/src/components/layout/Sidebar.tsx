@@ -1,9 +1,9 @@
-import { GitBranch, Globe, ListTodo, Loader2, Plus, Settings } from "lucide-react";
-import { useMemo } from "react";
-import { toast } from "sonner";
+import { GitBranch, Globe, ListTodo, Loader2, Plus, Settings, Terminal } from "lucide-react";
+import { useMemo, useCallback } from "react";
 import type { Chat, Project, View, Workspace } from "../../types";
 import { loadMoreChats } from "../../hooks/use-session-sync";
 import { CHAT_GROUPS, groupChatsByRecency, type ChatGroup } from "../../lib/chat-grouping";
+import { notifications } from "../../lib/notifications";
 import { cn } from "../../lib/utils";
 import { useChatStore } from "../../stores/chat-store";
 import { useDashboardStore } from "../../stores/dashboard-store";
@@ -12,22 +12,17 @@ import { useProjectStore } from "../../stores/project-store";
 import { useSidebarUIStore } from "../../stores/sidebar-ui-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
 import { ChatGroupSection } from "./ChatGroupSection";
+import { SessionSearch } from "./SessionSearch";
 
 interface SidebarProps {
   projectId: string | null;
   workspaceId: string | undefined;
   onNavigate: (view: View) => void;
   currentView: View;
-  isDashboard: boolean;
+  isHome: boolean;
 }
 
-export function Sidebar({
-  projectId,
-  workspaceId,
-  onNavigate,
-  currentView,
-  isDashboard,
-}: SidebarProps) {
+export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHome }: SidebarProps) {
   // Workspace state
   const workspacesMap = useWorkspaceStore((s) => s.workspaces);
   const setActiveWorkspace = useWorkspaceStore((s) => s.setActiveWorkspace);
@@ -43,11 +38,12 @@ export function Sidebar({
 
   // Project state
   const projectsMap = useProjectStore((s) => s.projects);
-  const setActiveProject = useProjectStore((s) => s.setActiveProject);
 
   // Dashboard state
   const dashboardFilter = useDashboardStore((s) => s.filter);
   const setDashboardFilter = useDashboardStore((s) => s.setFilter);
+  const dashboardActiveChatId = useDashboardStore((s) => s.activeChatId);
+  const setDashboardActiveChatId = useDashboardStore((s) => s.setActiveChatId);
 
   // Sidebar UI state - subscribe to raw data for reactivity
   const collapsedGroups = useSidebarUIStore((s) => s.collapsedGroups);
@@ -57,16 +53,19 @@ export function Sidebar({
   // Panel state
   const spawnPanel = usePanelStore((s) => s.spawnPanel);
   const hasPanelType = usePanelStore((s) => s.hasPanelType);
+  const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
+  const splitPaneWithThread = usePanelStore((s) => s.splitPaneWithThread);
+  const getFocusedChatPanelId = usePanelStore((s) => s.getFocusedChatPanelId);
 
   // Pagination state
   const hasMore = useChatStore((s) => s.hasMore);
   const isLoadingMore = useChatStore((s) => s.isLoadingMore);
 
   // Derived values
-  const showWorkspaces = !isDashboard && projectId ? shouldShowWorkspaceUI(projectId) : false;
+  const showWorkspaces = !isHome && projectId ? shouldShowWorkspaceUI(projectId) : false;
 
   const workspaces = useMemo(() => {
-    if (isDashboard || !projectId) return [];
+    if (isHome || !projectId) return [];
     return Array.from(workspacesMap.values() as Iterable<Workspace>)
       .filter((w) => w.projectId === projectId)
       .sort((a, b) => {
@@ -74,7 +73,7 @@ export function Sidebar({
         if (!a.isDefault && b.isDefault) return 1;
         return a.name.localeCompare(b.name);
       });
-  }, [workspacesMap, projectId, isDashboard]);
+  }, [workspacesMap, projectId, isHome]);
 
   // All projects for assign-to-project menu
   const projects = useMemo(() => {
@@ -83,90 +82,61 @@ export function Sidebar({
     );
   }, [projectsMap]);
 
+  // Active project (for Linear integration)
+  const activeProject = useMemo(() => {
+    if (!projectId) return null;
+    return projectsMap.get(projectId) || null;
+  }, [projectsMap, projectId]);
+
   // Chats for the current context
   const allChats = useMemo(() => {
-    const chats = Array.from(chatsMap.values() as Iterable<Chat>).sort(
+    return Array.from(chatsMap.values() as Iterable<Chat>).sort(
       (a, b) => b.lastMessageAt - a.lastMessageAt,
     );
-    // Log unique workspaceIds and projectIds to understand the data
-    const workspaceIds = new Set(chats.map((c) => c.workspaceId).filter(Boolean));
-    const projectIds = new Set(chats.map((c) => c.projectId).filter(Boolean));
-    console.log("[Sidebar] allChats analysis:", {
-      total: chats.length,
-      uniqueWorkspaceIds: Array.from(workspaceIds),
-      uniqueProjectIds: Array.from(projectIds),
-    });
-    return chats;
   }, [chatsMap]);
 
   const chats = useMemo(() => {
-    console.log("[Sidebar] Filtering chats:", {
-      isDashboard,
-      dashboardFilter,
-      projectId,
-      workspaceId,
-      totalChats: allChats.length,
-    });
-
-    if (isDashboard) {
+    if (isHome) {
       // Dashboard mode: show all chats or unassigned based on filter
       if (dashboardFilter === "unassigned") {
-        const filtered = allChats.filter((c) => !c.projectId);
-        console.log("[Sidebar] Dashboard unassigned mode:", filtered.length);
-        return filtered;
+        return allChats.filter((c) => !c.projectId);
       }
-      console.log("[Sidebar] Dashboard all mode:", allChats.length);
       return allChats;
     }
 
     // Project mode: show chats that belong to this project
     // Match by workspaceId OR by direct projectId assignment
-    const filtered = allChats.filter((c) => {
+    return allChats.filter((c) => {
       if (c.status === "archived") return false;
       if (workspaceId && c.workspaceId === workspaceId) return true;
       if (projectId && c.projectId === projectId) return true;
       return false;
     });
-
-    // Log why chats are matching
-    const matchingByWorkspace = allChats.filter(
-      (c) => workspaceId && c.workspaceId === workspaceId,
-    ).length;
-    const matchingByProject = allChats.filter((c) => projectId && c.projectId === projectId).length;
-    console.log("[Sidebar] Project mode filtered:", {
-      projectId,
-      workspaceId,
-      filteredCount: filtered.length,
-      matchingByWorkspace,
-      matchingByProject,
-      sampleChats: filtered.slice(0, 3).map((c) => ({
-        id: c.id,
-        workspaceId: c.workspaceId,
-        projectId: c.projectId,
-      })),
-    });
-
-    return filtered;
-  }, [isDashboard, dashboardFilter, allChats, workspaceId, projectId]);
+  }, [isHome, dashboardFilter, allChats, workspaceId, projectId]);
 
   // Grouped chats (for dashboard mode with grouping)
   const groupedChats = useMemo(() => {
     return groupChatsByRecency(chats);
   }, [chats]);
 
-  const activeChatId = workspaceId ? (activeChatByWorkspace.get(workspaceId) ?? null) : null;
+  // In home mode, use dashboard's active chat; in project mode, use workspace's active chat
+  const activeChatId = isHome
+    ? dashboardActiveChatId
+    : workspaceId
+      ? (activeChatByWorkspace.get(workspaceId) ?? null)
+      : null;
 
   // Find which group contains the active chat (for auto-expand)
   const activeGroupKey = useMemo(() => {
     if (!activeChatId) return undefined;
-    const prefix = isDashboard ? "dashboard" : "sidebar";
+    const prefix = isHome ? "dashboard" : "sidebar";
     for (const group of CHAT_GROUPS) {
       if (groupedChats[group as ChatGroup].some((c) => c.id === activeChatId)) {
         return `${prefix}-${group}`;
       }
     }
     return undefined;
-  }, [activeChatId, isDashboard, groupedChats]);
+  }, [activeChatId, isHome, groupedChats]);
 
   // Check if a group should be collapsed
   const isGroupCollapsed = (group: string) => {
@@ -188,81 +158,92 @@ export function Sidebar({
     }
   };
 
-  const handleSelectChat = (chat: Chat) => {
-    if (isDashboard) {
-      // In dashboard mode, navigate to the chat's project
-      if (chat.workspaceId && chat.projectId) {
-        // Switch to the chat's project, set it active, then navigate
-        setActiveProject(chat.projectId);
-        setActiveChat(chat.workspaceId, chat.id);
-        onNavigate("home");
-      } else if (chat.workspaceId) {
-        // Has workspace but no project - still try to open
-        setActiveChat(chat.workspaceId, chat.id);
-        onNavigate("home");
-      } else {
-        // Unassigned chats: show a toast prompting assignment
-        toast.info("Assign this chat to a project first", {
-          description: "Unassigned chats need to be assigned to a project before opening.",
-        });
+  const handleSelectChat = (chat: Chat, options?: { splitPane?: boolean }) => {
+    if (isHome) {
+      // In home mode, update dashboard state AND the focused panel
+      setDashboardActiveChatId(chat.id);
+
+      // Also update the focused chat panel's data.chatId so it renders the selected chat
+      const focusedPanelId = getFocusedChatPanelId("home");
+      if (focusedPanelId) {
+        if (options?.splitPane) {
+          splitPaneWithThread("home", focusedPanelId, chat.id);
+        } else {
+          openThreadInPane("home", focusedPanelId, chat.id);
+        }
       }
+
+      onNavigate("home"); // Switch away from settings if open
       return;
     }
 
     // Project mode: need workspaceId to open
-    if (chat.workspaceId) {
-      setActiveChat(chat.workspaceId, chat.id);
-      onNavigate("home");
-    } else if (workspaceId) {
-      // Chat has no workspaceId but we have an active workspace - assign and open
-      // Update chat with current workspace, then select it
+    const targetWorkspaceId = chat.workspaceId || workspaceId;
+    if (!targetWorkspaceId) {
+      notifications.error("Cannot open chat", "No workspace available. Select a project first.");
+      return;
+    }
+
+    // If chat has no workspaceId, assign it to current workspace
+    if (!chat.workspaceId && workspaceId) {
       const updatedChat: Chat = {
         ...chat,
         workspaceId,
         projectId: projectId ?? undefined,
       };
-      // Update the chat in the store
       const chatsMap = useChatStore.getState().chats;
       const updated = new Map(chatsMap);
       updated.set(chat.id, updatedChat);
       useChatStore.setState({ chats: updated });
-      // Now set it as active
-      setActiveChat(workspaceId, chat.id);
-      onNavigate("home");
-    } else {
-      toast.error("Cannot open chat", {
-        description: "No workspace available. Select a project first.",
-      });
     }
+
+    // Handle split pane vs normal open
+    if (options?.splitPane) {
+      // Cmd+Click: Open in new split pane
+      const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
+      if (focusedPanelId) {
+        splitPaneWithThread(targetWorkspaceId, focusedPanelId, chat.id);
+      }
+    } else {
+      // Normal click: Open in focused pane
+      const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
+      if (focusedPanelId) {
+        openThreadInPane(targetWorkspaceId, focusedPanelId, chat.id);
+      }
+    }
+
+    // Also update the workspace's active chat (for backwards compatibility)
+    setActiveChat(targetWorkspaceId, chat.id);
+    onNavigate("home");
   };
 
   const handleNewChat = () => {
-    if (isDashboard) {
-      // Create unassigned chat in dashboard mode
-      const newChat: Chat = {
-        id: `chat-${Date.now()}`,
-        sessionKey: `sess-${Date.now()}`,
-        title: "New Chat",
-        status: "active",
-        lastMessageAt: Date.now(),
-        createdAt: Date.now(),
-      };
-      addChat(newChat);
-      return;
-    }
+    // Sessions are created implicitly when the first message is sent.
+    // Generate a unique session key locally (matching web UI pattern).
+    const uuid = crypto.randomUUID();
+    const sessionKey = `kos:thread:${uuid}`;
+    const now = Date.now();
 
-    if (!workspaceId) return;
     const newChat: Chat = {
-      id: `chat-${Date.now()}`,
-      workspaceId,
-      projectId: projectId ?? undefined,
-      sessionKey: `sess-${Date.now()}`,
+      id: `chat-${now}`,
+      workspaceId: isHome ? undefined : workspaceId,
+      projectId: isHome ? undefined : (projectId ?? undefined),
+      sessionKey,
       title: "New Chat",
       status: "active",
-      lastMessageAt: Date.now(),
-      createdAt: Date.now(),
+      lastMessageAt: now,
+      createdAt: now,
     };
+
     addChat(newChat);
+
+    // Select the new chat
+    if (isHome) {
+      setDashboardActiveChatId(newChat.id);
+    } else if (workspaceId) {
+      setActiveChat(workspaceId, newChat.id);
+      onNavigate("home");
+    }
   };
 
   const handleArchiveChat = (chatId: string) => {
@@ -271,7 +252,7 @@ export function Sidebar({
 
   const handleCopySessionId = (sessionKey: string) => {
     navigator.clipboard.writeText(sessionKey).catch(() => {
-      toast.error("Failed to copy session ID");
+      notifications.error("Failed to copy session ID");
     });
   };
 
@@ -279,10 +260,33 @@ export function Sidebar({
     assignChatToProject(chatId, targetProjectId);
   };
 
+  // Handle session search result selection
+  const handleSearchSelect = useCallback(
+    (sessionKey: string) => {
+      // Find the chat with this sessionKey
+      const chat = allChats.find((c) => c.sessionKey === sessionKey);
+      if (chat) {
+        handleSelectChat(chat);
+      } else {
+        // Session not in local store - could create a new chat entry or show error
+        notifications.info(
+          "Session found",
+          `Session ${sessionKey.slice(0, 8)}... - loading from server`,
+        );
+      }
+    },
+    [allChats, handleSelectChat],
+  );
+
   return (
     <div className="h-full border-r border-border bg-muted/30 flex flex-col">
+      {/* Session search */}
+      <div className="shrink-0 border-b border-border px-3 py-2">
+        <SessionSearch onSelectSession={handleSearchSelect} />
+      </div>
+
       {/* Dashboard filter tabs */}
-      {isDashboard && (
+      {isHome && (
         <div className="shrink-0 border-b border-border px-3 py-2">
           <div className="flex gap-1">
             <FilterTab
@@ -343,11 +347,9 @@ export function Sidebar({
         <div className="flex-1 overflow-y-auto px-2 pb-2">
           {chats.length === 0 ? (
             <div className="px-3 py-4 text-sm text-muted-foreground text-center">
-              {isDashboard && dashboardFilter === "unassigned"
-                ? "No unassigned chats"
-                : "No chats yet"}
+              {isHome && dashboardFilter === "unassigned" ? "No unassigned chats" : "No chats yet"}
             </div>
-          ) : isDashboard ? (
+          ) : isHome ? (
             // Dashboard mode: grouped chats with project badges
             <div className="space-y-2">
               {CHAT_GROUPS.map((group) => (
@@ -419,13 +421,29 @@ export function Sidebar({
       {/* Bottom nav */}
       <div className="shrink-0 border-t border-border px-2 py-2 space-y-0.5">
         <button
-          onClick={() => onNavigate("home")}
+          onClick={() => {
+            if (!workspaceId) return;
+            if (hasPanelType(workspaceId, "tasks")) return;
+            // projectId should always exist when in project view (not home)
+            if (!projectId) return;
+            spawnPanel(workspaceId, "tasks", {
+              teamId: activeProject?.linearTeamId,
+              projectId: projectId,
+            });
+          }}
+          disabled={!workspaceId || !projectId || hasPanelType(workspaceId, "tasks")}
+          title={
+            !workspaceId || !projectId
+              ? "Select a project first"
+              : hasPanelType(workspaceId, "tasks")
+                ? "Tasks already open"
+                : "Open tasks panel"
+          }
           className={cn(
             "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
             "flex items-center gap-2",
-            currentView === "home" && !activeChatId
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+            "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+            "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
           )}
         >
           <ListTodo className="h-4 w-4 shrink-0" />
@@ -438,6 +456,13 @@ export function Sidebar({
             spawnPanel(workspaceId, "browser", { url: "https://google.com" });
           }}
           disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "browser") : false)}
+          title={
+            !workspaceId
+              ? "Select a project first"
+              : workspaceId && hasPanelType(workspaceId, "browser")
+                ? "Browser already open"
+                : "Open browser panel"
+          }
           className={cn(
             "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
             "flex items-center gap-2",
@@ -447,6 +472,30 @@ export function Sidebar({
         >
           <Globe className="h-4 w-4 shrink-0" />
           <span>Browser</span>
+        </button>
+        <button
+          onClick={() => {
+            if (!workspaceId) return;
+            if (hasPanelType(workspaceId, "terminal")) return;
+            spawnPanel(workspaceId, "terminal", {});
+          }}
+          disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "terminal") : false)}
+          title={
+            !workspaceId
+              ? "Select a project first"
+              : workspaceId && hasPanelType(workspaceId, "terminal")
+                ? "Terminal already open"
+                : "Open terminal panel"
+          }
+          className={cn(
+            "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
+            "flex items-center gap-2",
+            "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+            "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
+          )}
+        >
+          <Terminal className="h-4 w-4 shrink-0" />
+          <span>Terminal</span>
         </button>
         <button
           onClick={() => onNavigate("settings")}

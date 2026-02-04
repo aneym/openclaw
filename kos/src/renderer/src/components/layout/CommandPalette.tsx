@@ -10,6 +10,7 @@ import {
   Settings,
   Sun,
   Monitor,
+  Terminal,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Chat, Project, View } from "../../types";
@@ -136,7 +137,17 @@ export function CommandPalette({
     });
   }, [closeAndRun, activeWorkspaceId, spawnPanel]);
 
+  const handleOpenTerminal = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    closeAndRun(() => {
+      spawnPanel(activeWorkspaceId, "terminal", {});
+    });
+  }, [closeAndRun, activeWorkspaceId, spawnPanel]);
+
   const browserAlreadyOpen = activeWorkspaceId ? hasPanelType(activeWorkspaceId, "browser") : false;
+  const terminalAlreadyOpen = activeWorkspaceId
+    ? hasPanelType(activeWorkspaceId, "terminal")
+    : false;
 
   const handleSelectChat = useCallback(
     (chatId: string, workspaceId: string) => {
@@ -200,6 +211,14 @@ export function CommandPalette({
             <Globe className="mr-2 h-4 w-4" />
             <span>{browserAlreadyOpen ? "Browser Open" : "Open Browser"}</span>
             <CommandShortcut>⌘⇧B</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            onSelect={handleOpenTerminal}
+            disabled={!activeWorkspaceId || terminalAlreadyOpen}
+          >
+            <Terminal className="mr-2 h-4 w-4" />
+            <span>{terminalAlreadyOpen ? "Terminal Open" : "Open Terminal"}</span>
+            <CommandShortcut>⌘⇧T</CommandShortcut>
           </CommandItem>
           <CommandItem
             onSelect={() =>

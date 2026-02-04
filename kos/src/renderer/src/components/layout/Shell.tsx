@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Panel,
   PanelGroup,
@@ -9,13 +9,17 @@ import type { Project, View } from "../../types";
 import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
 import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
+import { useDashboardStore } from "../../stores/dashboard-store";
 import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
-import { useWorkspaceStore } from "../../stores/workspace-store";
+import { useSettingsStore } from "../../stores/settings-store";
+import { HOME_WORKSPACE_ID, useWorkspaceStore } from "../../stores/workspace-store";
 import { PanelContainer } from "../panels/PanelContainer";
+import { ProjectCreateDialog, ProjectSettingsDialog } from "../project";
 import { Settings } from "../settings/Settings";
 import { CommandPalette } from "./CommandPalette";
-import { DASHBOARD_TAB_ID, ProjectTabs } from "./ProjectTabs";
+import { ProfileSwitcherDialog } from "./ProfileSwitcherDialog";
+import { HOME_PROJECT_ID, ProjectTabs } from "./ProjectTabs";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 
@@ -24,12 +28,31 @@ const SIDEBAR_STORAGE_KEY = "kos-sidebar-layout-v2";
 export function Shell() {
   const [view, setView] = useState<View>("home");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
+  const [createProjectOpen, setCreateProjectOpen] = useState(false);
+  const [settingsProjectId, setSettingsProjectId] = useState<string | null>(null);
   const sidebarRef = useRef<ImperativePanelHandle>(null);
 
   // Project state
   const projectsMap = useProjectStore((s) => s.projects);
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
+  const initializeProjects = useProjectStore((s) => s.initialize);
+  const isProjectsInitialized = useProjectStore((s) => s.isInitialized);
+
+  // Settings state
+  const initializeSettings = useSettingsStore((s) => s.initialize);
+  const isSettingsInitialized = useSettingsStore((s) => s.isInitialized);
+
+  // Initialize stores on mount
+  useEffect(() => {
+    if (!isProjectsInitialized) {
+      initializeProjects();
+    }
+    if (!isSettingsInitialized) {
+      initializeSettings();
+    }
+  }, [isProjectsInitialized, initializeProjects, isSettingsInitialized, initializeSettings]);
 
   // Workspace state
   const workspacesMap = useWorkspaceStore((s) => s.workspaces);
@@ -40,12 +63,20 @@ export function Shell() {
   const chatsMap = useChatStore((s) => s.chats);
   const activeChatByWorkspace = useChatStore((s) => s.activeChatByWorkspace);
 
-  // Panel state
+  // Panel state - use individual selectors to avoid re-renders
   const closePanel = usePanelStore((s) => s.closePanel);
   const splitPanel = usePanelStore((s) => s.splitPanel);
   const spawnPanel = usePanelStore((s) => s.spawnPanel);
   const hasPanelType = usePanelStore((s) => s.hasPanelType);
   const getFocusedPanelId = usePanelStore((s) => s.getFocusedPanelId);
+  const getFocusedPanel = usePanelStore((s) => s.getFocusedPanel);
+  const focusNextPanel = usePanelStore((s) => s.focusNextPanel);
+  const focusPrevPanel = usePanelStore((s) => s.focusPrevPanel);
+  const duplicatePanel = usePanelStore((s) => s.duplicatePanel);
+  const addTab = usePanelStore((s) => s.addTab);
+  const closeTab = usePanelStore((s) => s.closeTab);
+  const nextTab = usePanelStore((s) => s.nextTab);
+  const prevTab = usePanelStore((s) => s.prevTab);
 
   // Derived values
   const projects = useMemo(
@@ -72,9 +103,17 @@ export function Shell() {
     return chatId ? chatsMap.get(chatId) : undefined;
   }, [activeWorkspace, activeChatByWorkspace, chatsMap]);
 
-  // Dashboard tab detection
-  const isDashboard = activeProjectId === DASHBOARD_TAB_ID;
-  console.log("[Shell] activeProjectId:", activeProjectId, "isDashboard:", isDashboard);
+  // Dashboard state for home mode
+  const dashboardActiveChatId = useDashboardStore((s) => s.activeChatId);
+
+  // Home tab detection (shows all chats)
+  const isHome = activeProjectId === HOME_PROJECT_ID;
+
+  // Get the chat to display in home mode
+  const homeActiveChat = useMemo(() => {
+    if (!isHome || !dashboardActiveChatId) return undefined;
+    return chatsMap.get(dashboardActiveChatId);
+  }, [isHome, dashboardActiveChatId, chatsMap]);
 
   const toggleSidebar = useCallback(() => {
     const panel = sidebarRef.current;
@@ -94,8 +133,19 @@ export function Shell() {
     [setActiveProject],
   );
 
-  // Keyboard shortcuts
+  // Use refs for values that change frequently but shouldn't cause shortcut re-creation
+  // This prevents re-renders when workspace/projects change
+  const activeWorkspaceRef = useRef(activeWorkspace);
+  activeWorkspaceRef.current = activeWorkspace;
+
+  const projectsRef = useRef(projects);
+  projectsRef.current = projects;
+
+  // Keyboard shortcuts - stable array, handlers read from refs
   const shortcuts = useMemo(() => {
+    // Helper to get current workspace ID from ref
+    const getWsId = () => activeWorkspaceRef.current?.id;
+
     const items = [
       {
         key: "k",
@@ -103,6 +153,13 @@ export function Shell() {
         shiftKey: false,
         handler: () => setCommandPaletteOpen(true),
         description: "Open command palette",
+      },
+      {
+        key: "p",
+        metaKey: true,
+        shiftKey: true,
+        handler: () => setProfileSwitcherOpen(true),
+        description: "Open profile switcher",
       },
       {
         key: "\\",
@@ -116,23 +173,31 @@ export function Shell() {
         metaKey: true,
         shiftKey: false,
         handler: () => {
-          if (!activeWorkspace) return;
-          const panelId = getFocusedPanelId(activeWorkspace.id);
-          if (panelId) {
-            closePanel(activeWorkspace.id, panelId);
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panel = getFocusedPanel(wsId);
+          if (!panel) return;
+
+          // If panel has tabs and more than one tab, close the active tab
+          if (panel.tabs && panel.tabs.length > 1 && panel.activeTabId) {
+            closeTab(wsId, panel.id, panel.activeTabId);
+          } else {
+            // Otherwise close the panel
+            closePanel(wsId, panel.id);
           }
         },
-        description: "Close current panel",
+        description: "Close current tab or panel",
       },
       {
         key: "\\",
         metaKey: true,
         shiftKey: true,
         handler: () => {
-          if (!activeWorkspace) return;
-          const panelId = getFocusedPanelId(activeWorkspace.id);
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
           if (panelId) {
-            splitPanel(activeWorkspace.id, panelId, "horizontal", "empty");
+            splitPanel(wsId, panelId, "horizontal", "empty");
           }
         },
         description: "Split panel right",
@@ -142,11 +207,108 @@ export function Shell() {
         metaKey: true,
         shiftKey: true,
         handler: () => {
-          if (!activeWorkspace) return;
-          if (hasPanelType(activeWorkspace.id, "browser")) return;
-          spawnPanel(activeWorkspace.id, "browser", { url: "https://google.com" });
+          const wsId = getWsId();
+          if (!wsId) return;
+          if (hasPanelType(wsId, "browser")) return;
+          spawnPanel(wsId, "browser", { url: "https://google.com" });
         },
         description: "Open browser panel",
+      },
+      // Cmd+D: Duplicate focused panel type (horizontal split)
+      {
+        key: "d",
+        metaKey: true,
+        shiftKey: false,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
+          if (!panelId) return;
+          duplicatePanel(wsId, panelId, "horizontal");
+        },
+        description: "Duplicate panel",
+      },
+      // Cmd+Shift+D: Duplicate focused panel type (vertical split)
+      {
+        key: "d",
+        metaKey: true,
+        shiftKey: true,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
+          if (!panelId) return;
+          duplicatePanel(wsId, panelId, "vertical");
+        },
+        description: "Duplicate panel vertically",
+      },
+      // Cmd+T: Add new tab in tabbed panels
+      {
+        key: "t",
+        metaKey: true,
+        shiftKey: false,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
+          if (!panelId) return;
+          addTab(wsId, panelId);
+        },
+        description: "New tab",
+      },
+      // Ctrl+Tab: Next tab
+      {
+        key: "Tab",
+        metaKey: false,
+        shiftKey: false,
+        ctrlKey: true,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
+          if (!panelId) return;
+          nextTab(wsId, panelId);
+        },
+        description: "Next tab",
+      },
+      // Ctrl+Shift+Tab: Previous tab
+      {
+        key: "Tab",
+        metaKey: false,
+        shiftKey: true,
+        ctrlKey: true,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const panelId = getFocusedPanelId(wsId);
+          if (!panelId) return;
+          prevTab(wsId, panelId);
+        },
+        description: "Previous tab",
+      },
+      // Cmd+]: Focus next pane
+      {
+        key: "]",
+        metaKey: true,
+        shiftKey: false,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          focusNextPanel(wsId);
+        },
+        description: "Focus next pane",
+      },
+      // Cmd+[: Focus previous pane
+      {
+        key: "[",
+        metaKey: true,
+        shiftKey: false,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          focusPrevPanel(wsId);
+        },
+        description: "Focus previous pane",
       },
     ];
 
@@ -157,7 +319,7 @@ export function Shell() {
         metaKey: true,
         shiftKey: false,
         handler: () => {
-          const project = projects[i - 1];
+          const project = projectsRef.current[i - 1];
           if (project) {
             handleSelectProject(project.id);
           }
@@ -168,14 +330,21 @@ export function Shell() {
 
     return items;
   }, [
+    // Only stable dependencies - store methods don't change
     toggleSidebar,
-    activeWorkspace,
     getFocusedPanelId,
+    getFocusedPanel,
     closePanel,
+    closeTab,
     splitPanel,
     spawnPanel,
     hasPanelType,
-    projects,
+    focusNextPanel,
+    focusPrevPanel,
+    duplicatePanel,
+    addTab,
+    nextTab,
+    prevTab,
     handleSelectProject,
   ]);
 
@@ -195,6 +364,8 @@ export function Shell() {
         activeProjectId={activeProjectId}
         onSelectProject={handleSelectProject}
         onSettings={() => setView("settings")}
+        onCreateProject={() => setCreateProjectOpen(true)}
+        onOpenProfileSettings={() => setView("settings")}
       />
 
       <PanelGroup direction="horizontal" autoSaveId={SIDEBAR_STORAGE_KEY} className="flex-1">
@@ -213,7 +384,7 @@ export function Shell() {
             workspaceId={activeWorkspace?.id}
             onNavigate={setView}
             currentView={view}
-            isDashboard={isDashboard}
+            isHome={isHome}
           />
         </Panel>
         <PanelResizeHandle className="w-1 bg-transparent hover:bg-accent/50 active:bg-accent transition-colors cursor-col-resize" />
@@ -222,18 +393,9 @@ export function Shell() {
             <div className="flex-1 overflow-hidden">
               {view === "settings" ? (
                 <Settings />
-              ) : isDashboard ? (
-                <div className="flex-1 flex items-center justify-center h-full">
-                  <div className="text-center max-w-md">
-                    <h1 className="text-4xl font-bold mb-4">Dashboard</h1>
-                    <p className="text-muted-foreground mb-6">
-                      View and manage all your chats across projects.
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Select a chat from the sidebar to view it.
-                    </p>
-                  </div>
-                </div>
+              ) : isHome ? (
+                // Home mode: always show PanelContainer (handles chat display + other panels)
+                <PanelContainer workspaceId={HOME_WORKSPACE_ID} activeChatId={homeActiveChat?.id} />
               ) : activeWorkspace ? (
                 <PanelContainer workspaceId={activeWorkspace.id} activeChatId={activeChat?.id} />
               ) : (
@@ -263,6 +425,21 @@ export function Shell() {
         onNavigate={setView}
         onToggleSidebar={toggleSidebar}
       />
+
+      <ProfileSwitcherDialog open={profileSwitcherOpen} onOpenChange={setProfileSwitcherOpen} />
+
+      {/* Project dialogs */}
+      <ProjectCreateDialog open={createProjectOpen} onOpenChange={setCreateProjectOpen} />
+
+      {settingsProjectId && projectsMap.get(settingsProjectId) && (
+        <ProjectSettingsDialog
+          project={projectsMap.get(settingsProjectId)!}
+          open={true}
+          onOpenChange={(open) => {
+            if (!open) setSettingsProjectId(null);
+          }}
+        />
+      )}
     </div>
   );
 }

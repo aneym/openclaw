@@ -1,4 +1,5 @@
 import { Archive, Copy, FolderInput, Inbox, MoreHorizontal } from "lucide-react";
+import { memo, useCallback } from "react";
 import type { Chat, Project } from "../../types";
 import { ChannelIcon } from "../../lib/channel-icons";
 import { ProjectIcon } from "../../lib/project-icons";
@@ -17,7 +18,7 @@ import {
 interface ChatItemProps {
   chat: Chat;
   isActive: boolean;
-  onSelect: () => void;
+  onSelect: (options?: { splitPane?: boolean }) => void;
   onArchive: () => void;
   onCopySessionId: () => void;
   project?: Project;
@@ -26,7 +27,7 @@ interface ChatItemProps {
   onAssignToProject?: (chatId: string, projectId: string | null) => void;
 }
 
-export function ChatItem({
+export const ChatItem = memo(function ChatItem({
   chat,
   isActive,
   onSelect,
@@ -53,6 +54,22 @@ export function ChatItem({
 
   const showContextMenu = projects && onAssignToProject;
 
+  // Stable click handler
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => onSelect({ splitPane: e.metaKey || e.ctrlKey }),
+    [onSelect],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        onSelect({ splitPane: e.metaKey || e.ctrlKey });
+      }
+    },
+    [onSelect],
+  );
+
   return (
     <div
       className={cn(
@@ -62,15 +79,12 @@ export function ChatItem({
           ? "bg-accent text-accent-foreground"
           : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
       )}
-      onClick={onSelect}
+      onClick={handleClick}
       role="button"
       tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onSelect();
-        }
-      }}
+      onKeyDown={handleKeyDown}
+      aria-label={`Open chat: ${chat.title}`}
+      aria-current={isActive ? "true" : undefined}
     >
       {chat.channel && <ChannelIcon channel={chat.channel} className="h-3.5 w-3.5 shrink-0" />}
       <div className="flex-1 min-w-0">
@@ -91,6 +105,7 @@ export function ChatItem({
             onClick={handleArchive}
             className={cn("shrink-0 p-1 rounded-sm", "hover:bg-accent-foreground/10")}
             title="Archive chat"
+            aria-label="Archive chat"
           >
             <Archive className="h-3 w-3" />
           </button>
@@ -102,6 +117,7 @@ export function ChatItem({
                 onClick={(e) => e.stopPropagation()}
                 className={cn("shrink-0 p-1 rounded-sm", "hover:bg-accent-foreground/10")}
                 title="More actions"
+                aria-label="More actions"
               >
                 <MoreHorizontal className="h-3 w-3" />
               </button>
@@ -145,6 +161,7 @@ export function ChatItem({
             onClick={handleCopy}
             className={cn("shrink-0 p-1 rounded-sm", "hover:bg-accent-foreground/10")}
             title="Copy session ID"
+            aria-label="Copy session ID"
           >
             <Copy className="h-3 w-3" />
           </button>
@@ -152,4 +169,4 @@ export function ChatItem({
       </div>
     </div>
   );
-}
+});

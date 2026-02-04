@@ -1,15 +1,20 @@
-import { LayoutDashboard, Plus, Settings } from "lucide-react";
+import { Home, Plus, Settings as SettingsIcon } from "lucide-react";
 import type { Project } from "../../types";
 import { ProjectIcon } from "../../lib/project-icons";
 import { cn } from "../../lib/utils";
+import { ProfileSwitcher } from "./ProfileSwitcher";
 
-export const DASHBOARD_TAB_ID = "__dashboard__";
+export const HOME_PROJECT_ID = "__home__";
 
 interface ProjectTabsProps {
   projects: Project[];
   activeProjectId: string | null;
   onSelectProject: (projectId: string) => void;
   onSettings: () => void;
+  onCreateProject: () => void;
+  onProjectSettings?: (projectId: string) => void;
+  onOpenProfileSettings?: () => void;
+  onCreateProfile?: () => void;
 }
 
 export function ProjectTabs({
@@ -17,25 +22,28 @@ export function ProjectTabs({
   activeProjectId,
   onSelectProject,
   onSettings,
+  onCreateProject,
+  onOpenProfileSettings,
+  onCreateProfile,
 }: ProjectTabsProps) {
-  const isDashboardActive = activeProjectId === DASHBOARD_TAB_ID;
+  const isHomeActive = activeProjectId === HOME_PROJECT_ID;
 
   return (
     <div className="flex items-center h-10 border-b border-border bg-muted/30 px-2 gap-1 [-webkit-app-region:drag]">
       <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
-        {/* Dashboard tab */}
+        {/* Home tab */}
         <button
-          onClick={() => onSelectProject(DASHBOARD_TAB_ID)}
+          onClick={() => onSelectProject(HOME_PROJECT_ID)}
           className={cn(
             "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
             "flex items-center gap-2",
-            isDashboardActive
+            isHomeActive
               ? "bg-background text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground hover:bg-background/50",
           )}
         >
-          <LayoutDashboard className="h-4 w-4" />
-          <span>Dashboard</span>
+          <Home className="h-4 w-4" />
+          <span>Home</span>
         </button>
 
         {/* Project tabs */}
@@ -56,6 +64,7 @@ export function ProjectTabs({
           </button>
         ))}
         <button
+          onClick={onCreateProject}
           className={cn(
             "px-2 py-1.5 rounded-md text-muted-foreground",
             "hover:text-foreground hover:bg-background/50 transition-colors",
@@ -68,16 +77,19 @@ export function ProjectTabs({
 
       <div className="flex-1" />
 
-      <button
-        onClick={onSettings}
-        className={cn(
-          "px-2 py-1.5 rounded-md text-muted-foreground [-webkit-app-region:no-drag]",
-          "hover:text-foreground hover:bg-background/50 transition-colors",
-        )}
-        title="Settings"
-      >
-        <Settings className="h-4 w-4" />
-      </button>
+      <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
+        <ProfileSwitcher onOpenSettings={onOpenProfileSettings} onCreateProfile={onCreateProfile} />
+        <button
+          onClick={onSettings}
+          className={cn(
+            "px-2 py-1.5 rounded-md text-muted-foreground",
+            "hover:text-foreground hover:bg-background/50 transition-colors",
+          )}
+          title="Settings"
+        >
+          <SettingsIcon className="h-4 w-4" />
+        </button>
+      </div>
     </div>
   );
 }

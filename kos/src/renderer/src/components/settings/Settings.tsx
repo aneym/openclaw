@@ -1,19 +1,24 @@
-import { Eye, Palette, Plug } from "lucide-react";
+import { Eye, Link2, Palette, Plug, Users } from "lucide-react";
 import { useState } from "react";
 import { ThemeShowcase } from "../ThemeShowcase";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { ConnectionSettings } from "./ConnectionSettings";
+import { GitHubSettings } from "./GitHubSettings";
+import { LinearSettings } from "./LinearSettings";
+import { ProfileSettings } from "./ProfileSettings";
 
-type SettingsSection = "appearance" | "preview" | "connection";
+type SettingsSection = "profiles" | "appearance" | "preview" | "connection" | "integrations";
 
 const sections = [
+  { id: "profiles" as const, label: "Profiles", icon: Users },
   { id: "appearance" as const, label: "Appearance", icon: Palette },
-  { id: "preview" as const, label: "Preview", icon: Eye },
+  { id: "integrations" as const, label: "Integrations", icon: Link2 },
   { id: "connection" as const, label: "Connection", icon: Plug },
+  { id: "preview" as const, label: "Preview", icon: Eye },
 ];
 
 export function Settings() {
-  const [activeSection, setActiveSection] = useState<SettingsSection>("appearance");
+  const [activeSection, setActiveSection] = useState<SettingsSection>("profiles");
 
   return (
     <div className="flex h-full">
@@ -40,18 +45,34 @@ export function Settings() {
 
       {/* Settings content */}
       <div className="flex-1 overflow-hidden">
+        {activeSection === "profiles" && (
+          <div className="overflow-y-auto h-full p-8 max-w-2xl">
+            <h2 className="text-2xl font-bold mb-6">Profiles</h2>
+            <ProfileSettings />
+          </div>
+        )}
         {activeSection === "appearance" && (
           <div className="overflow-y-auto h-full p-8 max-w-2xl">
             <h2 className="text-2xl font-bold mb-6">Appearance</h2>
             <AppearanceSettings />
           </div>
         )}
-        {activeSection === "preview" && <ThemeShowcase />}
+        {activeSection === "integrations" && (
+          <div className="overflow-y-auto h-full p-8 max-w-2xl">
+            <h2 className="text-2xl font-bold mb-6">Integrations</h2>
+            <div className="space-y-8">
+              <GitHubSettings />
+              <div className="border-t border-border" />
+              <LinearSettings />
+            </div>
+          </div>
+        )}
         {activeSection === "connection" && (
           <div className="overflow-y-auto h-full p-8 max-w-2xl">
             <ConnectionSettings />
           </div>
         )}
+        {activeSection === "preview" && <ThemeShowcase />}
       </div>
     </div>
   );
