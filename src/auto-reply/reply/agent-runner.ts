@@ -21,6 +21,7 @@ import {
 import { emitDiagnosticEvent, isDiagnosticsEnabled } from "../../infra/diagnostic-events.js";
 import { clearSessionRunning, markSessionRunning } from "../../infra/running-sessions.js";
 import { defaultRuntime } from "../../runtime.js";
+import { resolveSlackAccount, resolveSlackCollapseReplies } from "../../slack/accounts.js";
 import { estimateUsageCost, resolveModelCostConfig } from "../../utils/usage-format.js";
 import { resolveResponseUsageMode, type VerboseLevel } from "../thinking.js";
 import { runAgentTurnWithFallback } from "./agent-runner-execution.js";
@@ -142,6 +143,13 @@ export async function runReplyAgent(params: {
   );
   const applyReplyToMode = createReplyToModeFilterForChannel(replyToMode, replyToChannel);
   const cfg = followupRun.run.config;
+  const collapseReplies =
+    replyToChannel === "slack"
+      ? resolveSlackCollapseReplies(
+          resolveSlackAccount({ cfg, accountId: sessionCtx.AccountId }),
+          sessionCtx.To,
+        )
+      : undefined;
   const blockReplyCoalescing =
     blockStreamingEnabled && opts?.onBlockReply
       ? resolveBlockStreamingCoalescing(
@@ -427,6 +435,7 @@ export async function runReplyAgent(params: {
       messagingToolSentTargets: runResult.messagingToolSentTargets,
       originatingTo: sessionCtx.OriginatingTo ?? sessionCtx.To,
       accountId: sessionCtx.AccountId,
+      collapseReplies,
     });
     const { replyPayloads } = payloadResult;
     didLogHeartbeatStrip = payloadResult.didLogHeartbeatStrip;

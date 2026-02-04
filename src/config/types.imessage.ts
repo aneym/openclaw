@@ -74,6 +74,8 @@ export type IMessageAccountConfig = {
 };
 
 export type IMessageConfig = {
+  /** Model override for iMessage sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account iMessage configuration (multi-account). */
   accounts?: Record<string, IMessageAccountConfig>;
 } & IMessageAccountConfig;

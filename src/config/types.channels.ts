@@ -22,6 +22,8 @@ export type ChannelDefaultsConfig = {
   groupPolicy?: GroupPolicy;
   /** Default heartbeat visibility for all channels. */
   heartbeat?: ChannelHeartbeatVisibilityConfig;
+  /** Default model override for all channel sessions (provider/model string or alias). */
+  model?: string;
 };
 
 export type ChannelsConfig = {

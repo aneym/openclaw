@@ -18,7 +18,7 @@
 #   Auth                → token "dev" (loopback only)
 #   OPENCLAW_GATEWAY_DEV=1 → enables /api/rpc HTTP endpoint
 #
-# Connect the webchat (localhost:5173) via Overview:
+# Connect the webchat (localhost:3636) via Overview:
 #   WebSocket URL: ws://localhost:19001
 #   Gateway Token: dev
 # --------------------------------------------------------------------------

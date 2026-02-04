@@ -109,6 +109,9 @@ export async function runEmbeddedPiAgent(
       if (!model) {
         throw new Error(error ?? `Unknown model: ${provider}/${modelId}`);
       }
+      console.log(
+        `[MODEL-ROUTING] embeddedRunner: resolved ${provider}/${modelId} → ${model.provider}/${model.id} ctx=${model.contextWindow ?? "?"}`,
+      );
 
       const ctxInfo = resolveContextWindowInfo({
         cfg: params.config,

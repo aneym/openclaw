@@ -36,6 +36,10 @@ export type HookMappingConfig = {
   thinking?: string;
   timeoutSeconds?: number;
   transform?: HookMappingTransform;
+  /** Field path to extract for deduplication (e.g., "messages[0].threadId") */
+  deduplicateByField?: string;
+  /** Deduplication window in milliseconds (default: 30000) */
+  deduplicateWindowMs?: number;
 };
 
 export type HooksGmailTailscaleMode = "off" | "serve" | "funnel";

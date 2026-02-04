@@ -1,7 +1,11 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import type { createSubsystemLogger } from "../logging/subsystem.js";
 import type { HookMessageChannel } from "./hooks.js";
 import { CONFIG_PATH, type HookMappingConfig, type HooksConfig } from "../config/config.js";
+import { shouldDeduplicateHook } from "./hooks-dedup.js";
+
+type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
 
 export type HookMappingResolved = {
   id: string;
@@ -21,6 +25,8 @@ export type HookMappingResolved = {
   thinking?: string;
   timeoutSeconds?: number;
   transform?: HookMappingTransformResolved;
+  deduplicateByField?: string;
+  deduplicateWindowMs?: number;
 };
 
 export type HookMappingTransformResolved = {
@@ -72,6 +78,8 @@ const hookPresetMappings: Record<string, HookMappingConfig[]> = {
       sessionKey: "hook:gmail:{{messages[0].id}}",
       messageTemplate:
         "New email from {{messages[0].from}}\nSubject: {{messages[0].subject}}\n{{messages[0].snippet}}\n{{messages[0].body}}",
+      deduplicateByField: "messages[0].threadId",
+      deduplicateWindowMs: 30_000,
     },
   ],
 };
@@ -137,6 +145,7 @@ export function resolveHookMappings(hooks?: HooksConfig): HookMappingResolved[] 
 export async function applyHookMappings(
   mappings: HookMappingResolved[],
   ctx: HookMappingContext,
+  logHooks?: SubsystemLogger,
 ): Promise<HookMappingResult | null> {
   if (mappings.length === 0) {
     return null;
@@ -144,6 +153,11 @@ export async function applyHookMappings(
   for (const mapping of mappings) {
     if (!mappingMatches(mapping, ctx)) {
       continue;
+    }
+
+    // Check deduplication before processing the action
+    if (logHooks && shouldDeduplicateHook(mapping, ctx, logHooks)) {
+      return { ok: true, action: null, skipped: true };
     }
 
     const base = buildActionFromMapping(mapping, ctx);
@@ -207,6 +221,8 @@ function normalizeHookMapping(
     thinking: mapping.thinking,
     timeoutSeconds: mapping.timeoutSeconds,
     transform,
+    deduplicateByField: mapping.deduplicateByField,
+    deduplicateWindowMs: mapping.deduplicateWindowMs,
   };
 }
 

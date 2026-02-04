@@ -213,22 +213,12 @@ export function buildEmbeddedRunPayloads(params: {
       errorLower.includes("needs") ||
       errorLower.includes("requires");
 
-    // Show tool errors only when:
-    // 1. There's no user-facing reply AND the error is not recoverable
-    // Recoverable errors (validation, missing params) are already in the model's context
-    // and shouldn't be surfaced to users since the model should retry.
-    if (!hasUserFacingReply && !isRecoverableError) {
-      const toolSummary = formatToolAggregate(
-        params.lastToolError.toolName,
-        params.lastToolError.meta ? [params.lastToolError.meta] : undefined,
-        { markdown: useMarkdown },
-      );
-      const errorSuffix = params.lastToolError.error ? `: ${params.lastToolError.error}` : "";
-      replyItems.push({
-        text: `⚠️ ${toolSummary} failed${errorSuffix}`,
-        isError: true,
-      });
-    }
+    // Tool errors stay in the model's context for retry/handling but are never
+    // surfaced as user-facing messages. The model should mention failures in its
+    // own text reply if they matter. Suppressing prevents noisy ⚠️ spam in DMs
+    // from automated sessions (hooks, heartbeats, cron).
+    // Previously this only suppressed "recoverable" errors; now all tool errors
+    // are suppressed from delivery.
   }
 
   const hasAudioAsVoiceTag = replyItems.some((item) => item.audioAsVoice);

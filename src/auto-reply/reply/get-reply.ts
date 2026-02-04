@@ -78,6 +78,9 @@ export async function getReplyFromConfig(
   });
   let provider = defaultProvider;
   let model = defaultModel;
+  console.log(
+    `[MODEL-ROUTING] getReplyFromConfig: agentId=${agentId ?? "none"} configDefault=${defaultProvider}/${defaultModel} sessionKey=${agentSessionKey ?? "none"}`,
+  );
   if (opts?.isHeartbeat) {
     const heartbeatRaw = agentCfg?.heartbeat?.model?.trim() ?? "";
     const heartbeatRef = heartbeatRaw
@@ -90,6 +93,43 @@ export async function getReplyFromConfig(
     if (heartbeatRef) {
       provider = heartbeatRef.ref.provider;
       model = heartbeatRef.ref.model;
+    }
+  }
+
+  // Channel-level model override: channels.<channel>.dm.model > channels.<channel>.model > channels.defaults.model > agent default
+  if (!opts?.isHeartbeat) {
+    const channelKey = ctx.Provider?.trim().toLowerCase();
+    const channelCfg = channelKey
+      ? (cfg.channels?.[channelKey] as Record<string, unknown> | undefined)
+      : undefined;
+
+    // Detect DM sessions via session key pattern (e.g. "agent:main:slack:dm:elie")
+    const sessionKey = ctx.SessionKey ?? "";
+    const isDmSession = /:dm:/i.test(sessionKey);
+
+    // DM-specific model: channels.<channel>.dm.model (overrides channel-level)
+    const dmCfg =
+      isDmSession && channelCfg?.dm ? (channelCfg.dm as Record<string, unknown>) : undefined;
+    const dmModelRaw = (dmCfg?.model as string | undefined)?.trim() ?? "";
+
+    const channelModelRaw =
+      dmModelRaw ||
+      ((channelCfg?.model as string | undefined)?.trim() ??
+        (cfg.channels?.defaults?.model as string | undefined)?.trim() ??
+        "");
+    if (channelModelRaw) {
+      const channelModelRef = resolveModelRefFromString({
+        raw: channelModelRaw,
+        defaultProvider,
+        aliasIndex,
+      });
+      if (channelModelRef) {
+        provider = channelModelRef.ref.provider;
+        model = channelModelRef.ref.model;
+        console.log(
+          `[MODEL-ROUTING] channel model override: channel=${channelKey}${isDmSession ? " (dm)" : ""} model=${provider}/${model}`,
+        );
+      }
     }
   }
 
@@ -233,6 +273,9 @@ export async function getReplyFromConfig(
   } = directiveResult.result;
   provider = resolvedProvider;
   model = resolvedModel;
+  console.log(
+    `[MODEL-ROUTING] afterDirectives: effective=${provider}/${model} modelOverride=${sessionEntry?.modelOverride ?? "none"} providerOverride=${sessionEntry?.providerOverride ?? "none"} thinkLevel=${resolvedThinkLevel ?? "off"}`,
+  );
 
   const inlineActionResult = await handleInlineActions({
     ctx,

@@ -153,12 +153,16 @@ export function createHooksRequestHandler(
 
     if (hooksConfig.mappings.length > 0) {
       try {
-        const mapped = await applyHookMappings(hooksConfig.mappings, {
-          payload: payload as Record<string, unknown>,
-          headers,
-          url,
-          path: subPath,
-        });
+        const mapped = await applyHookMappings(
+          hooksConfig.mappings,
+          {
+            payload: payload as Record<string, unknown>,
+            headers,
+            url,
+            path: subPath,
+          },
+          logHooks,
+        );
         if (mapped) {
           if (!mapped.ok) {
             sendJson(res, 400, { ok: false, error: mapped.error });
@@ -275,6 +279,14 @@ export function createGatewayHttpServer(opts: {
       }
       if (
         await handleMediaHttpRequest(req, res, {
+          auth: resolvedAuth,
+          trustedProxies,
+        })
+      ) {
+        return;
+      }
+      if (
+        await handleFileHttpRequest(req, res, {
           auth: resolvedAuth,
           trustedProxies,
         })

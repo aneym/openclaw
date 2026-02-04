@@ -22,6 +22,8 @@ export type SlackDmConfig = {
   groupChannels?: Array<string | number>;
   /** @deprecated Prefer channels.slack.replyToModeByChatType.direct. */
   replyToMode?: ReplyToMode;
+  /** Model override for Slack DM sessions (provider/model string or alias). Overrides channels.slack.model for DMs. */
+  model?: string;
 };
 
 export type SlackChannelConfig = {
@@ -42,6 +44,8 @@ export type SlackChannelConfig = {
   skills?: string[];
   /** Optional system prompt for this channel. */
   systemPrompt?: string;
+  /** Collapse intermediate text replies (off|last). Default: off. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackReactionNotificationMode = "off" | "own" | "all" | "allowlist";
@@ -142,9 +146,13 @@ export type SlackAccountConfig = {
   channels?: Record<string, SlackChannelConfig>;
   /** Heartbeat visibility settings for this channel. */
   heartbeat?: ChannelHeartbeatVisibilityConfig;
+  /** Collapse intermediate text replies (off|last). Default: off. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackConfig = {
+  /** Model override for Slack sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Slack configuration (multi-account). */
   accounts?: Record<string, SlackAccountConfig>;
 } & SlackAccountConfig;

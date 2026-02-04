@@ -158,6 +158,8 @@ export type DiscordAccountConfig = {
 };
 
 export type DiscordConfig = {
+  /** Model override for Discord sessions (provider/model string or alias). */
+  model?: string;
   /** Optional per-account Discord configuration (multi-account). */
   accounts?: Record<string, DiscordAccountConfig>;
 } & DiscordAccountConfig;
