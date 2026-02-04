@@ -42,6 +42,8 @@ export type SlackChannelConfig = {
   skills?: string[];
   /** Optional system prompt for this channel. */
   systemPrompt?: string;
+  /** Collapse intermediate text replies (off|last). Default: off. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackReactionNotificationMode = "off" | "own" | "all" | "allowlist";
@@ -142,6 +144,8 @@ export type SlackAccountConfig = {
   channels?: Record<string, SlackChannelConfig>;
   /** Heartbeat visibility settings for this channel. */
   heartbeat?: ChannelHeartbeatVisibilityConfig;
+  /** Collapse intermediate text replies (off|last). Default: off. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackConfig = {

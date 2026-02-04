@@ -540,6 +540,9 @@ export function resolveSessionModelRef(
     provider = entry?.providerOverride?.trim() || provider;
     model = storedModelOverride;
   }
+  console.log(
+    `[MODEL-ROUTING] resolveSessionModelRef: default=${resolved.provider}/${resolved.model} override=${storedModelOverride ? `${entry?.providerOverride?.trim() || resolved.provider}/${storedModelOverride}` : "none"} → ${provider}/${model}`,
+  );
   return { provider, model };
 }
 

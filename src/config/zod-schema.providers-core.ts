@@ -430,6 +430,7 @@ export const SlackChannelSchema = z
     users: z.array(z.union([z.string(), z.number()])).optional(),
     skills: z.array(z.string()).optional(),
     systemPrompt: z.string().optional(),
+    collapseReplies: z.enum(["off", "last"]).optional(),
   })
   .strict();
 
@@ -504,6 +505,7 @@ export const SlackAccountSchema = z
     dm: SlackDmSchema.optional(),
     channels: z.record(z.string(), SlackChannelSchema.optional()).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    collapseReplies: z.enum(["off", "last"]).optional(),
   })
   .strict();
 

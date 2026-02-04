@@ -54,17 +54,17 @@ fi
 export OPENCLAW_PROFILE=dev
 export OPENCLAW_SKIP_CHANNELS=1
 
-# Kill stale Vite dev server if port 5173 is still held
-lsof -ti :5173 | xargs kill -9 2>/dev/null || true
+# Kill stale Vite dev server if port 3636 is still held
+lsof -ti :3636 | xargs kill -9 2>/dev/null || true
 
 pnpm gateway:watch &
 pnpm ui:dev &
 
 sleep 4
 if [ -n "$TOKEN" ]; then
-  printf '\n  Dev UI: http://localhost:5173/?token=%s\n\n' "$TOKEN"
+  printf '\n  Dev UI: http://localhost:3636/?token=%s\n\n' "$TOKEN"
 else
-  printf '\n  Dev UI: http://localhost:5173/\n  (no token configured in %s)\n\n' "$DEV_CONFIG"
+  printf '\n  Dev UI: http://localhost:3636/\n  (no token configured in %s)\n\n' "$DEV_CONFIG"
 fi
 
 wait

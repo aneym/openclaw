@@ -32,6 +32,7 @@ export function buildReplyPayloads(params: {
   >[0]["messagingToolSentTargets"];
   originatingTo?: string;
   accountId?: string;
+  collapseReplies?: "off" | "last";
 }): { replyPayloads: ReplyPayload[]; didLogHeartbeatStrip: boolean } {
   let didLogHeartbeatStrip = params.didLogHeartbeatStrip;
   const sanitizedPayloads = params.isHeartbeat
@@ -112,7 +113,18 @@ export function buildReplyPayloads(params: {
             (payload) => !params.directlySentBlockKeys!.has(createBlockReplyPayloadKey(payload)),
           )
         : dedupedPayloads;
-  const replyPayloads = suppressMessagingToolReplies ? [] : filteredPayloads;
+  let replyPayloads = suppressMessagingToolReplies ? [] : filteredPayloads;
+
+  // Apply collapseReplies filtering
+  if (params.collapseReplies === "last" && replyPayloads.length > 1) {
+    // Keep media-only payloads + the last text payload
+    const mediaOnly = replyPayloads.filter(
+      (p) => !p.text?.trim() && (p.mediaUrl || p.mediaUrls?.length),
+    );
+    const textPayloads = replyPayloads.filter((p) => p.text?.trim());
+    const lastText = textPayloads.at(-1);
+    replyPayloads = [...mediaOnly, ...(lastText ? [lastText] : [])];
+  }
 
   return {
     replyPayloads,

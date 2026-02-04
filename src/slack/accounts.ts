@@ -26,6 +26,7 @@ export type ResolvedSlackAccount = {
   slashCommand?: SlackAccountConfig["slashCommand"];
   dm?: SlackAccountConfig["dm"];
   channels?: SlackAccountConfig["channels"];
+  collapseReplies?: SlackAccountConfig["collapseReplies"];
 };
 
 function listConfiguredAccountIds(cfg: OpenClawConfig): string[] {
@@ -110,6 +111,7 @@ export function resolveSlackAccount(params: {
     slashCommand: merged.slashCommand,
     dm: merged.dm,
     channels: merged.channels,
+    collapseReplies: merged.collapseReplies,
   };
 }
 
@@ -131,4 +133,16 @@ export function resolveSlackReplyToMode(
     return account.dm.replyToMode;
   }
   return account.replyToMode ?? "off";
+}
+
+export function resolveSlackCollapseReplies(
+  account: ResolvedSlackAccount,
+  channelId?: string | null,
+): "off" | "last" | undefined {
+  // Per-channel config takes precedence
+  if (channelId && account.channels?.[channelId]?.collapseReplies !== undefined) {
+    return account.channels[channelId].collapseReplies;
+  }
+  // Fall back to account-level config
+  return account.collapseReplies;
 }

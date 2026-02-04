@@ -9,6 +9,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { loadConfig } from "../config/config.js";
 import { authorizeGatewayConnect, isLocalDirectRequest, type ResolvedGatewayAuth } from "./auth.js";
 import { sendJson, sendText, sendUnauthorized } from "./http-common.js";
@@ -96,6 +97,13 @@ function looksLikeBinary(buffer: Buffer): boolean {
 function resolvePath(raw: string): string {
   if (raw.startsWith("~")) {
     return path.join(os.homedir(), raw.slice(1));
+  }
+  // Resolve relative paths against the default agent's workspace directory
+  if (!path.isAbsolute(raw)) {
+    const cfg = loadConfig();
+    const defaultAgentId = resolveDefaultAgentId(cfg);
+    const workspaceDir = resolveAgentWorkspaceDir(cfg, defaultAgentId);
+    return path.resolve(workspaceDir, raw);
   }
   return raw;
 }

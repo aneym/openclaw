@@ -78,6 +78,9 @@ export async function getReplyFromConfig(
   });
   let provider = defaultProvider;
   let model = defaultModel;
+  console.log(
+    `[MODEL-ROUTING] getReplyFromConfig: agentId=${agentId ?? "none"} configDefault=${defaultProvider}/${defaultModel} sessionKey=${agentSessionKey ?? "none"}`,
+  );
   if (opts?.isHeartbeat) {
     const heartbeatRaw = agentCfg?.heartbeat?.model?.trim() ?? "";
     const heartbeatRef = heartbeatRaw
@@ -233,6 +236,9 @@ export async function getReplyFromConfig(
   } = directiveResult.result;
   provider = resolvedProvider;
   model = resolvedModel;
+  console.log(
+    `[MODEL-ROUTING] afterDirectives: effective=${provider}/${model} modelOverride=${sessionEntry?.modelOverride ?? "none"} providerOverride=${sessionEntry?.providerOverride ?? "none"} thinkLevel=${resolvedThinkLevel ?? "off"}`,
+  );
 
   const inlineActionResult = await handleInlineActions({
     ctx,

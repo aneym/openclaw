@@ -539,7 +539,9 @@ export const chatHandlers: GatewayRequestHandlers = {
       });
 
       let agentRunStarted = false;
-      console.log(`[CHAT.SEND] Starting dispatchInboundMessage for runId=${clientRunId}`);
+      console.log(
+        `[MODEL-ROUTING] chat.send: sessionKey=${p.sessionKey} runId=${clientRunId} hasModelOverride=${Boolean(entry?.modelOverride)} override=${entry?.providerOverride ?? ""}/${entry?.modelOverride ?? ""}`,
+      );
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -557,6 +559,9 @@ export const chatHandlers: GatewayRequestHandlers = {
             prefixContext.model = extractShortModelName(ctx.model);
             prefixContext.modelFull = `${ctx.provider}/${ctx.model}`;
             prefixContext.thinkingLevel = ctx.thinkLevel ?? "off";
+            console.log(
+              `[MODEL-ROUTING] onModelSelected: ${ctx.provider}/${ctx.model} think=${ctx.thinkLevel ?? "off"} session=${p.sessionKey}`,
+            );
           },
         },
       })

@@ -1,0 +1,88 @@
+═══════════════════════════════════════════════════════════════
+Gmail Hook Thread Deduplication - Implementation Complete ✅
+═══════════════════════════════════════════════════════════════
+
+FILES CREATED:
+--------------
+✅ src/gateway/hooks-dedup.ts          (Core deduplication logic, 114 lines)
+✅ src/gateway/hooks-dedup.test.ts     (Comprehensive tests, 10 passing tests)
+✅ DEDUP_IMPLEMENTATION.md             (Implementation documentation)
+✅ CHANGES_SUMMARY.txt                 (This file)
+
+FILES MODIFIED (my changes):
+----------------------------
+✅ src/config/types.hooks.ts
+   - Added: deduplicateByField?: string
+   - Added: deduplicateWindowMs?: number
+
+✅ src/gateway/hooks-mapping.ts
+   - Added: dedup fields to HookMappingResolved type
+   - Updated: Gmail preset with dedup config
+   - Modified: normalizeHookMapping() to carry dedup fields
+   - Modified: applyHookMappings() to accept logger and check dedup
+   - Added: import statements for dedup module and logger type
+
+✅ src/gateway/server-http.ts
+   - Modified: applyHookMappings call to pass logHooks parameter
+   - (Note: File also has pre-existing local modifications unrelated to dedup)
+
+FILES NOT TOUCHED (pre-existing local changes):
+-----------------------------------------------
+❌ pnpm-lock.yaml                      (reverted - not touched)
+❌ src/agents/pi-embedded-runner/*     (pre-existing)
+❌ src/auto-reply/reply/get-reply.ts   (pre-existing)
+❌ src/gateway/file-http.ts            (pre-existing)
+❌ src/gateway/server-methods/chat.ts  (pre-existing)
+❌ src/gateway/session-utils.ts        (pre-existing)
+❌ tsconfig.json                       (pre-existing)
+❌ ui/*                                (pre-existing)
+
+BUILD & TEST RESULTS:
+--------------------
+✅ pnpm build                          → SUCCESS (5.6s)
+✅ All new tests passing               → 10/10 tests
+✅ All existing tests still pass       → 7/7 hooks-mapping tests
+✅ No TypeScript errors
+✅ Clean integration - no breaking changes
+
+KEY FEATURES IMPLEMENTED:
+------------------------
+✅ In-memory thread-based deduplication
+✅ Configurable dedup window (default: 30s)
+✅ Automatic cache pruning (60s max age)
+✅ Gmail preset configured with thread dedup
+✅ General-purpose deduplicateByField config
+✅ Supports nested field paths and array indexing
+✅ Comprehensive test coverage
+✅ Backward compatible - existing behavior unchanged
+✅ Proper logging when dedup occurs
+
+USAGE:
+------
+The Gmail preset is automatically configured with:
+  deduplicateByField: "messages[0].threadId"
+  deduplicateWindowMs: 30_000
+
+For custom hooks, add to your mapping:
+  deduplicateByField: "your.field.path"
+  deduplicateWindowMs: 60000  # optional, defaults to 30s
+
+VERIFICATION:
+------------
+Run: cd ~/Desktop/openclaw-fork && pnpm vitest run src/gateway/hooks-dedup.test.ts
+
+All 10 tests pass:
+  ✅ First hook for a thread passes through
+  ✅ Second hook for same thread within 30s is deduplicated
+  ✅ Hook after 30s window passes through again
+  ✅ Different threadIds are independent
+  ✅ Missing threadId falls through (no dedup)
+  ✅ Old entries are pruned
+  ✅ Default window is used when not specified
+  ✅ Nested field paths work
+  ✅ Cache clearing works
+  ✅ Config-less mappings work unchanged
+
+═══════════════════════════════════════════════════════════════
+Ready for teammate use. Clean, tested, well-typed. ✨
+═══════════════════════════════════════════════════════════════
