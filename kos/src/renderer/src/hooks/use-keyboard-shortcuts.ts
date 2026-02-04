@@ -1,13 +1,13 @@
-import { useEffect } from 'react'
+import { useEffect } from "react";
 
 export interface KeyboardShortcut {
-  key: string
-  metaKey?: boolean
-  ctrlKey?: boolean
-  shiftKey?: boolean
-  altKey?: boolean
-  handler: (e: KeyboardEvent) => void
-  description?: string
+  key: string;
+  metaKey?: boolean;
+  ctrlKey?: boolean;
+  shiftKey?: boolean;
+  altKey?: boolean;
+  handler: (e: KeyboardEvent) => void;
+  description?: string;
 }
 
 /**
@@ -18,21 +18,22 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       for (const shortcut of shortcuts) {
-        const metaMatch = shortcut.metaKey === undefined || shortcut.metaKey === (e.metaKey || e.ctrlKey)
-        const ctrlMatch = shortcut.ctrlKey === undefined || shortcut.ctrlKey === e.ctrlKey
-        const shiftMatch = shortcut.shiftKey === undefined || shortcut.shiftKey === e.shiftKey
-        const altMatch = shortcut.altKey === undefined || shortcut.altKey === e.altKey
-        const keyMatch = shortcut.key.toLowerCase() === e.key.toLowerCase()
+        const metaMatch =
+          shortcut.metaKey === undefined || shortcut.metaKey === (e.metaKey || e.ctrlKey);
+        const ctrlMatch = shortcut.ctrlKey === undefined || shortcut.ctrlKey === e.ctrlKey;
+        const shiftMatch = shortcut.shiftKey === undefined || shortcut.shiftKey === e.shiftKey;
+        const altMatch = shortcut.altKey === undefined || shortcut.altKey === e.altKey;
+        const keyMatch = shortcut.key.toLowerCase() === e.key.toLowerCase();
 
         if (keyMatch && metaMatch && ctrlMatch && shiftMatch && altMatch) {
-          e.preventDefault()
-          shortcut.handler(e)
-          break
+          e.preventDefault();
+          shortcut.handler(e);
+          break;
         }
       }
-    }
+    };
 
-    window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [shortcuts])
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [shortcuts]);
 }

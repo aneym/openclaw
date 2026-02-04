@@ -45,6 +45,7 @@ src/renderer/src/components/nav/
 ### WorkspaceSwitcher.tsx
 
 Dropdown at top of sidebar:
+
 - Shows active workspace name + icon
 - Click → dropdown with all workspaces
 - Each workspace item shows name + project count
@@ -60,6 +61,7 @@ Dropdown at top of sidebar:
 ### ProjectSettings.tsx
 
 Modal or drawer:
+
 - Project name + icon + color
 - Linear team connection (dropdown of available teams from Linear API)
 - Repo path (file picker via Electron dialog)
@@ -129,18 +131,18 @@ When a card is clicked:
 function handleCardClick(issue: LinearIssue) {
   // Check if a thread already exists for this issue
   const existing = threadStore.findByLinearIssue(issue.id);
-  
+
   if (existing) {
     // Activate existing thread
     threadStore.setActiveThread(existing.id);
     return;
   }
-  
+
   // Create new thread linked to this issue
-  const session = await gateway.request('session.create', {
+  const session = await gateway.request("session.create", {
     label: `${issue.identifier}: ${issue.title}`,
   });
-  
+
   threadStore.addThread({
     id: generateId(),
     sessionKey: session.sessionKey,
@@ -148,7 +150,7 @@ function handleCardClick(issue: LinearIssue) {
     subtitle: issue.identifier,
     linearIssueId: issue.id,
     projectId: currentProject.id,
-    status: 'active',
+    status: "active",
     lastMessageAt: Date.now(),
     createdAt: Date.now(),
   });
@@ -164,9 +166,9 @@ Build the DAG from Linear's `blocks` relations:
 ```ts
 interface DependencyGraph {
   // Adjacency lists
-  blocks: Map<string, Set<string>>;        // issueId → Set<issues it blocks>
-  blockedBy: Map<string, Set<string>>;     // issueId → Set<issues blocking it>
-  
+  blocks: Map<string, Set<string>>; // issueId → Set<issues it blocks>
+  blockedBy: Map<string, Set<string>>; // issueId → Set<issues blocking it>
+
   // Queries
   isBlocked(issueId: string): boolean;
   getBlockers(issueId: string): string[];
@@ -180,17 +182,17 @@ interface DependencyGraph {
 function buildDependencyGraph(issues: LinearIssue[]): DependencyGraph {
   const blocks = new Map<string, Set<string>>();
   const blockedBy = new Map<string, Set<string>>();
-  
+
   for (const issue of issues) {
     for (const relation of issue.relations) {
-      if (relation.type === 'blocks') {
+      if (relation.type === "blocks") {
         // issue blocks relation.relatedIssueId
         getOrCreate(blocks, issue.id).add(relation.relatedIssueId);
         getOrCreate(blockedBy, relation.relatedIssueId).add(issue.id);
       }
     }
   }
-  
+
   return {
     blocks,
     blockedBy,
@@ -198,15 +200,13 @@ function buildDependencyGraph(issues: LinearIssue[]): DependencyGraph {
       const deps = blockedBy.get(id);
       if (!deps) return false;
       // Blocked only if ANY blocker is not Done
-      return [...deps].some(depId => {
-        const dep = issues.find(i => i.id === depId);
-        return dep && dep.state.name !== 'Done';
+      return [...deps].some((depId) => {
+        const dep = issues.find((i) => i.id === depId);
+        return dep && dep.state.name !== "Done";
       });
     },
     getUnblockedTasks: () => {
-      return issues.filter(i => 
-        i.state.name !== 'Done' && !graph.isBlocked(i.id)
-      );
+      return issues.filter((i) => i.state.name !== "Done" && !graph.isBlocked(i.id));
     },
     getDownstreamCount: (id) => {
       // BFS/DFS count of all transitively blocked tasks
@@ -227,7 +227,9 @@ function buildDependencyGraph(issues: LinearIssue[]): DependencyGraph {
       // Longest path through the DAG (most blocking chain)
       // ... topological sort + dynamic programming
     },
-    topologicalSort: () => { /* Kahn's algorithm */ },
+    topologicalSort: () => {
+      /* Kahn's algorithm */
+    },
   };
 }
 ```
@@ -235,6 +237,7 @@ function buildDependencyGraph(issues: LinearIssue[]): DependencyGraph {
 ### DependencyBadge.tsx
 
 Shows on blocked cards:
+
 - `⛔ Blocked by KOS-1, KOS-4` (red text, links to blocker cards)
 - `🔽 Blocks 3 tasks` (shows downstream impact count)
 - Hover on "Blocks 3 tasks" → tooltip listing the blocked tasks
@@ -244,7 +247,7 @@ Shows on blocked cards:
 ### useLinearTeam.ts
 
 ```ts
-const LINEAR_API = 'https://api.linear.app/graphql';
+const LINEAR_API = "https://api.linear.app/graphql";
 
 async function fetchTeamIssues(teamId: string, apiKey: string): Promise<LinearIssue[]> {
   const query = `{
@@ -272,12 +275,13 @@ async function fetchTeamIssues(teamId: string, apiKey: string): Promise<LinearIs
       }
     }
   }`;
-  
+
   // ... fetch + cache (react-query or SWR)
 }
 ```
 
 Cache strategy:
+
 - Initial fetch on project select
 - Background refetch every 60 seconds
 - Optimistic updates on drag-and-drop (update local state immediately, sync to Linear)
@@ -287,10 +291,10 @@ Cache strategy:
 ```ts
 interface LinearIssue {
   id: string;
-  identifier: string;           // "KOS-7"
+  identifier: string; // "KOS-7"
   title: string;
   description?: string;
-  priority: number;             // 0=none, 1=urgent, 2=high, 3=medium, 4=low
+  priority: number; // 0=none, 1=urgent, 2=high, 3=medium, 4=low
   state: LinearState;
   assignee?: LinearUser;
   labels: LinearLabel[];
@@ -305,11 +309,11 @@ interface LinearState {
   name: string;
   color: string;
   position: number;
-  type: 'backlog' | 'unstarted' | 'started' | 'completed' | 'cancelled';
+  type: "backlog" | "unstarted" | "started" | "completed" | "cancelled";
 }
 
 interface LinearRelation {
-  type: 'blocks' | 'is_blocked_by' | 'related' | 'duplicate';
+  type: "blocks" | "is_blocked_by" | "related" | "duplicate";
   relatedIssue: {
     id: string;
     identifier: string;
@@ -322,6 +326,7 @@ interface LinearRelation {
 ## Linear API Key Management
 
 Users provide their own Linear API key:
+
 - Stored in workspace config (Zustand persist → localStorage)
 - Set via Project Settings or first-time setup
 - Validated on entry (try fetching viewer info)

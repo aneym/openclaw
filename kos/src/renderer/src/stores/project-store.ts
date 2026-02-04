@@ -64,9 +64,13 @@ export const useProjectStore = create<ProjectState>()(
       activeProjectId: "proj-payme",
 
       setActiveProject: (id: string) => {
-        const project = get().projects.get(id);
-        if (project) {
+        console.log("[ProjectStore] setActiveProject called with:", id);
+        // Allow special IDs like "__dashboard__" or valid project IDs
+        if (id.startsWith("__") || get().projects.get(id)) {
+          console.log("[ProjectStore] Setting activeProjectId to:", id);
           set({ activeProjectId: id });
+        } else {
+          console.log("[ProjectStore] Rejected - not a valid project or special ID");
         }
       },
 

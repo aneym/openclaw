@@ -21,6 +21,23 @@ export interface CaptureConfig {
   scaleFactor?: number;
 }
 
+export interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface BrowserAPI {
+  create: (bounds: Rectangle) => Promise<void>;
+  destroy: () => Promise<void>;
+  setBounds: (bounds: Rectangle) => Promise<void>;
+  navigate: (url: string) => Promise<void>;
+  cdp: (method: string, params?: object) => Promise<unknown>;
+  openDevTools: () => Promise<void>;
+  getCdpUrl: () => Promise<string | null>;
+}
+
 export interface SimulatorAPI {
   listWindows: () => Promise<SimulatorWindow[]>;
   hasScreenPermission: () => Promise<boolean>;
@@ -50,9 +67,10 @@ declare global {
   interface Window {
     electron: ElectronAPI;
     api: {
-      getGatewayConfig: () => Promise<{ url: string; token?: string }>;
+      getGatewayConfig: () => Promise<{ url: string; token?: string; source?: string }>;
       openDirectoryDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       simulator: SimulatorAPI;
+      browser: BrowserAPI;
     };
   }
 }

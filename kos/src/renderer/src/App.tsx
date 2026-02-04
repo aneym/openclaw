@@ -27,11 +27,11 @@ function App() {
     // Try to get gateway config from Electron API if available
     if (window.api?.getGatewayConfig) {
       window.api.getGatewayConfig().then((config) => {
-        connect(config.url || DEFAULT_GATEWAY_URL, config.token);
+        connect(config.url || DEFAULT_GATEWAY_URL, config.token, config.source);
       });
     } else {
       // Fallback for web preview or when API is unavailable
-      connect(DEFAULT_GATEWAY_URL, undefined);
+      connect(DEFAULT_GATEWAY_URL, undefined, "web-fallback");
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

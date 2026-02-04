@@ -1,4 +1,18 @@
-import { ChevronRight } from "lucide-react";
+import {
+  Bot,
+  ChevronRight,
+  FileText,
+  FilePen,
+  FolderSearch,
+  Globe,
+  MessageSquare,
+  Monitor,
+  Pencil,
+  Search,
+  Terminal,
+  Wrench,
+  type LucideIcon,
+} from "lucide-react";
 import { useState } from "react";
 import type { ToolCallPart, ToolResultPart } from "@/types/message";
 import { cn } from "@/lib/utils";
@@ -10,28 +24,28 @@ interface ToolCallChipProps {
   defaultOpen?: boolean;
 }
 
-/**
- * Get the icon for a tool based on its name.
- */
-function getToolIcon(toolName: string): string {
-  const iconMap: Record<string, string> = {
-    Read: "📖",
-    Write: "📝",
-    Edit: "✏️",
-    exec: "⚡",
-    Bash: "⚡",
-    web_search: "🔍",
-    WebSearch: "🔍",
-    web_fetch: "🌐",
-    WebFetch: "🌐",
-    browser: "🖥",
-    message: "💬",
-    Task: "🤖",
-    Glob: "🔎",
-    Grep: "🔎",
-  };
+/** Static icon map - defined outside component to avoid recreation */
+const TOOL_ICONS: Record<string, LucideIcon> = {
+  Read: FileText,
+  Write: FilePen,
+  Edit: Pencil,
+  exec: Terminal,
+  Bash: Terminal,
+  web_search: Search,
+  WebSearch: Search,
+  web_fetch: Globe,
+  WebFetch: Globe,
+  browser: Monitor,
+  message: MessageSquare,
+  Task: Bot,
+  Glob: FolderSearch,
+  Grep: FolderSearch,
+};
 
-  return iconMap[toolName] || "🔧";
+/** Renders the appropriate icon for a tool */
+function ToolIcon({ name, className }: { name: string; className?: string }) {
+  const Icon = TOOL_ICONS[name] || Wrench;
+  return <Icon className={className} />;
 }
 
 /**
@@ -88,7 +102,6 @@ function formatResult(result: unknown): { content: string; isJson: boolean } {
 
 export function ToolCallChip({ part, onClick, defaultOpen = false }: ToolCallChipProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const icon = getToolIcon(part.toolName);
   const details = getToolDetails(part);
   const isResult = part.type === "tool-result";
   const isError = isResult && part.isError;
@@ -123,7 +136,7 @@ export function ToolCallChip({ part, onClick, defaultOpen = false }: ToolCallChi
           !hasContent && !isClickable && "cursor-default",
         )}
       >
-        <span className="text-sm leading-none">{icon}</span>
+        <ToolIcon name={part.toolName} className="w-3.5 h-3.5" />
         <span className="font-mono">{part.toolName}</span>
         {details && (
           <>

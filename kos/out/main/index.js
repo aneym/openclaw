@@ -41,6 +41,63 @@ function trackWindowState(win) {
   win.on("move", saveState);
   win.on("close", saveState);
 }
+let browserView = null;
+let mainWindow = null;
+function initBrowserPanel(window) {
+  mainWindow = window;
+  electron.ipcMain.handle("browser:create", (_, bounds) => {
+    if (browserView) return;
+    browserView = new electron.BrowserView({
+      webPreferences: {
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+    mainWindow.addBrowserView(browserView);
+    browserView.setBounds(bounds);
+    browserView.webContents.debugger.attach("1.3");
+    browserView.webContents.loadURL("about:blank");
+  });
+  electron.ipcMain.handle("browser:destroy", () => {
+    if (!browserView || !mainWindow) return;
+    try {
+      browserView.webContents.debugger.detach();
+    } catch {}
+    mainWindow.removeBrowserView(browserView);
+    browserView = null;
+  });
+  electron.ipcMain.handle("browser:set-bounds", (_, bounds) => {
+    browserView?.setBounds(bounds);
+  });
+  electron.ipcMain.handle("browser:navigate", (_, url) => {
+    browserView?.webContents.loadURL(url);
+  });
+  electron.ipcMain.handle("browser:cdp", async (_, method, params) => {
+    if (!browserView) throw new Error("No browser");
+    return browserView.webContents.debugger.sendCommand(method, params);
+  });
+  electron.ipcMain.handle("browser:devtools", () => {
+    browserView?.webContents.openDevTools({ mode: "detach" });
+  });
+  electron.ipcMain.handle("browser:get-cdp-url", async () => {
+    if (!browserView) return null;
+    try {
+      const response = await fetch("http://localhost:9222/json");
+      const targets = await response.json();
+      const wcId = browserView.webContents.id;
+      const target = targets.find(
+        (t) => t.webSocketDebuggerUrl?.includes(`/${wcId}/`) || t.id === String(wcId),
+      );
+      if (target?.webSocketDebuggerUrl) {
+        return target.webSocketDebuggerUrl;
+      }
+      const pageTarget = targets.find((t) => t.type === "page");
+      return pageTarget?.webSocketDebuggerUrl ?? null;
+    } catch {
+      return null;
+    }
+  });
+}
 let kosNative = null;
 if (process.platform === "darwin") {
   try {
@@ -52,16 +109,37 @@ if (process.platform === "darwin") {
 if (utils.is.dev) {
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
+const CDP_PORT = 9222;
+electron.app.commandLine.appendSwitch("remote-debugging-port", String(CDP_PORT));
 electron.ipcMain.handle("get-gateway-config", () => {
+  const prodPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
+  const devPath = path.join(os.homedir(), ".openclaw-dev", "openclaw.json");
+  const stateDir = process.env.OPENCLAW_STATE_DIR;
+  if (stateDir) {
+    try {
+      const configPath = path.join(stateDir, "openclaw.json");
+      const raw = fs.readFileSync(configPath, "utf-8");
+      const config = JSON.parse(raw);
+      const port = config?.gateway?.port ?? 18789;
+      const token = config?.gateway?.auth?.token;
+      return { url: `ws://localhost:${port}`, token, source: configPath };
+    } catch {}
+  }
   try {
-    const configPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
-    const raw = fs.readFileSync(configPath, "utf-8");
+    const devRaw = fs.readFileSync(devPath, "utf-8");
+    const devConfig = JSON.parse(devRaw);
+    const port = devConfig?.gateway?.port ?? 19001;
+    const token = devConfig?.gateway?.auth?.token;
+    return { url: `ws://localhost:${port}`, token, source: devPath };
+  } catch {}
+  try {
+    const raw = fs.readFileSync(prodPath, "utf-8");
     const config = JSON.parse(raw);
     const port = config?.gateway?.port ?? 18789;
     const token = config?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token };
+    return { url: `ws://localhost:${port}`, token, source: prodPath };
   } catch {
-    return { url: "ws://localhost:18789" };
+    return { url: "ws://localhost:18789", source: "default" };
   }
 });
 electron.ipcMain.handle("dialog:openDirectory", async () => {
@@ -210,7 +288,7 @@ function createMenu() {
 }
 function createWindow() {
   const saved = restoreWindowState();
-  const mainWindow = new electron.BrowserWindow({
+  const mainWindow2 = new electron.BrowserWindow({
     width: saved?.width ?? 1400,
     height: saved?.height ?? 900,
     minWidth: 800,
@@ -231,22 +309,23 @@ function createWindow() {
       contextIsolation: true,
     },
   });
-  trackWindowState(mainWindow);
+  trackWindowState(mainWindow2);
+  initBrowserPanel(mainWindow2);
   if (saved?.isMaximized) {
-    mainWindow.maximize();
+    mainWindow2.maximize();
   }
-  mainWindow.on("ready-to-show", () => {
-    mainWindow.show();
+  mainWindow2.on("ready-to-show", () => {
+    mainWindow2.show();
   });
-  mainWindow.webContents.setWindowOpenHandler((details) => {
+  mainWindow2.webContents.setWindowOpenHandler((details) => {
     electron.shell.openExternal(details.url);
     return { action: "deny" };
   });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    mainWindow.webContents.openDevTools();
+    mainWindow2.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    mainWindow2.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, "../renderer/index.html"));
+    mainWindow2.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 }
 electron.app.whenReady().then(() => {

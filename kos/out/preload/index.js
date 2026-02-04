@@ -1,6 +1,6 @@
 "use strict";
-const electron = require("electron");
 const preload = require("@electron-toolkit/preload");
+const electron = require("electron");
 const api = {
   getGatewayConfig: () => electron.ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
@@ -41,6 +41,16 @@ const api = {
       electron.ipcRenderer.on("simulator:error", listener);
       return () => electron.ipcRenderer.removeListener("simulator:error", listener);
     },
+  },
+  // Browser panel APIs
+  browser: {
+    create: (bounds) => electron.ipcRenderer.invoke("browser:create", bounds),
+    destroy: () => electron.ipcRenderer.invoke("browser:destroy"),
+    setBounds: (bounds) => electron.ipcRenderer.invoke("browser:set-bounds", bounds),
+    navigate: (url) => electron.ipcRenderer.invoke("browser:navigate", url),
+    cdp: (method, params) => electron.ipcRenderer.invoke("browser:cdp", method, params),
+    openDevTools: () => electron.ipcRenderer.invoke("browser:devtools"),
+    getCdpUrl: () => electron.ipcRenderer.invoke("browser:get-cdp-url"),
   },
 };
 if (process.contextIsolated) {

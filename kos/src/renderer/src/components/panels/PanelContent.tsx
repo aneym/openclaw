@@ -1,5 +1,6 @@
 import type { PanelType } from "../../types";
 import { CodingSessionPanel } from "../coding/CodingSessionPanel";
+import { BrowserPanel } from "./BrowserPanel";
 import { ChatPanel } from "./ChatPanel";
 
 interface PanelContentProps {
@@ -44,12 +45,8 @@ export function PanelContent({ type, data, workspaceId, activeChatId }: PanelCon
 
     case "browser": {
       const url = data?.url as string | undefined;
-      return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Browser Panel</p>
-          {url && <p className="text-xs mt-2">URL: {url}</p>}
-        </div>
-      );
+      const panelId = data?.panelId as string | undefined;
+      return <BrowserPanel panelId={panelId ?? "browser-default"} initialUrl={url} />;
     }
 
     case "preview":

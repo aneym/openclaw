@@ -5,8 +5,18 @@ import {
   Copy,
   RefreshCw,
   Archive,
+  MessageSquare,
+  Hammer,
+  Keyboard,
+  Globe,
+  Eye,
+  ClipboardList,
+  FileCode,
+  Square,
+  HelpCircle,
+  type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useState, useMemo } from "react";
 import type { Chat, PanelType } from "../../types";
 import { useSession } from "../../gateway/hooks";
 import { useSessionActions } from "../../hooks/use-session-actions";
@@ -77,7 +87,7 @@ export function PanelToolbar({
   return (
     <div className="group/toolbar h-8 flex items-center justify-between px-3 border-b border-border bg-background/50 opacity-0 hover:opacity-100 transition-opacity duration-200">
       <div className="flex items-center gap-2 text-sm text-foreground/70 font-medium">
-        <span className="mr-1">{getPanelIcon(panelType)}</span>
+        <PanelTypeIcon type={panelType} className="h-4 w-4" />
         <span className="truncate">{displayTitle}</span>
       </div>
 
@@ -161,27 +171,22 @@ export function PanelToolbar({
   );
 }
 
-function getPanelIcon(type: PanelType): string {
-  switch (type) {
-    case "chat":
-      return "💬";
-    case "coding-session":
-      return "🔨";
-    case "terminal":
-      return "⌨️";
-    case "browser":
-      return "🌐";
-    case "preview":
-      return "👁️";
-    case "tasks":
-      return "📋";
-    case "code":
-      return "📄";
-    case "empty":
-      return "⬜";
-    default:
-      return "❓";
-  }
+/** Static icon map for panel types */
+const PANEL_ICONS: Record<PanelType, LucideIcon> = {
+  chat: MessageSquare,
+  "coding-session": Hammer,
+  terminal: Keyboard,
+  browser: Globe,
+  preview: Eye,
+  tasks: ClipboardList,
+  code: FileCode,
+  empty: Square,
+};
+
+/** Renders the appropriate icon for a panel type */
+function PanelTypeIcon({ type, className }: { type: PanelType; className?: string }) {
+  const Icon = PANEL_ICONS[type] || HelpCircle;
+  return <Icon className={className} />;
 }
 
 function getPanelTitle(type: PanelType): string {

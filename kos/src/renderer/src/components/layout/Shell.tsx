@@ -5,8 +5,9 @@ import {
   PanelResizeHandle,
   type ImperativePanelHandle,
 } from "react-resizable-panels";
-import type { Project } from "../../types";
+import type { Project, View } from "../../types";
 import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
+import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
 import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
@@ -14,13 +15,11 @@ import { useWorkspaceStore } from "../../stores/workspace-store";
 import { PanelContainer } from "../panels/PanelContainer";
 import { Settings } from "../settings/Settings";
 import { CommandPalette } from "./CommandPalette";
-import { ProjectTabs } from "./ProjectTabs";
+import { DASHBOARD_TAB_ID, ProjectTabs } from "./ProjectTabs";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
 
 const SIDEBAR_STORAGE_KEY = "kos-sidebar-layout-v2";
-
-type View = "home" | "settings";
 
 export function Shell() {
   const [view, setView] = useState<View>("home");
@@ -44,6 +43,8 @@ export function Shell() {
   // Panel state
   const closePanel = usePanelStore((s) => s.closePanel);
   const splitPanel = usePanelStore((s) => s.splitPanel);
+  const spawnPanel = usePanelStore((s) => s.spawnPanel);
+  const hasPanelType = usePanelStore((s) => s.hasPanelType);
   const getFocusedPanelId = usePanelStore((s) => s.getFocusedPanelId);
 
   // Derived values
@@ -70,6 +71,10 @@ export function Shell() {
     const chatId = activeChatByWorkspace.get(activeWorkspace.id);
     return chatId ? chatsMap.get(chatId) : undefined;
   }, [activeWorkspace, activeChatByWorkspace, chatsMap]);
+
+  // Dashboard tab detection
+  const isDashboard = activeProjectId === DASHBOARD_TAB_ID;
+  console.log("[Shell] activeProjectId:", activeProjectId, "isDashboard:", isDashboard);
 
   const toggleSidebar = useCallback(() => {
     const panel = sidebarRef.current;
@@ -132,6 +137,17 @@ export function Shell() {
         },
         description: "Split panel right",
       },
+      {
+        key: "b",
+        metaKey: true,
+        shiftKey: true,
+        handler: () => {
+          if (!activeWorkspace) return;
+          if (hasPanelType(activeWorkspace.id, "browser")) return;
+          spawnPanel(activeWorkspace.id, "browser", { url: "https://google.com" });
+        },
+        description: "Open browser panel",
+      },
     ];
 
     // Number shortcuts for project switching
@@ -157,6 +173,8 @@ export function Shell() {
     getFocusedPanelId,
     closePanel,
     splitPanel,
+    spawnPanel,
+    hasPanelType,
     projects,
     handleSelectProject,
   ]);
@@ -195,6 +213,7 @@ export function Shell() {
             workspaceId={activeWorkspace?.id}
             onNavigate={setView}
             currentView={view}
+            isDashboard={isDashboard}
           />
         </Panel>
         <PanelResizeHandle className="w-1 bg-transparent hover:bg-accent/50 active:bg-accent transition-colors cursor-col-resize" />
@@ -203,14 +222,27 @@ export function Shell() {
             <div className="flex-1 overflow-hidden">
               {view === "settings" ? (
                 <Settings />
+              ) : isDashboard ? (
+                <div className="flex-1 flex items-center justify-center h-full">
+                  <div className="text-center max-w-md">
+                    <h1 className="text-4xl font-bold mb-4">Dashboard</h1>
+                    <p className="text-muted-foreground mb-6">
+                      View and manage all your chats across projects.
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Select a chat from the sidebar to view it.
+                    </p>
+                  </div>
+                </div>
               ) : activeWorkspace ? (
                 <PanelContainer workspaceId={activeWorkspace.id} activeChatId={activeChat?.id} />
               ) : (
                 <div className="flex-1 flex items-center justify-center h-full">
                   <div className="text-center max-w-md">
                     <h1 className="text-4xl font-bold mb-4">Welcome to kOS</h1>
-                    <p className="text-muted-foreground mb-6">
-                      {activeProject?.icon || "🚀"} {activeProject?.name || "No project selected"}
+                    <p className="text-muted-foreground mb-6 flex items-center justify-center gap-2">
+                      <ProjectIcon icon={activeProject?.icon} size="lg" />
+                      <span>{activeProject?.name || "No project selected"}</span>
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Select a project from the tabs above to get started.

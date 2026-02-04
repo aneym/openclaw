@@ -11,6 +11,7 @@ Build the chat UI that lives inside chat panels. Renders messages with the parts
 ## Reference
 
 Port these patterns from the existing Lit UI (`ui/src/ui/`) into React:
+
 - `chat/grouped-render.ts` → grouped message rendering
 - `chat/tool-cards.ts` → tool call chips
 - `chat/message-extract.ts` → text/thinking extraction
@@ -69,48 +70,48 @@ Gateway messages come in OpenClaw's internal format. Normalize to our `ChatMessa
 export function normalizeMessage(raw: unknown, threadId: string): ChatMessage {
   const m = raw as Record<string, unknown>;
   const parts: MessagePart[] = [];
-  
+
   // Extract text content
   const text = extractText(m);
   if (text?.trim()) {
-    parts.push({ type: 'text', text });
+    parts.push({ type: "text", text });
   }
-  
+
   // Extract thinking/reasoning
   const thinking = extractThinking(m);
   if (thinking?.trim()) {
-    parts.push({ type: 'reasoning', reasoning: thinking });
+    parts.push({ type: "reasoning", reasoning: thinking });
   }
-  
+
   // Extract tool calls
   const toolCalls = extractToolCalls(m);
   for (const tc of toolCalls) {
     parts.push({
-      type: 'tool-call',
+      type: "tool-call",
       toolCallId: tc.id,
       toolName: tc.name,
       args: tc.args,
-      state: 'complete',
+      state: "complete",
     });
   }
-  
+
   // Extract tool results (for tool role messages)
   if (isToolResultMessage(m)) {
     parts.push({
-      type: 'tool-result',
-      toolCallId: m.tool_call_id ?? m.toolCallId ?? '',
+      type: "tool-result",
+      toolCallId: m.tool_call_id ?? m.toolCallId ?? "",
       toolName: extractToolName(m),
       result: extractToolResult(m),
       isError: Boolean(m.is_error),
     });
   }
-  
+
   // Extract images
   const images = extractImages(m);
   for (const img of images) {
-    parts.push({ type: 'image', url: img.url, alt: img.alt });
+    parts.push({ type: "image", url: img.url, alt: img.alt });
   }
-  
+
   return {
     id: m.id ?? generateId(),
     role: normalizeRole(m.role),
@@ -147,39 +148,45 @@ Port the grouped rendering logic. Consecutive same-role messages group together:
 ```tsx
 function MessageGroup({ messages, role, isStreaming }: Props) {
   const { showReasoning } = useSettingsStore();
-  
+
   // Batch consecutive tool-only messages into ToolCallGroups
   const rendered = useMemo(() => {
     const items: React.ReactNode[] = [];
     let toolBatch: ChatMessage[] = [];
-    
+
     const flushTools = () => {
       if (toolBatch.length === 0) return;
-      const count = toolBatch.reduce((sum, m) => 
-        sum + m.parts.filter(p => p.type === 'tool-call' || p.type === 'tool-result').length, 0
+      const count = toolBatch.reduce(
+        (sum, m) =>
+          sum + m.parts.filter((p) => p.type === "tool-call" || p.type === "tool-result").length,
+        0,
       );
       items.push(
-        <ToolCallGroup key={`tools-${items.length}`} messages={toolBatch} count={count} />
+        <ToolCallGroup key={`tools-${items.length}`} messages={toolBatch} count={count} />,
       );
       toolBatch = [];
     };
-    
+
     for (const msg of messages) {
       if (isToolOnlyMessage(msg)) {
         toolBatch.push(msg);
       } else {
         flushTools();
         items.push(
-          <MessageBubble key={msg.id} message={msg} isStreaming={isStreaming && msg === messages.at(-1)} />
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            isStreaming={isStreaming && msg === messages.at(-1)}
+          />,
         );
       }
     }
     flushTools();
     return items;
   }, [messages, isStreaming]);
-  
+
   return (
-    <div className={cn("flex gap-3", role === 'user' ? "flex-row-reverse" : "")}>
+    <div className={cn("flex gap-3", role === "user" ? "flex-row-reverse" : "")}>
       <Avatar role={role} />
       <div className="flex flex-col gap-1 max-w-[80%]">
         {rendered}
@@ -209,6 +216,7 @@ Compact chip showing tool name + icon:
 ```
 
 Icons by tool name:
+
 - `Read` → 📖
 - `Write` → 📝
 - `Edit` → ✏️
@@ -220,6 +228,7 @@ Icons by tool name:
 - Default → 🔧
 
 Click behavior:
+
 - File tools (Read/Write/Edit) → open file in code-editor panel (or update existing)
 - exec with coding agent detection → open coding-session panel
 - Other → open sidebar with full output
@@ -231,28 +240,31 @@ Collapsed by default:
 ```tsx
 function ToolCallGroup({ messages, count }: Props) {
   const [open, setOpen] = useState(false);
-  
+
   // Extract file paths from Write/Edit results for action buttons
   const filePaths = useMemo(() => extractFilePaths(messages), [messages]);
-  
+
   return (
     <div>
       <button onClick={() => setOpen(!open)} className="tool-collapse-trigger">
         <WrenchIcon className="w-3.5 h-3.5" />
-        <span>{count} tool call{count !== 1 ? 's' : ''}</span>
+        <span>
+          {count} tool call{count !== 1 ? "s" : ""}
+        </span>
         <ChevronIcon className={cn("w-3 h-3 transition-transform", open && "rotate-90")} />
       </button>
       {open && (
         <div className="flex flex-wrap gap-1 mt-1">
-          {messages.flatMap(m => m.parts
-            .filter(p => p.type === 'tool-call' || p.type === 'tool-result')
-            .map(p => <ToolCallChip key={p.toolCallId} part={p} />)
+          {messages.flatMap((m) =>
+            m.parts
+              .filter((p) => p.type === "tool-call" || p.type === "tool-result")
+              .map((p) => <ToolCallChip key={p.toolCallId} part={p} />),
           )}
         </div>
       )}
       {filePaths.length > 0 && (
         <div className="flex gap-1 mt-1">
-          {filePaths.map(fp => (
+          {filePaths.map((fp) => (
             <FileActionButton key={fp} filePath={fp} />
           ))}
         </div>
@@ -267,23 +279,23 @@ function ToolCallGroup({ messages, count }: Props) {
 ### TextPart.tsx
 
 ```tsx
-import { marked } from 'marked';
-import DOMPurify from 'dompurify';
-import hljs from 'highlight.js/lib/core';
+import { marked } from "marked";
+import DOMPurify from "dompurify";
+import hljs from "highlight.js/lib/core";
 
 // Register common languages
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import bash from 'highlight.js/lib/languages/bash';
-import json from 'highlight.js/lib/languages/json';
-import css from 'highlight.js/lib/languages/css';
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('css', css);
+import javascript from "highlight.js/lib/languages/javascript";
+import typescript from "highlight.js/lib/languages/typescript";
+import python from "highlight.js/lib/languages/python";
+import bash from "highlight.js/lib/languages/bash";
+import json from "highlight.js/lib/languages/json";
+import css from "highlight.js/lib/languages/css";
+hljs.registerLanguage("javascript", javascript);
+hljs.registerLanguage("typescript", typescript);
+hljs.registerLanguage("python", python);
+hljs.registerLanguage("bash", bash);
+hljs.registerLanguage("json", json);
+hljs.registerLanguage("css", css);
 
 // Configure marked with highlight.js
 marked.setOptions({
@@ -299,16 +311,22 @@ function TextPart({ text, isStreaming }: { text: string; isStreaming?: boolean }
   const html = useMemo(() => {
     if (isStreaming && text.length < 100) {
       // Simple render during early streaming (no markdown overhead)
-      return DOMPurify.sanitize(text.replace(/\n/g, '<br>'));
+      return DOMPurify.sanitize(text.replace(/\n/g, "<br>"));
     }
     return DOMPurify.sanitize(marked.parse(text));
   }, [text, isStreaming]);
-  
-  return <div className="prose prose-sm dark:prose-invert max-w-none" dangerouslySetInnerHTML={{ __html: html }} />;
+
+  return (
+    <div
+      className="prose prose-sm dark:prose-invert max-w-none"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
 }
 ```
 
 Code blocks get a copy button:
+
 ```tsx
 // Post-process: inject copy button into <pre><code> blocks
 // Use a MutationObserver or post-render DOM walk
@@ -321,14 +339,14 @@ Code blocks get a copy button:
 ```tsx
 function ReasoningBlock({ reasoning, durationMs }: Props) {
   const [open, setOpen] = useState(false);
-  const durationStr = durationMs ? `${(durationMs / 1000).toFixed(1)}s` : '';
-  
+  const durationStr = durationMs ? `${(durationMs / 1000).toFixed(1)}s` : "";
+
   return (
     <div className="reasoning-block">
       <button onClick={() => setOpen(!open)} className="reasoning-trigger">
         <BrainIcon className="w-3.5 h-3.5 text-purple-400" />
         <span className="text-xs text-muted-foreground">
-          {open ? 'Hide reasoning' : `Thought${durationStr ? ` for ${durationStr}` : ''}...`}
+          {open ? "Hide reasoning" : `Thought${durationStr ? ` for ${durationStr}` : ""}...`}
         </span>
         <ChevronIcon className={cn("w-3 h-3 transition-transform", open && "rotate-180")} />
       </button>
@@ -357,6 +375,7 @@ function ReasoningBlock({ reasoning, durationMs }: Props) {
 ```
 
 Features:
+
 - Auto-resizing textarea (grows up to 200px, then scrolls)
 - `Enter` = send, `Shift+Enter` = newline
 - `Cmd+Shift+Enter` = send immediately (interrupt current agent run)
@@ -368,48 +387,48 @@ Features:
 
 ```tsx
 function ComposeBar({ threadId, sessionKey }: Props) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState("");
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const { isStreaming } = useStreaming(sessionKey);
   const { request } = useGateway();
-  
+
   const send = async (immediate = false) => {
     if (!text.trim() && attachments.length === 0) return;
-    
+
     if (isStreaming && !immediate) {
       // Queue the message
       addToQueue(threadId, text, attachments);
-      setText('');
+      setText("");
       setAttachments([]);
       return;
     }
-    
+
     if (immediate && isStreaming) {
       // Abort current run, then send
-      await request('session.abort', { sessionKey });
+      await request("session.abort", { sessionKey });
     }
-    
-    await request('session.sendMessage', {
+
+    await request("session.sendMessage", {
       sessionKey,
       message: text,
-      attachments: attachments.map(a => a.payload),
+      attachments: attachments.map((a) => a.payload),
     });
-    
-    setText('');
+
+    setText("");
     setAttachments([]);
   };
-  
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       send(e.metaKey && e.shiftKey);
     }
-    if (e.key === 'Enter' && e.metaKey && e.shiftKey) {
+    if (e.key === "Enter" && e.metaKey && e.shiftKey) {
       e.preventDefault();
-      send(true);  // immediate
+      send(true); // immediate
     }
   };
-  
+
   // ... paste handler, drag-drop handler, slash autocomplete
 }
 ```
@@ -459,12 +478,12 @@ When agent is busy (streaming), messages queue up:
 function useAutoScroll(containerRef: RefObject<HTMLElement>, deps: unknown[]) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
-  
+
   // IntersectionObserver on a sentinel element at the bottom
   // When sentinel is visible → isAtBottom = true
   // When new messages arrive and isAtBottom → smooth scroll to bottom
   // When scrolled up and new messages arrive → show "New messages" badge
-  
+
   return { isAtBottom, hasNewMessages, scrollToBottom };
 }
 ```
@@ -476,28 +495,28 @@ function useAutoScroll(containerRef: RefObject<HTMLElement>, deps: unknown[]) {
 ```ts
 function useStreaming(sessionKey: string) {
   const [isStreaming, setIsStreaming] = useState(false);
-  const [streamText, setStreamText] = useState('');
-  
-  useGatewayEvent('session.stream.start', (payload) => {
+  const [streamText, setStreamText] = useState("");
+
+  useGatewayEvent("session.stream.start", (payload) => {
     if (payload.sessionKey === sessionKey) {
       setIsStreaming(true);
-      setStreamText('');
+      setStreamText("");
     }
   });
-  
-  useGatewayEvent('session.stream.delta', (payload) => {
+
+  useGatewayEvent("session.stream.delta", (payload) => {
     if (payload.sessionKey === sessionKey) {
-      setStreamText(prev => prev + payload.text);
+      setStreamText((prev) => prev + payload.text);
     }
   });
-  
-  useGatewayEvent('session.stream.end', (payload) => {
+
+  useGatewayEvent("session.stream.end", (payload) => {
     if (payload.sessionKey === sessionKey) {
       setIsStreaming(false);
-      setStreamText('');
+      setStreamText("");
     }
   });
-  
+
   return { isStreaming, streamText };
 }
 ```
@@ -533,6 +552,7 @@ Monitor CC/Codex sessions in real-time. This is unique to kOS.
 ```
 
 Phase detection from tool stream events:
+
 - **Exploring** 🔍 (blue): Read, web_search, web_fetch tools
 - **Planning** 🧠 (purple): Long text output with no tool calls
 - **Building** 🔨 (amber): Write, Edit, exec tools
@@ -543,7 +563,7 @@ Phase detection from tool stream events:
 ```tsx
 function CodingSessionPanel({ sessionKey }: Props) {
   const { events, phase, duration } = useCodingSession(sessionKey);
-  
+
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-center gap-2 px-3 py-2 border-b">
@@ -565,7 +585,7 @@ Parse gateway events for a coding session:
 
 ```ts
 interface CodingEvent {
-  type: 'tool-call' | 'tool-result' | 'text' | 'phase-change';
+  type: "tool-call" | "tool-result" | "text" | "phase-change";
   toolName?: string;
   args?: Record<string, unknown>;
   text?: string;
@@ -573,17 +593,17 @@ interface CodingEvent {
   timestamp: number;
 }
 
-type CodingPhase = 'exploring' | 'planning' | 'building' | 'testing' | 'complete' | 'error';
+type CodingPhase = "exploring" | "planning" | "building" | "testing" | "complete" | "error";
 
 function detectPhase(toolName: string, args: Record<string, unknown>): CodingPhase {
-  if (['Read', 'web_search', 'web_fetch'].includes(toolName)) return 'exploring';
-  if (['Write', 'Edit'].includes(toolName)) return 'building';
-  if (toolName === 'exec') {
-    const cmd = String(args.command ?? '');
-    if (/\b(test|spec|jest|pytest|vitest|mocha)\b/i.test(cmd)) return 'testing';
-    return 'building';
+  if (["Read", "web_search", "web_fetch"].includes(toolName)) return "exploring";
+  if (["Write", "Edit"].includes(toolName)) return "building";
+  if (toolName === "exec") {
+    const cmd = String(args.command ?? "");
+    if (/\b(test|spec|jest|pytest|vitest|mocha)\b/i.test(cmd)) return "testing";
+    return "building";
   }
-  return 'exploring';
+  return "exploring";
 }
 ```
 
@@ -594,22 +614,21 @@ function detectPhase(toolName: string, args: Record<string, unknown>): CodingPha
 ```ts
 function useMessages(sessionKey: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  
+
   // On mount: fetch history via gateway RPC
   useEffect(() => {
-    gateway.request('session.history', { sessionKey, limit: 100 })
-      .then(history => {
-        setMessages(history.messages.map(m => normalizeMessage(m, threadId)));
-      });
+    gateway.request("session.history", { sessionKey, limit: 100 }).then((history) => {
+      setMessages(history.messages.map((m) => normalizeMessage(m, threadId)));
+    });
   }, [sessionKey]);
-  
+
   // Subscribe to new messages
-  useGatewayEvent('session.message', (payload) => {
+  useGatewayEvent("session.message", (payload) => {
     if (payload.sessionKey === sessionKey) {
-      setMessages(prev => [...prev, normalizeMessage(payload.message, threadId)]);
+      setMessages((prev) => [...prev, normalizeMessage(payload.message, threadId)]);
     }
   });
-  
+
   return messages;
 }
 ```

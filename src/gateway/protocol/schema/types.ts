@@ -1,5 +1,4 @@
 import type { Static } from "@sinclair/typebox";
-
 import type {
   AgentEventSchema,
   AgentIdentityParamsSchema,
@@ -50,6 +49,13 @@ import type {
   CronUpdateParamsSchema,
 } from "./cron.js";
 import type {
+  DevicePairApproveParamsSchema,
+  DevicePairListParamsSchema,
+  DevicePairRejectParamsSchema,
+  DeviceTokenRevokeParamsSchema,
+  DeviceTokenRotateParamsSchema,
+} from "./devices.js";
+import type {
   ExecApprovalsGetParamsSchema,
   ExecApprovalsNodeGetParamsSchema,
   ExecApprovalsNodeSetParamsSchema,
@@ -58,17 +64,6 @@ import type {
   ExecApprovalRequestParamsSchema,
   ExecApprovalResolveParamsSchema,
 } from "./exec-approvals.js";
-import type {
-  ToolApprovalRequestParamsSchema,
-  ToolApprovalResolveParamsSchema,
-} from "./tool-approvals.js";
-import type {
-  DevicePairApproveParamsSchema,
-  DevicePairListParamsSchema,
-  DevicePairRejectParamsSchema,
-  DeviceTokenRevokeParamsSchema,
-  DeviceTokenRotateParamsSchema,
-} from "./devices.js";
 import type {
   ConnectParamsSchema,
   ErrorShapeSchema,
@@ -109,8 +104,14 @@ import type {
   SessionsPreviewParamsSchema,
   SessionsResetParamsSchema,
   SessionsResolveParamsSchema,
+  SessionsSearchParamsSchema,
+  SessionsSearchResultSchema,
 } from "./sessions.js";
 import type { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
+import type {
+  ToolApprovalRequestParamsSchema,
+  ToolApprovalResolveParamsSchema,
+} from "./tool-approvals.js";
 import type {
   WizardCancelParamsSchema,
   WizardNextParamsSchema,
@@ -156,6 +157,8 @@ export type SessionsPatchParams = Static<typeof SessionsPatchParamsSchema>;
 export type SessionsResetParams = Static<typeof SessionsResetParamsSchema>;
 export type SessionsDeleteParams = Static<typeof SessionsDeleteParamsSchema>;
 export type SessionsCompactParams = Static<typeof SessionsCompactParamsSchema>;
+export type SessionsSearchParams = Static<typeof SessionsSearchParamsSchema>;
+export type SessionsSearchResult = Static<typeof SessionsSearchResultSchema>;
 export type ConfigGetParams = Static<typeof ConfigGetParamsSchema>;
 export type ConfigSetParams = Static<typeof ConfigSetParamsSchema>;
 export type ConfigApplyParams = Static<typeof ConfigApplyParamsSchema>;

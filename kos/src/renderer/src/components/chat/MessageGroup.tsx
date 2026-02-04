@@ -100,8 +100,8 @@ function extractPartsByType(messages: ChatMessage[]) {
  * MessageGroup renders a turn (consecutive messages from the same role).
  *
  * Layout order (matching web UI):
- * 1. Tool calls (collapsed at top) - "🔧 N tool calls"
- * 2. Reasoning blocks (collapsed) - "🧠 Thought..."
+ * 1. Tool calls (collapsed at top) - "[Wrench] N tool calls"
+ * 2. Reasoning blocks (collapsed) - "[Brain] Thought..."
  * 3. Text content - actual chat message
  * 4. Images
  */

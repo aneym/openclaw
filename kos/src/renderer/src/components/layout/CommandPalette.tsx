@@ -1,5 +1,6 @@
 import {
   Clock,
+  Globe,
   Home,
   MessageSquare,
   Moon,
@@ -11,9 +12,11 @@ import {
   Monitor,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import type { Chat, Project } from "../../types";
+import type { Chat, Project, View } from "../../types";
 import { formatDistanceToNow } from "../../lib/date-utils";
+import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
+import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useThemeStore } from "../../stores/theme-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
@@ -31,7 +34,7 @@ import {
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onNavigate: (view: "home" | "settings") => void;
+  onNavigate: (view: View) => void;
   onToggleSidebar: () => void;
 }
 
@@ -50,6 +53,10 @@ export function CommandPalette({
 
   // Workspace store
   const activeWorkspaceByProject = useWorkspaceStore((s) => s.activeWorkspaceByProject);
+
+  // Panel store
+  const spawnPanel = usePanelStore((s) => s.spawnPanel);
+  const hasPanelType = usePanelStore((s) => s.hasPanelType);
 
   // Chat store
   const chatsMap = useChatStore((s) => s.chats);
@@ -122,6 +129,15 @@ export function CommandPalette({
     });
   }, [closeAndRun, activeWorkspaceId, addChat]);
 
+  const handleOpenBrowser = useCallback(() => {
+    if (!activeWorkspaceId) return;
+    closeAndRun(() => {
+      spawnPanel(activeWorkspaceId, "browser", { url: "https://google.com" });
+    });
+  }, [closeAndRun, activeWorkspaceId, spawnPanel]);
+
+  const browserAlreadyOpen = activeWorkspaceId ? hasPanelType(activeWorkspaceId, "browser") : false;
+
   const handleSelectChat = useCallback(
     (chatId: string, workspaceId: string) => {
       closeAndRun(() => {
@@ -176,6 +192,14 @@ export function CommandPalette({
             <Plus className="mr-2 h-4 w-4" />
             <span>New Chat</span>
             <CommandShortcut>⌘N</CommandShortcut>
+          </CommandItem>
+          <CommandItem
+            onSelect={handleOpenBrowser}
+            disabled={!activeWorkspaceId || browserAlreadyOpen}
+          >
+            <Globe className="mr-2 h-4 w-4" />
+            <span>{browserAlreadyOpen ? "Browser Open" : "Open Browser"}</span>
+            <CommandShortcut>⌘⇧B</CommandShortcut>
           </CommandItem>
           <CommandItem
             onSelect={() =>
@@ -249,7 +273,7 @@ export function CommandPalette({
             <CommandGroup heading="Switch Project">
               {otherProjects.map((project) => (
                 <CommandItem key={project.id} onSelect={() => handleSelectProject(project.id)}>
-                  <span className="mr-2 text-base">{project.icon ?? "📁"}</span>
+                  <ProjectIcon icon={project.icon} className="mr-2" />
                   <span>{project.name}</span>
                 </CommandItem>
               ))}
@@ -266,7 +290,7 @@ export function CommandPalette({
                 <CommandItem
                   key={chat.id}
                   value={`chat ${chat.title}`}
-                  onSelect={() => handleSelectChat(chat.id, chat.workspaceId)}
+                  onSelect={() => chat.workspaceId && handleSelectChat(chat.id, chat.workspaceId)}
                 >
                   <MessageSquare className="mr-2 h-4 w-4" />
                   <span className="flex-1 truncate">{chat.title}</span>

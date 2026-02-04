@@ -49,13 +49,38 @@ Created `src/gateway/session-search.ts` with:
 
 ---
 
-## Phase 2: RPC Endpoint (NOT STARTED)
+## Phase 2: RPC Endpoint (COMPLETE)
 
 ### Goals
 
 - Add `SessionsSearchParams` and `SessionsSearchResult` schemas
 - Register `sessions.search` RPC method
 - Implement handler in `src/gateway/server-methods/sessions.ts`
+
+### Implementation
+
+1. **Protocol Schema** (`src/gateway/protocol/schema/sessions.ts`)
+   - Added `SessionsSearchParamsSchema` - query, limit, minScore, agentId, includeArchived
+   - Added `SessionsSearchResultSchema` - sessionKey, sessionId, score, matchCount, snippet, snippetRole, updatedAt, derivedTitle
+
+2. **Type Definitions** (`src/gateway/protocol/schema/types.ts`)
+   - Added `SessionsSearchParams` and `SessionsSearchResult` types via `Static<typeof Schema>`
+
+3. **Protocol Index** (`src/gateway/protocol/index.ts`)
+   - Added validator `validateSessionsSearchParams`
+   - Exported schemas and types
+
+4. **Handler** (`src/gateway/server-methods/sessions.ts`)
+   - Added `sessions.search` handler
+   - Validates params, calls SessionSearchManager.search()
+   - Returns results with error handling
+
+### Files Modified
+
+- [x] `src/gateway/protocol/schema/sessions.ts` - Added search schemas
+- [x] `src/gateway/protocol/schema/types.ts` - Added search types
+- [x] `src/gateway/protocol/index.ts` - Added validator and exports
+- [x] `src/gateway/server-methods/sessions.ts` - Added handler
 
 ---
 

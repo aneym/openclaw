@@ -232,6 +232,42 @@ body {
   }
 }
 
+/* Minimal scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Hide scrollbar until hover (sidebar specific) */
+.overflow-y-auto {
+  scrollbar-gutter: stable;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
+.overflow-y-auto:hover::-webkit-scrollbar-thumb {
+  background: var(--border);
+}
+
+.overflow-y-auto:hover::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
 /* Sonner toast overrides - force theme colors over sonner defaults */
 [data-sonner-toaster] [data-sonner-toast] {
   --normal-bg: var(--background);

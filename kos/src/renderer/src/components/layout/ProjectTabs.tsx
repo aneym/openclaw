@@ -1,6 +1,9 @@
-import { Plus, Settings } from "lucide-react";
+import { LayoutDashboard, Plus, Settings } from "lucide-react";
 import type { Project } from "../../types";
+import { ProjectIcon } from "../../lib/project-icons";
 import { cn } from "../../lib/utils";
+
+export const DASHBOARD_TAB_ID = "__dashboard__";
 
 interface ProjectTabsProps {
   projects: Project[];
@@ -15,9 +18,27 @@ export function ProjectTabs({
   onSelectProject,
   onSettings,
 }: ProjectTabsProps) {
+  const isDashboardActive = activeProjectId === DASHBOARD_TAB_ID;
+
   return (
     <div className="flex items-center h-10 border-b border-border bg-muted/30 px-2 gap-1 [-webkit-app-region:drag]">
       <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
+        {/* Dashboard tab */}
+        <button
+          onClick={() => onSelectProject(DASHBOARD_TAB_ID)}
+          className={cn(
+            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
+            "flex items-center gap-2",
+            isDashboardActive
+              ? "bg-background text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+          )}
+        >
+          <LayoutDashboard className="h-4 w-4" />
+          <span>Dashboard</span>
+        </button>
+
+        {/* Project tabs */}
         {projects.map((project) => (
           <button
             key={project.id}
@@ -30,7 +51,7 @@ export function ProjectTabs({
                 : "text-muted-foreground hover:text-foreground hover:bg-background/50",
             )}
           >
-            <span>{project.icon || "📁"}</span>
+            <ProjectIcon icon={project.icon} size="sm" />
             <span>{project.name}</span>
           </button>
         ))}

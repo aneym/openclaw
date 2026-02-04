@@ -10,7 +10,7 @@ interface ToolCallGroupProps {
 
 /**
  * ToolCallGroup displays multiple tool calls in a collapsed group.
- * Collapsed: "🔧 3 tool calls ▸"
+ * Collapsed: "[Wrench icon] 3 tool calls ▸"
  * Expanded: Shows individual ToolCallChip components.
  */
 export function ToolCallGroup({ messages }: ToolCallGroupProps) {

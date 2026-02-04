@@ -103,3 +103,25 @@ export const SessionsCompactParamsSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
+export const SessionsSearchParamsSchema = Type.Object(
+  {
+    query: NonEmptyString,
+    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+    minScore: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
+    agentId: Type.Optional(NonEmptyString),
+    includeArchived: Type.Optional(Type.Boolean()),
+  },
+  { additionalProperties: false },
+);
+
+export const SessionsSearchResultSchema = Type.Object({
+  sessionKey: Type.String(),
+  sessionId: Type.String(),
+  score: Type.Number(),
+  matchCount: Type.Integer(),
+  snippet: Type.String(),
+  snippetRole: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
+  updatedAt: Type.Union([Type.Integer(), Type.Null()]),
+  derivedTitle: Type.Optional(Type.String()),
+});

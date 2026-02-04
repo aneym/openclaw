@@ -3,6 +3,7 @@
 ## ✅ What Was Built
 
 ### 1. Core Data Model (All TypeScript types)
+
 - ✅ `types/workspace.ts` - Workspace & WorkspaceConfig interfaces
 - ✅ `types/project.ts` - Project interface
 - ✅ `types/thread.ts` - Thread interface + ThreadStatus type
@@ -11,26 +12,31 @@
 - ✅ `types/index.ts` - Barrel exports
 
 ### 2. Zustand Stores (All with persistence)
+
 - ✅ `stores/workspace-store.ts` - Active workspace, workspace management
 - ✅ `stores/thread-store.ts` - Thread management with Map serialization
 - ✅ `stores/panel-store.ts` - Panel layout persistence
 - ✅ `stores/gateway-store.ts` - WebSocket connection state & event handlers
 
 ### 3. Gateway WebSocket Client
+
 - ✅ `gateway/types.ts` - Protocol frame types
 - ✅ `gateway/client.ts` - Simplified client (token-only auth, no device identity)
 - ✅ `gateway/hooks.ts` - React hooks (useGateway, useGatewayEvent, useSession)
 
 ### 4. Shell Layout Components
+
 - ✅ `components/layout/Shell.tsx` - Main layout container
 - ✅ `components/layout/Sidebar.tsx` - Thread navigation (240px, collapsible)
 - ✅ `components/layout/StatusBar.tsx` - Connection status + workspace indicator
 
 ### 5. Electron Main Process
+
 - ✅ `main/index.ts` - Window creation, HMR support, macOS hiddenInset titlebar
 - ✅ `main/window-state.ts` - Persist window bounds with debounced saves
 
 ### 6. Tooling & Configuration
+
 - ✅ `electron.vite.config.ts` - Vite + React + Tailwind v4 plugins
 - ✅ `components.json` - shadcn config (New York style, Zinc theme)
 - ✅ `styles/globals.css` - Tailwind v4 with CSS variables for theming
@@ -39,29 +45,38 @@
 ## ✅ Build & Dev Server Tests
 
 ### Test 1: TypeScript Compilation
+
 ```bash
 pnpm run build
 ```
+
 **Result:** ✅ PASSED
+
 - typecheck:node - PASSED
 - typecheck:web - PASSED
 - No TypeScript errors
 
 ### Test 2: Production Build
+
 ```bash
 pnpm run build
 ```
+
 **Result:** ✅ PASSED
+
 - Main process: 2.91 kB
 - Preload scripts: 0.42 kB
 - Renderer: 578.23 kB JS + 11.78 kB CSS
 - Build time: ~2s
 
 ### Test 3: Development Server
+
 ```bash
 pnpm run dev
 ```
+
 **Result:** ✅ PASSED
+
 - Vite dev server started on http://localhost:5174/
 - Main process built successfully
 - Preload scripts built successfully
@@ -69,11 +84,14 @@ pnpm run dev
 - Hot reload ready
 
 ### Test 4: Clean Rebuild After Asset Cleanup
+
 ```bash
 # Removed template files, rebuilt
 pnpm run build
 ```
+
 **Result:** ✅ PASSED
+
 - All imports resolved correctly
 - No broken references
 - Clean build

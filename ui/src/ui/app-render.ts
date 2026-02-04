@@ -84,6 +84,28 @@ import { renderNavThreadList } from "./views/thread-list.ts";
 import { renderToolApprovalPrompt } from "./views/tool-approval.ts";
 
 /**
+ * Resolve the assistant avatar URL from state.
+ * Falls back to the resolved agent's identity if available.
+ */
+function resolveAssistantAvatarUrl(state: AppViewState): string | null {
+  // If we have a resolved agent and it has an avatar URL, use that
+  const resolvedAgentId =
+    state.agentsSelectedId ??
+    state.agentsList?.defaultId ??
+    state.agentsList?.agents?.[0]?.id ??
+    null;
+
+  if (resolvedAgentId) {
+    const identity = state.agentIdentityById?.[resolvedAgentId];
+    if (identity?.avatar) {
+      return identity.avatar;
+    }
+  }
+
+  return null;
+}
+
+/**
  * Focus the chat composer textarea.
  * Uses a short setTimeout to ensure Lit's async render cycle has flushed.
  */

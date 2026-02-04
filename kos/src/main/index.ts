@@ -4,6 +4,7 @@ import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import icon from "../../resources/icon.png?asset";
+import { initBrowserPanel } from "./browser-panel";
 import { restoreWindowState, trackWindowState } from "./window-state";
 
 // Conditionally import native addon (macOS only)
@@ -22,17 +23,50 @@ if (is.dev) {
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
 
-// Read OpenClaw gateway config from ~/.openclaw/openclaw.json
+// Enable remote debugging for CDP access (Playwright, Puppeteer, etc.)
+const CDP_PORT = 9222;
+app.commandLine.appendSwitch("remote-debugging-port", String(CDP_PORT));
+
+// Read OpenClaw gateway config - checks both prod and dev locations
 ipcMain.handle("get-gateway-config", () => {
+  const prodPath = join(homedir(), ".openclaw", "openclaw.json");
+  const devPath = join(homedir(), ".openclaw-dev", "openclaw.json");
+
+  // Check for OPENCLAW_STATE_DIR override
+  const stateDir = process.env.OPENCLAW_STATE_DIR;
+  if (stateDir) {
+    try {
+      const configPath = join(stateDir, "openclaw.json");
+      const raw = readFileSync(configPath, "utf-8");
+      const config = JSON.parse(raw);
+      const port = config?.gateway?.port ?? 18789;
+      const token = config?.gateway?.auth?.token;
+      return { url: `ws://localhost:${port}`, token, source: configPath };
+    } catch {
+      // Fall through to default logic
+    }
+  }
+
+  // Try dev config first if it exists (for active development)
   try {
-    const configPath = join(homedir(), ".openclaw", "openclaw.json");
-    const raw = readFileSync(configPath, "utf-8");
+    const devRaw = readFileSync(devPath, "utf-8");
+    const devConfig = JSON.parse(devRaw);
+    const port = devConfig?.gateway?.port ?? 19001;
+    const token = devConfig?.gateway?.auth?.token;
+    return { url: `ws://localhost:${port}`, token, source: devPath };
+  } catch {
+    // Dev config doesn't exist, fall through to prod
+  }
+
+  // Fall back to prod config
+  try {
+    const raw = readFileSync(prodPath, "utf-8");
     const config = JSON.parse(raw);
     const port = config?.gateway?.port ?? 18789;
     const token = config?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token };
+    return { url: `ws://localhost:${port}`, token, source: prodPath };
   } catch {
-    return { url: "ws://localhost:18789" };
+    return { url: "ws://localhost:18789", source: "default" };
   }
 });
 
@@ -246,6 +280,9 @@ function createWindow(): void {
 
   // Track window state for persistence
   trackWindowState(mainWindow);
+
+  // Initialize browser panel IPC handlers
+  initBrowserPanel(mainWindow);
 
   // Restore maximized state if needed
   if (saved?.isMaximized) {

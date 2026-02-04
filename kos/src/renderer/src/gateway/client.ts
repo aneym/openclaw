@@ -3,6 +3,7 @@ import type {
   GatewayResponseFrame,
   GatewayHelloOk,
   GatewayClientOptions,
+  GatewayCdpFrame,
   Pending,
 } from "./types";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
@@ -21,11 +22,12 @@ function generateUUID(): string {
 // 4008 = application-defined close code
 const CONNECT_FAILED_CLOSE_CODE = 4008;
 
-const CLIENT_ID = "webchat-ui";
+const CLIENT_ID = "kos";
 const CLIENT_MODE = "webchat";
 const CLIENT_VERSION = "0.1.0";
 const ROLE = "operator";
 const SCOPES = ["operator.admin", "operator.approvals", "operator.pairing"];
+const CAPS = ["browser"]; // Advertise browser capability for CDP routing
 
 export class GatewayClient {
   private ws: WebSocket | null = null;
@@ -170,7 +172,7 @@ export class GatewayClient {
       },
       role: ROLE,
       scopes: SCOPES,
-      caps: [],
+      caps: CAPS,
       device,
       auth,
       userAgent: navigator.userAgent,
@@ -246,6 +248,29 @@ export class GatewayClient {
         pending.reject(new Error(res.error?.message ?? "request failed"));
       }
       return;
+    }
+
+    // Handle CDP messages from gateway
+    if (frame.type === "cdp") {
+      const cdp = parsed as GatewayCdpFrame;
+      void this.handleCdpCommand(cdp);
+      return;
+    }
+  }
+
+  private async handleCdpCommand(cdp: GatewayCdpFrame) {
+    try {
+      const result = await window.api.browser.cdp(cdp.method, cdp.params);
+      this.send({ type: "cdp-response", id: cdp.id, result });
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      this.send({ type: "cdp-response", id: cdp.id, error });
+    }
+  }
+
+  private send(frame: object) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(frame));
     }
   }
 

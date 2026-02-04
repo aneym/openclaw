@@ -23,7 +23,9 @@ import {
   validateSessionsPreviewParams,
   validateSessionsResetParams,
   validateSessionsResolveParams,
+  validateSessionsSearchParams,
 } from "../protocol/index.js";
+import { getSessionSearchManager } from "../session-search.js";
 import {
   archiveFileOnDisk,
   listSessionsFromStore,
@@ -468,5 +470,40 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       },
       undefined,
     );
+  },
+  "sessions.search": async ({ params, respond }) => {
+    if (!validateSessionsSearchParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid sessions.search params: ${formatValidationErrors(validateSessionsSearchParams.errors)}`,
+        ),
+      );
+      return;
+    }
+    const p = params;
+    const query = String(p.query ?? "").trim();
+    if (!query) {
+      respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "query required"));
+      return;
+    }
+
+    try {
+      const cfg = loadConfig();
+      const manager = await getSessionSearchManager(cfg, p.agentId);
+      const results = await manager.search({
+        query,
+        limit: p.limit,
+        minScore: p.minScore,
+        agentId: p.agentId,
+        includeArchived: p.includeArchived,
+      });
+      respond(true, { results }, undefined);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      respond(false, undefined, errorShape(ErrorCodes.UNAVAILABLE, `search failed: ${message}`));
+    }
   },
 };

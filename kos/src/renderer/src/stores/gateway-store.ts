@@ -12,8 +12,12 @@ interface GatewayState {
   error: string | null;
   hello: GatewayHelloOk | null;
   eventHandlers: Map<string, Set<EventHandler>>;
+  // Debug info
+  currentUrl: string | null;
+  hasToken: boolean;
+  configSource: string | null;
 
-  connect: (url: string, token?: string) => void;
+  connect: (url: string, token?: string, source?: string) => void;
   disconnect: () => void;
   request: <T>(method: string, params?: unknown) => Promise<T>;
   subscribe: (event: string, handler: EventHandler) => () => void;
@@ -25,8 +29,13 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   error: null,
   hello: null,
   eventHandlers: new Map(),
+  currentUrl: null,
+  hasToken: false,
+  configSource: null,
 
-  connect: (url: string, token?: string) => {
+  connect: (url: string, token?: string, source?: string) => {
+    // Track connection info for debugging
+    set({ currentUrl: url, hasToken: Boolean(token), configSource: source ?? null });
     const { client: existingClient } = get();
     if (existingClient) {
       existingClient.stop();

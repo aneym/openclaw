@@ -3,6 +3,7 @@ import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import type { Chat, Project, Workspace } from "../../types";
 import { useStreaming } from "../../hooks/use-streaming";
+import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
 import { useGatewayStore } from "../../stores/gateway-store";
 import { useProjectStore } from "../../stores/project-store";
@@ -183,7 +184,7 @@ export function StatusBar() {
         {/* Project + Workspace */}
         {activeProject && (
           <div className="flex items-center gap-1.5 border-l border-border pl-3">
-            <span>{activeProject.icon || "📁"}</span>
+            <ProjectIcon icon={activeProject.icon} size="sm" />
             <span>{activeProject.name}</span>
             {activeWorkspace && activeWorkspace.name !== "main" && (
               <span className="text-muted-foreground/60">/ {activeWorkspace.name}</span>

@@ -23,9 +23,16 @@ interface CaptureConfig {
   scaleFactor?: number;
 }
 
+interface Rectangle {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 // Custom APIs for renderer
 const api = {
-  getGatewayConfig: (): Promise<{ url: string; token?: string }> =>
+  getGatewayConfig: (): Promise<{ url: string; token?: string; source?: string }> =>
     ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
     ipcRenderer.invoke("dialog:openDirectory"),
@@ -80,6 +87,19 @@ const api = {
       ipcRenderer.on("simulator:error", listener);
       return () => ipcRenderer.removeListener("simulator:error", listener);
     },
+  },
+
+  // Browser panel APIs
+  browser: {
+    create: (bounds: Rectangle): Promise<void> => ipcRenderer.invoke("browser:create", bounds),
+    destroy: (): Promise<void> => ipcRenderer.invoke("browser:destroy"),
+    setBounds: (bounds: Rectangle): Promise<void> =>
+      ipcRenderer.invoke("browser:set-bounds", bounds),
+    navigate: (url: string): Promise<void> => ipcRenderer.invoke("browser:navigate", url),
+    cdp: (method: string, params?: object): Promise<unknown> =>
+      ipcRenderer.invoke("browser:cdp", method, params),
+    openDevTools: (): Promise<void> => ipcRenderer.invoke("browser:devtools"),
+    getCdpUrl: (): Promise<string | null> => ipcRenderer.invoke("browser:get-cdp-url"),
   },
 };
 
