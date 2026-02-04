@@ -56,7 +56,7 @@ export async function onTimer(state: CronServiceState) {
   state.running = true;
   try {
     await locked(state, async () => {
-      await ensureLoaded(state);
+      await ensureLoaded(state, { forceReload: true });
       await runDueJobs(state);
       await persist(state);
       armTimer(state);
@@ -266,12 +266,27 @@ export async function executeJob(
       job,
       message: job.payload.message,
     });
+
+    // Post a short summary back to the main session so the user sees
+    // the cron result without opening the isolated session.
+    const summaryText = res.summary?.trim();
+    const deliveryMode = job.delivery?.mode ?? "announce";
+    if (summaryText && deliveryMode !== "none") {
+      const prefix = "Cron";
+      const label =
+        res.status === "error" ? `${prefix} (error): ${summaryText}` : `${prefix}: ${summaryText}`;
+      state.deps.enqueueSystemEvent(label, { agentId: job.agentId });
+      if (job.wakeMode === "now") {
+        state.deps.requestHeartbeatNow({ reason: `cron:${job.id}` });
+      }
+    }
+
     if (res.status === "ok") {
-      await finish("ok", undefined, res.summary, res.outputText);
+      await finish("ok", undefined, res.summary);
     } else if (res.status === "skipped") {
-      await finish("skipped", undefined, res.summary, res.outputText);
+      await finish("skipped", undefined, res.summary);
     } else {
-      await finish("error", res.error ?? "cron job failed", res.summary, res.outputText);
+      await finish("error", res.error ?? "cron job failed", res.summary);
     }
   } catch (err) {
     await finish("error", String(err));

@@ -5,10 +5,15 @@ import {
   createWriteTool,
   readTool,
 } from "@mariozechner/pi-coding-agent";
-import { resolveAgentConfig } from "./agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
+import type { ModelAuthMode } from "./model-auth.js";
+import type { AnyAgentTool } from "./pi-tools.types.js";
+import type { SandboxContext } from "./sandbox.js";
+import { logWarn } from "../logger.js";
+import { getPluginToolMeta } from "../plugins/tools.js";
 import { isSubagentSessionKey } from "../routing/session-key.js";
 import { resolveGatewayMessageChannel } from "../utils/message-channel.js";
+import { resolveAgentConfig } from "./agent-scope.js";
 import { createApplyPatchTool } from "./apply-patch.js";
 import {
   createExecTool,
@@ -18,9 +23,7 @@ import {
 } from "./bash-tools.js";
 import { listChannelAgentTools } from "./channel-tools.js";
 import { createOpenClawTools } from "./openclaw-tools.js";
-import type { ModelAuthMode } from "./model-auth.js";
 import { wrapToolWithAbortSignal } from "./pi-tools.abort.js";
-import { requiresToolApproval, wrapToolWithApprovalGate } from "./tool-approval-gate.js";
 import {
   filterToolsByPolicy,
   isToolAllowedByPolicies,
@@ -40,8 +43,7 @@ import {
   wrapToolParamNormalization,
 } from "./pi-tools.read.js";
 import { cleanToolSchemaForGemini, normalizeToolParameters } from "./pi-tools.schema.js";
-import type { AnyAgentTool } from "./pi-tools.types.js";
-import type { SandboxContext } from "./sandbox.js";
+import { requiresToolApproval, wrapToolWithApprovalGate } from "./tool-approval-gate.js";
 import {
   buildPluginToolGroups,
   collectExplicitAllowlist,
@@ -50,8 +52,6 @@ import {
   resolveToolProfilePolicy,
   stripPluginOnlyAllowlist,
 } from "./tool-policy.js";
-import { getPluginToolMeta } from "../plugins/tools.js";
-import { logWarn } from "../logger.js";
 
 function isOpenAIProvider(provider?: string) {
   const normalized = provider?.trim().toLowerCase();
@@ -152,6 +152,10 @@ export function createOpenClawCodingTools(options?: {
   hasRepliedRef?: { value: boolean };
   /** If true, the model has native vision capability */
   modelHasVision?: boolean;
+  /** Require explicit message targets (no implicit last-route sends). */
+  requireExplicitMessageTarget?: boolean;
+  /** If true, omit the message tool from the tool list. */
+  disableMessageTool?: boolean;
 }): AnyAgentTool[] {
   const execToolName = "exec";
   const sandbox = options?.sandbox?.enabled ? options.sandbox : undefined;
@@ -335,6 +339,8 @@ export function createOpenClawCodingTools(options?: {
       replyToMode: options?.replyToMode,
       hasRepliedRef: options?.hasRepliedRef,
       modelHasVision: options?.modelHasVision,
+      requireExplicitMessageTarget: options?.requireExplicitMessageTarget,
+      disableMessageTool: options?.disableMessageTool,
       requesterAgentIdOverride: agentId,
     }),
   ];

@@ -18,6 +18,7 @@ import {
   handleControlUiAvatarRequest,
   handleControlUiHttpRequest,
   handleWebUiHttpRequest,
+  type ControlUiRootState,
 } from "./control-ui.js";
 import { handleFileHttpRequest } from "./file-http.js";
 import { applyHookMappings } from "./hooks-mapping.js";
@@ -215,6 +216,7 @@ export function createGatewayHttpServer(opts: {
   canvasHost: CanvasHostHandler | null;
   controlUiEnabled: boolean;
   controlUiBasePath: string;
+  controlUiRoot?: ControlUiRootState;
   openAiChatCompletionsEnabled: boolean;
   openResponsesEnabled: boolean;
   openResponsesConfig?: import("../config/types.gateway.js").GatewayHttpResponsesConfig;
@@ -227,6 +229,7 @@ export function createGatewayHttpServer(opts: {
     canvasHost,
     controlUiEnabled,
     controlUiBasePath,
+    controlUiRoot,
     openAiChatCompletionsEnabled,
     openResponsesEnabled,
     openResponsesConfig,
@@ -339,6 +342,7 @@ export function createGatewayHttpServer(opts: {
           handleControlUiHttpRequest(req, res, {
             basePath: controlUiBasePath,
             config: configSnapshot,
+            root: controlUiRoot,
           })
         ) {
           return;

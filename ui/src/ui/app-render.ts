@@ -3,7 +3,6 @@ import type { AppViewState } from "./app-view-state";
 import type { NavSessionEntry } from "./views/thread-list";
 import { renderTab, renderThemeToggle } from "./app-render.helpers";
 import { syncUrlWithSessionKey } from "./app-settings";
-import { renderCodingPanel } from "./views/coding-panel";
 import { loadChannels } from "./controllers/channels";
 import { loadChatHistory } from "./controllers/chat";
 import {
@@ -54,32 +53,35 @@ import {
   saveSkillApiKey,
   updateSkillEdit,
   updateSkillEnabled,
-} from "./controllers/skills";
-import { icons } from "./icons";
-import { TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation";
-import { allLeaves } from "./split-tree";
+} from "./controllers/skills.ts";
+import { icons } from "./icons.ts";
+import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
+import { allLeaves } from "./split-tree.ts";
+import { createThreadDescriptor, createThreadState } from "./thread-state.ts";
+import { saveThreadDescriptors } from "./thread-storage.ts";
 import "./components/resizable-divider";
-import { createThreadDescriptor, createThreadState } from "./thread-state";
-import { saveThreadDescriptors } from "./thread-storage";
-import { renderArtifactPanel } from "./views/artifact-panel";
-import { renderChannels } from "./views/channels";
-import { renderConfig } from "./views/config";
-import { renderModels } from "./views/models";
-import { renderCron } from "./views/cron";
-import { renderDebug } from "./views/debug";
-import { renderExecApprovalPrompt } from "./views/exec-approval";
-import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation";
-import { renderGit } from "./views/git";
-import { renderInstances } from "./views/instances";
-import { renderLogs } from "./views/logs";
-import { renderNodes } from "./views/nodes";
-import { renderOverview } from "./views/overview";
-import { renderSessions } from "./views/sessions";
-import { renderSkills } from "./views/skills";
-import { renderSplitPaneContainer } from "./views/split-pane-container";
-import { renderNavThreadList } from "./views/thread-list";
-import { renderToolApprovalPrompt } from "./views/tool-approval";
-
+import { ConfigUiHints } from "./types.ts";
+import { renderAgents } from "./views/agents.ts";
+import { renderArtifactPanel } from "./views/artifact-panel.ts";
+import { renderChannels } from "./views/channels.ts";
+import { renderChat } from "./views/chat.ts";
+import { renderCodingPanel } from "./views/coding-panel";
+import { renderConfig } from "./views/config.ts";
+import { renderCron } from "./views/cron.ts";
+import { renderDebug } from "./views/debug.ts";
+import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
+import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
+import { renderGit } from "./views/git.ts";
+import { renderInstances } from "./views/instances.ts";
+import { renderLogs } from "./views/logs.ts";
+import { renderModels } from "./views/models.ts";
+import { renderNodes } from "./views/nodes.ts";
+import { renderOverview } from "./views/overview.ts";
+import { renderSessions } from "./views/sessions.ts";
+import { renderSkills } from "./views/skills.ts";
+import { renderSplitPaneContainer } from "./views/split-pane-container.ts";
+import { renderNavThreadList } from "./views/thread-list.ts";
+import { renderToolApprovalPrompt } from "./views/tool-approval.ts";
 
 /**
  * Focus the chat composer textarea.
@@ -207,6 +209,18 @@ export function renderApp(state: AppViewState) {
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
   const devFlags = getDevFlags();
   const isDev = devFlags.length > 0;
+  const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
+  const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
+  const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
+  const logoBase = normalizeBasePath(state.basePath);
+  const logoHref = logoBase ? `${logoBase}/favicon.svg` : "/favicon.svg";
+  const configValue =
+    state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
+  const resolvedAgentId =
+    state.agentsSelectedId ??
+    state.agentsList?.defaultId ??
+    state.agentsList?.agents?.[0]?.id ??
+    null;
 
   return html`
     <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" data-dev="${isDev ? "true" : nothing}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
@@ -272,20 +286,28 @@ export function renderApp(state: AppViewState) {
               : nothing
           }
           ${renderThemeToggle(state)}
-          ${state.tab === "chat" ? html`
+          ${
+            state.tab === "chat"
+              ? html`
             <button
-              class="coding-panel-toggle ${state.codingPanelOpen ? 'coding-panel-toggle--active' : ''}"
+              class="coding-panel-toggle ${state.codingPanelOpen ? "coding-panel-toggle--active" : ""}"
               @click=${() => state.toggleCodingPanel()}
-              title="${state.codingPanelOpen ? 'Close code sessions' : 'Open code sessions'}"
-              style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;font-size:12px;${state.codingPanelOpen ? 'color:var(--accent);background:var(--hover);' : ''}"
+              title="${state.codingPanelOpen ? "Close code sessions" : "Open code sessions"}"
+              style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;font-size:12px;${state.codingPanelOpen ? "color:var(--accent);background:var(--hover);" : ""}"
             >
               ${icons.code}
               <span>Code</span>
-              ${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length > 0
-                ? html`<span style="background:var(--accent);color:white;font-size:10px;padding:0 5px;border-radius:8px;font-weight:700;">${state.codingSessions.filter((s: any) => s.status === 'running' || s.status === 'starting').length}</span>`
-                : nothing}
+              ${
+                state.codingSessions.filter(
+                  (s: any) => s.status === "running" || s.status === "starting",
+                ).length > 0
+                  ? html`<span style="background:var(--accent);color:white;font-size:10px;padding:0 5px;border-radius:8px;font-weight:700;">${state.codingSessions.filter((s: any) => s.status === "running" || s.status === "starting").length}</span>`
+                  : nothing
+              }
             </button>
-          ` : nothing}
+          `
+              : nothing
+          }
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
@@ -601,6 +623,393 @@ export function renderApp(state: AppViewState) {
         }
 
         ${
+          state.tab === "agents"
+            ? renderAgents({
+                loading: state.agentsLoading,
+                error: state.agentsError,
+                agentsList: state.agentsList,
+                selectedAgentId: resolvedAgentId,
+                activePanel: state.agentsPanel,
+                configForm: configValue,
+                configLoading: state.configLoading,
+                configSaving: state.configSaving,
+                configDirty: state.configFormDirty,
+                channelsLoading: state.channelsLoading,
+                channelsError: state.channelsError,
+                channelsSnapshot: state.channelsSnapshot,
+                channelsLastSuccess: state.channelsLastSuccess,
+                cronLoading: state.cronLoading,
+                cronStatus: state.cronStatus,
+                cronJobs: state.cronJobs,
+                cronError: state.cronError,
+                agentFilesLoading: state.agentFilesLoading,
+                agentFilesError: state.agentFilesError,
+                agentFilesList: state.agentFilesList,
+                agentFileActive: state.agentFileActive,
+                agentFileContents: state.agentFileContents,
+                agentFileDrafts: state.agentFileDrafts,
+                agentFileSaving: state.agentFileSaving,
+                agentIdentityLoading: state.agentIdentityLoading,
+                agentIdentityError: state.agentIdentityError,
+                agentIdentityById: state.agentIdentityById,
+                agentSkillsLoading: state.agentSkillsLoading,
+                agentSkillsReport: state.agentSkillsReport,
+                agentSkillsError: state.agentSkillsError,
+                agentSkillsAgentId: state.agentSkillsAgentId,
+                skillsFilter: state.skillsFilter,
+                onRefresh: async () => {
+                  await loadAgents(state);
+                  const agentIds = state.agentsList?.agents?.map((entry) => entry.id) ?? [];
+                  if (agentIds.length > 0) {
+                    void loadAgentIdentities(state, agentIds);
+                  }
+                },
+                onSelectAgent: (agentId) => {
+                  if (state.agentsSelectedId === agentId) {
+                    return;
+                  }
+                  state.agentsSelectedId = agentId;
+                  state.agentFilesList = null;
+                  state.agentFilesError = null;
+                  state.agentFilesLoading = false;
+                  state.agentFileActive = null;
+                  state.agentFileContents = {};
+                  state.agentFileDrafts = {};
+                  state.agentSkillsReport = null;
+                  state.agentSkillsError = null;
+                  state.agentSkillsAgentId = null;
+                  void loadAgentIdentity(state, agentId);
+                  if (state.agentsPanel === "files") {
+                    void loadAgentFiles(state, agentId);
+                  }
+                  if (state.agentsPanel === "skills") {
+                    void loadAgentSkills(state, agentId);
+                  }
+                },
+                onSelectPanel: (panel) => {
+                  state.agentsPanel = panel;
+                  if (panel === "files" && resolvedAgentId) {
+                    if (state.agentFilesList?.agentId !== resolvedAgentId) {
+                      state.agentFilesList = null;
+                      state.agentFilesError = null;
+                      state.agentFileActive = null;
+                      state.agentFileContents = {};
+                      state.agentFileDrafts = {};
+                      void loadAgentFiles(state, resolvedAgentId);
+                    }
+                  }
+                  if (panel === "skills") {
+                    if (resolvedAgentId) {
+                      void loadAgentSkills(state, resolvedAgentId);
+                    }
+                  }
+                  if (panel === "channels") {
+                    void loadChannels(state, false);
+                  }
+                  if (panel === "cron") {
+                    void state.loadCron();
+                  }
+                },
+                onLoadFiles: (agentId) => {
+                  void (async () => {
+                    await loadAgentFiles(state, agentId);
+                    if (state.agentFileActive) {
+                      await loadAgentFileContent(state, agentId, state.agentFileActive, {
+                        force: true,
+                        preserveDraft: true,
+                      });
+                    }
+                  })();
+                },
+                onSelectFile: (name) => {
+                  state.agentFileActive = name;
+                  if (!resolvedAgentId) {
+                    return;
+                  }
+                  void loadAgentFileContent(state, resolvedAgentId, name);
+                },
+                onFileDraftChange: (name, content) => {
+                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: content };
+                },
+                onFileReset: (name) => {
+                  const base = state.agentFileContents[name] ?? "";
+                  state.agentFileDrafts = { ...state.agentFileDrafts, [name]: base };
+                },
+                onFileSave: (name) => {
+                  if (!resolvedAgentId) {
+                    return;
+                  }
+                  const content =
+                    state.agentFileDrafts[name] ?? state.agentFileContents[name] ?? "";
+                  void saveAgentFile(state, resolvedAgentId, name, content);
+                },
+                onToolsProfileChange: (agentId, profile, clearAllow) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  const basePath = ["agents", "list", index, "tools"];
+                  if (profile) {
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "profile"],
+                      profile,
+                    );
+                  } else {
+                    removeConfigFormValue(state as unknown as ConfigState, [
+                      ...basePath,
+                      "profile",
+                    ]);
+                  }
+                  if (clearAllow) {
+                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "allow"]);
+                  }
+                },
+                onToolsOverridesChange: (agentId, alsoAllow, deny) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  const basePath = ["agents", "list", index, "tools"];
+                  if (alsoAllow.length > 0) {
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "alsoAllow"],
+                      alsoAllow,
+                    );
+                  } else {
+                    removeConfigFormValue(state as unknown as ConfigState, [
+                      ...basePath,
+                      "alsoAllow",
+                    ]);
+                  }
+                  if (deny.length > 0) {
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "deny"],
+                      deny,
+                    );
+                  } else {
+                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "deny"]);
+                  }
+                },
+                onConfigReload: () => loadConfig(state as unknown as ConfigState),
+                onConfigSave: () => saveConfig(state as unknown as ConfigState),
+                onChannelsRefresh: () => loadChannels(state, false),
+                onCronRefresh: () => state.loadCron(),
+                onSkillsFilterChange: (next) => (state.skillsFilter = next),
+                onSkillsRefresh: () => {
+                  if (resolvedAgentId) {
+                    void loadAgentSkills(state, resolvedAgentId);
+                  }
+                },
+                onAgentSkillToggle: (agentId, skillName, enabled) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  const entry = list[index] as { skills?: unknown };
+                  const normalizedSkill = skillName.trim();
+                  if (!normalizedSkill) {
+                    return;
+                  }
+                  const allSkills =
+                    state.agentSkillsReport?.skills?.map((skill) => skill.name).filter(Boolean) ??
+                    [];
+                  const existing = Array.isArray(entry.skills)
+                    ? entry.skills.map((name) => String(name).trim()).filter(Boolean)
+                    : undefined;
+                  const base = existing ?? allSkills;
+                  const next = new Set(base);
+                  if (enabled) {
+                    next.add(normalizedSkill);
+                  } else {
+                    next.delete(normalizedSkill);
+                  }
+                  updateConfigFormValue(
+                    state as unknown as ConfigState,
+                    ["agents", "list", index, "skills"],
+                    [...next],
+                  );
+                },
+                onAgentSkillsClear: (agentId) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  removeConfigFormValue(state as unknown as ConfigState, [
+                    "agents",
+                    "list",
+                    index,
+                    "skills",
+                  ]);
+                },
+                onAgentSkillsDisableAll: (agentId) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  updateConfigFormValue(
+                    state as unknown as ConfigState,
+                    ["agents", "list", index, "skills"],
+                    [],
+                  );
+                },
+                onModelChange: (agentId, modelId) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  const basePath = ["agents", "list", index, "model"];
+                  if (!modelId) {
+                    removeConfigFormValue(state as unknown as ConfigState, basePath);
+                    return;
+                  }
+                  const entry = list[index] as { model?: unknown };
+                  const existing = entry?.model;
+                  if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                    const fallbacks = (existing as { fallbacks?: unknown }).fallbacks;
+                    const next = {
+                      primary: modelId,
+                      ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
+                    };
+                    updateConfigFormValue(state as unknown as ConfigState, basePath, next);
+                  } else {
+                    updateConfigFormValue(state as unknown as ConfigState, basePath, modelId);
+                  }
+                },
+                onModelFallbacksChange: (agentId, fallbacks) => {
+                  if (!configValue) {
+                    return;
+                  }
+                  const list = (configValue as { agents?: { list?: unknown[] } }).agents?.list;
+                  if (!Array.isArray(list)) {
+                    return;
+                  }
+                  const index = list.findIndex(
+                    (entry) =>
+                      entry &&
+                      typeof entry === "object" &&
+                      "id" in entry &&
+                      (entry as { id?: string }).id === agentId,
+                  );
+                  if (index < 0) {
+                    return;
+                  }
+                  const basePath = ["agents", "list", index, "model"];
+                  const entry = list[index] as { model?: unknown };
+                  const normalized = fallbacks.map((name) => name.trim()).filter(Boolean);
+                  const existing = entry.model;
+                  const resolvePrimary = () => {
+                    if (typeof existing === "string") {
+                      return existing.trim() || null;
+                    }
+                    if (existing && typeof existing === "object" && !Array.isArray(existing)) {
+                      const primary = (existing as { primary?: unknown }).primary;
+                      if (typeof primary === "string") {
+                        const trimmed = primary.trim();
+                        return trimmed || null;
+                      }
+                    }
+                    return null;
+                  };
+                  const primary = resolvePrimary();
+                  if (normalized.length === 0) {
+                    if (primary) {
+                      updateConfigFormValue(state as unknown as ConfigState, basePath, primary);
+                    } else {
+                      removeConfigFormValue(state as unknown as ConfigState, basePath);
+                    }
+                    return;
+                  }
+                  const next = primary
+                    ? { primary, fallbacks: normalized }
+                    : { fallbacks: normalized };
+                  updateConfigFormValue(state as unknown as ConfigState, basePath, next);
+                },
+              })
+            : nothing
+        }
+
+        ${
           state.tab === "skills"
             ? renderSkills({
                 loading: state.skillsLoading,
@@ -700,11 +1109,7 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
-        ${
-          state.tab === "chat"
-            ? renderChatWithArtifactPanel(state)
-            : nothing
-        }
+        ${state.tab === "chat" ? renderChatWithArtifactPanel(state) : nothing}
 
         ${
           state.tab === "config"
@@ -822,7 +1227,7 @@ export function renderApp(state: AppViewState) {
                 },
                 onRemoveProvider: (name) => {
                   const providers = (state.modelsConfig?.providers ?? []).filter(
-                    (p) => p.name !== name
+                    (p) => p.name !== name,
                   );
                   state.modelsConfig = { ...state.modelsConfig, providers };
                 },
@@ -866,7 +1271,9 @@ function renderChatWithArtifactPanel(state: AppViewState) {
       <div class="chat-artifact-wrapper__chat" style="flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;">
         ${chatContent}
       </div>
-      ${codingPanelOpen ? html`
+      ${
+        codingPanelOpen
+          ? html`
         <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);">
           ${renderCodingPanel({
             sessions: state.codingSessions,
@@ -882,11 +1289,14 @@ function renderChatWithArtifactPanel(state: AppViewState) {
             onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
             onCloseTerminal: () => state.handleCloseCodingTerminal(),
             onAttachTerminal: (id: string) => state.handleAttachCodingTerminal(id),
-            onRespond: (id: string, text: string, toolUseId?: string) => state.handleCodingRespond(id, text, toolUseId),
+            onRespond: (id: string, text: string, toolUseId?: string) =>
+              state.handleCodingRespond(id, text, toolUseId),
             pendingQuestions: state.codingQuestions,
           })}
         </div>
-      ` : nothing}
+      `
+          : nothing
+      }
       ${
         artifactOpen
           ? html`
