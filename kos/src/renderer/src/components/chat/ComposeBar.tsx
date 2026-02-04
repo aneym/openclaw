@@ -1,13 +1,15 @@
-import { Send, X } from "lucide-react";
-import { useState, useRef, KeyboardEvent, ClipboardEvent } from "react";
+import { Send, Square, X, ImageIcon } from "lucide-react";
+import { useState, useRef, KeyboardEvent, ClipboardEvent, DragEvent } from "react";
 import type { ChatMessage } from "../../types/message";
+import { useGatewayConnected, useGatewayRequest } from "../../gateway/hooks";
 import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
 import { useImageAttachments } from "../../hooks/use-image-attachments";
 import { useStreaming } from "../../hooks/use-streaming";
 import { klog } from "../../lib/klog";
+import { notifications } from "../../lib/notifications";
 import { cn } from "../../lib/utils";
 import { generateUUID } from "../../lib/uuid";
-import { useGatewayStore } from "../../stores/gateway-store";
+import { useAbortStore } from "../../stores/abort-store";
 import { useMessageQueueStore } from "../../stores/message-queue-store";
 import { MessageQueue } from "./MessageQueue";
 
@@ -26,14 +28,66 @@ export function ComposeBar({
 }: ComposeBarProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const { request, connected } = useGatewayStore();
+  // Use individual selectors to avoid re-render on unrelated store changes
+  const request = useGatewayRequest();
+  const connected = useGatewayConnected();
   const { isStreaming } = useStreaming(sessionKey);
   const { images, addImage, removeImage, clearImages } = useImageAttachments();
   const addToQueue = useMessageQueueStore((state) => state.addToQueue);
   const dequeue = useMessageQueueStore((state) => state.dequeue);
+  const { markPending, clearPending } = useAbortStore();
 
   // Auto-resize textarea based on content
   useAutoResizeTextarea(textareaRef, text);
+
+  // Drag-and-drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  // Handle drag events for image drop
+  const handleDragEnter = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer?.types.includes("Files")) {
+      setIsDragging(true);
+    }
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDragging(false);
+    }
+  };
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = "copy";
+    }
+  };
+
+  const handleDrop = async (e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    dragCounterRef.current = 0;
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    // Process all dropped image files
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith("image/")) {
+        await addImage(file);
+      }
+    }
+  };
 
   // Handle clipboard paste for images
   const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
@@ -110,17 +164,31 @@ export function ComposeBar({
     }
 
     try {
-      klog.compose("Sending chat.send request", { sessionKey, messageId });
-      // TODO: Add image attachments support
+      klog.compose("Sending chat.send request", {
+        sessionKey,
+        messageId,
+        imageCount: images.length,
+      });
+      // Build attachments array from images
+      const attachments = images.map((img) => ({
+        type: "image" as const,
+        mimeType: "image/jpeg",
+        data: img.dataUrl.replace(/^data:image\/[a-z]+;base64,/, ""),
+      }));
       const result = await request("chat.send", {
         sessionKey,
         message: messageText,
         deliver: false,
         idempotencyKey: messageId,
+        ...(attachments.length > 0 && { attachments }),
       });
       klog.compose("chat.send response:", result);
     } catch (err) {
       klog.composeError("send failed:", err);
+      notifications.messageFailed(
+        err instanceof Error ? err.message : "Unknown error",
+        err instanceof Error ? { message: err.message, stack: err.stack } : undefined,
+      );
     }
   };
 
@@ -147,6 +215,31 @@ export function ComposeBar({
     }
   };
 
+  const handleAbort = async () => {
+    if (!isStreaming) return;
+
+    klog.compose("handleAbort called", { sessionKey, connected });
+
+    // If not connected, mark as pending for retry after reconnect
+    if (!connected) {
+      klog.compose("Not connected, marking abort as pending");
+      markPending(sessionKey);
+      notifications.info("Abort queued", "Will stop when connection is restored");
+      return;
+    }
+
+    try {
+      await request("chat.abort", { sessionKey });
+      klog.compose("Abort successful");
+      clearPending(sessionKey);
+    } catch (err) {
+      klog.composeError("Abort failed:", err);
+      // Mark as pending for retry
+      markPending(sessionKey);
+      notifications.error("Failed to stop", err instanceof Error ? err.message : "Unknown error");
+    }
+  };
+
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter = send (unless Shift is held)
     if (e.key === "Enter" && !e.shiftKey) {
@@ -163,8 +256,23 @@ export function ComposeBar({
   return (
     <>
       <MessageQueue chatId={chatId} onSendNow={handleSendNow} />
-      <div className="border-t border-border bg-background p-3">
-        <div className="space-y-2">
+      <div
+        className="relative border-t border-border bg-background px-4 py-3"
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+      >
+        {/* Drop zone overlay */}
+        {isDragging && (
+          <div className="absolute inset-0 z-50 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[2px]">
+            <div className="flex flex-col items-center gap-2 text-primary">
+              <ImageIcon className="h-8 w-8" />
+              <span className="text-sm font-medium">Drop images here</span>
+            </div>
+          </div>
+        )}
+        <div className="max-w-2xl mx-auto w-full space-y-2">
           {/* Image preview thumbnails */}
           {images.length > 0 && (
             <div className="flex flex-wrap gap-2">
@@ -219,21 +327,36 @@ export function ComposeBar({
                 "min-h-[40px] max-h-[200px]",
               )}
             />
-            <button
-              onClick={() => handleSend()}
-              disabled={!canSend}
-              className={cn(
-                "inline-flex h-10 items-center justify-center rounded-md px-4",
-                "text-sm font-medium transition-colors",
-                "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-                "disabled:pointer-events-none disabled:opacity-50",
-                canSend
-                  ? "bg-primary text-primary-foreground hover:bg-primary/90"
-                  : "bg-muted text-muted-foreground",
-              )}
-            >
-              <Send className="h-4 w-4" />
-            </button>
+            {isStreaming ? (
+              <button
+                onClick={() => handleAbort()}
+                className={cn(
+                  "inline-flex h-10 items-center justify-center rounded-md px-4",
+                  "text-sm font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+                )}
+                title="Stop generating (⌘⇧Enter)"
+              >
+                <Square className="h-4 w-4" />
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSend()}
+                disabled={!canSend}
+                className={cn(
+                  "inline-flex h-10 items-center justify-center rounded-md px-4",
+                  "text-sm font-medium transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                  "disabled:pointer-events-none disabled:opacity-50",
+                  canSend
+                    ? "bg-primary text-primary-foreground hover:bg-primary/90"
+                    : "bg-muted text-muted-foreground",
+                )}
+              >
+                <Send className="h-4 w-4" />
+              </button>
+            )}
           </div>
         </div>
       </div>

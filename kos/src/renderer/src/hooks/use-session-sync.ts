@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, ChatStatus } from "../types";
+import { klog } from "../lib/klog";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
-import { useProjectStore } from "../stores/project-store";
-import { useWorkspaceStore } from "../stores/workspace-store";
 
 // Tiered loading configuration
 const INITIAL_LOAD_LIMIT = 50;
@@ -125,34 +124,6 @@ const resolveSessionChannel = (session: SessionRecord): string | undefined => {
   return undefined;
 };
 
-const resolveMessageTimestamp = (payload: SessionRecord): number | undefined => {
-  const direct =
-    readTimestamp(payload.timestamp) ??
-    readTimestamp(payload.ts) ??
-    readTimestamp(payload.createdAt);
-  if (direct) return direct;
-  if (isRecord(payload.message)) {
-    return (
-      readTimestamp(payload.message.timestamp) ??
-      readTimestamp(payload.message.createdAt) ??
-      readTimestamp(payload.message.ts)
-    );
-  }
-  return undefined;
-};
-
-const parseSessionListPayload = (
-  payload: unknown,
-): { sessions: unknown[]; shouldArchive: boolean } | null => {
-  if (Array.isArray(payload)) {
-    return { sessions: payload, shouldArchive: true };
-  }
-  if (isRecord(payload) && Array.isArray(payload.sessions)) {
-    return { sessions: payload.sessions, shouldArchive: true };
-  }
-  return null;
-};
-
 const generateChatId = () => `chat-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 /**
@@ -258,7 +229,7 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
 
   const newChat: Chat = {
     id: generateChatId(),
-    workspaceId: "default", // loadMore doesn't have workspace context
+    // Don't assign workspace/project - synced sessions are unassigned until user explicitly assigns them
     sessionKey,
     title,
     channel,
@@ -292,29 +263,14 @@ export function useSessionSync() {
   const hasMore = useChatStore((s) => s.hasMore);
   const isLoadingMore = useChatStore((s) => s.isLoadingMore);
 
-  // Get active workspace
-  const activeProjectId = useProjectStore((s) => s.activeProjectId);
-  const activeWorkspaceByProject = useWorkspaceStore((s) => s.activeWorkspaceByProject);
-
   // Track if we've completed initial load
   const [initialLoadComplete, setInitialLoadComplete] = useState(false);
 
   const chatsRef = useRef(chats);
-  const activeProjectIdRef = useRef(activeProjectId);
 
   useEffect(() => {
     chatsRef.current = chats;
   }, [chats]);
-
-  useEffect(() => {
-    activeProjectIdRef.current = activeProjectId;
-  }, [activeProjectId]);
-
-  const getActiveWorkspaceId = useCallback(() => {
-    const projectId = activeProjectIdRef.current;
-    if (!projectId) return "default";
-    return activeWorkspaceByProject.get(projectId) ?? "default";
-  }, [activeWorkspaceByProject]);
 
   const upsertChatFromSession = useCallback(
     (payload: unknown, overrides?: { status?: ChatStatus; lastMessageAt?: number }) => {
@@ -325,7 +281,6 @@ export function useSessionSync() {
       const existing = findChatBySessionKey(chatsRef.current, sessionKey);
       const { title, isExplicit } = resolveSessionTitle(session);
       const resolvedStatus = overrides?.status ?? resolveSessionStatus(session);
-      const workspaceId = getActiveWorkspaceId();
       const lastMessageAt = overrides?.lastMessageAt ?? resolveSessionLastMessageAt(session);
 
       if (existing) {
@@ -368,7 +323,7 @@ export function useSessionSync() {
 
       const newChat: Chat = {
         id: generateChatId(),
-        workspaceId,
+        // Don't assign workspace/project - synced sessions are unassigned until user explicitly assigns them
         sessionKey,
         title,
         channel,
@@ -379,60 +334,107 @@ export function useSessionSync() {
 
       addChat(newChat);
     },
-    [addChat, archiveChat, updateChat, getActiveWorkspaceId],
+    [addChat, archiveChat, updateChat],
   );
 
+  // Track pending session refreshes by runId (for delayed auto-title refresh)
+  const pendingRefreshTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+
+  // Function to refresh sessions from gateway
+  const refreshSessions = useCallback(async () => {
+    if (!connected) return;
+
+    try {
+      const result = await request<{ sessions?: unknown[] }>("sessions.list", {
+        limit: INITIAL_LOAD_LIMIT,
+        activeMinutes: INITIAL_ACTIVE_MINUTES,
+        includeDerivedTitles: true,
+      });
+
+      const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
+      for (const entry of sessions) {
+        upsertChatFromSession(entry);
+      }
+    } catch (err) {
+      klog.sessionError("refreshSessions failed:", err);
+    }
+  }, [connected, request, upsertChatFromSession]);
+
+  // Subscribe to actual gateway events (chat events for session state changes)
+  // The gateway emits: chat, agent, presence, cron, heartbeat, etc.
+  // NOT: session.list, session.created, session.updated (these don't exist)
   useEffect(() => {
     const unsubscribes = [
-      subscribe("session.list", (payload) => {
-        const list = parseSessionListPayload(payload);
-        if (!list) return;
+      // Handle chat events to track session running state and trigger refreshes
+      subscribe("chat", (payload) => {
+        if (!isRecord(payload)) return;
 
-        const seen = new Set<string>();
-        for (const entry of list.sessions) {
-          const sessionKey = resolveSessionKey(entry);
-          if (!sessionKey) continue;
-          seen.add(sessionKey);
-          upsertChatFromSession(entry);
-        }
+        const sessionKey = readString(payload.sessionKey);
+        const state = readString(payload.state);
+        const runId = readString(payload.runId);
 
-        if (list.shouldArchive) {
-          for (const chat of chatsRef.current.values()) {
-            if (!seen.has(chat.sessionKey)) {
-              archiveChat(chat.id);
+        if (!sessionKey) return;
+
+        // Find the chat by sessionKey and update its status
+        const chat = findChatBySessionKey(chatsRef.current, sessionKey);
+
+        if (state === "delta") {
+          // Mark session as active (streaming)
+          if (chat && chat.status !== "active") {
+            updateChat(chat.id, { status: "active" });
+          }
+        } else if (state === "final" || state === "error" || state === "aborted") {
+          // Mark session as idle
+          if (chat && chat.status !== "idle") {
+            updateChat(chat.id, { status: "idle", lastMessageAt: Date.now() });
+          }
+
+          // Refresh sessions to pick up any changes (matching web UI pattern)
+          if (state === "final") {
+            // Immediate refresh
+            void refreshSessions();
+
+            // Delayed refresh (3s) to pick up server-side auto-title
+            // Cancel any existing timer for this runId
+            if (runId) {
+              const existingTimer = pendingRefreshTimers.current.get(runId);
+              if (existingTimer) {
+                clearTimeout(existingTimer);
+              }
+
+              const timer = setTimeout(() => {
+                void refreshSessions();
+                pendingRefreshTimers.current.delete(runId);
+              }, 3000);
+
+              pendingRefreshTimers.current.set(runId, timer);
             }
           }
         }
-      }),
-      subscribe("session.created", (payload) => {
-        upsertChatFromSession(payload);
-      }),
-      subscribe("session.updated", (payload) => {
-        upsertChatFromSession(payload);
-      }),
-      subscribe("session.message", (payload) => {
-        if (!isRecord(payload)) return;
-        const ts = resolveMessageTimestamp(payload) ?? Date.now();
-        upsertChatFromSession(payload, { lastMessageAt: ts });
-      }),
-      subscribe("session.stream.start", (payload) => {
-        upsertChatFromSession(payload, { status: "active" });
-      }),
-      subscribe("session.stream.end", (payload) => {
-        upsertChatFromSession(payload, { status: "idle" });
       }),
     ];
 
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
+      // Clear any pending timers
+      for (const timer of pendingRefreshTimers.current.values()) {
+        clearTimeout(timer);
+      }
+      pendingRefreshTimers.current.clear();
     };
-  }, [subscribe, archiveChat, upsertChatFromSession]);
+  }, [subscribe, updateChat, refreshSessions]);
 
   // Initial load: fetch recent sessions only (7 days, up to 50)
   useEffect(() => {
     if (!connected) {
+      klog.session("Waiting for gateway connection before fetching sessions");
       return;
     }
+
+    klog.session("Gateway connected, fetching initial sessions", {
+      limit: INITIAL_LOAD_LIMIT,
+      activeMinutes: INITIAL_ACTIVE_MINUTES,
+    });
 
     let cancelled = false;
     request<{ sessions?: unknown[] }>("sessions.list", {
@@ -445,6 +447,19 @@ export function useSessionSync() {
         if (cancelled) return;
         const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
 
+        klog.session("Received sessions from gateway", {
+          count: sessions.length,
+          hasMore: sessions.length >= INITIAL_LOAD_LIMIT,
+        });
+
+        // Log first few sessions for debugging
+        sessions.slice(0, 3).forEach((entry, i) => {
+          const sessionKey = resolveSessionKey(entry);
+          const session = resolveSessionRecord(entry);
+          const { title } = resolveSessionTitle(session ?? {});
+          klog.session(`  [${i}] sessionKey=${sessionKey}, title="${title}"`);
+        });
+
         // Process sessions without archiving (partial list)
         for (const entry of sessions) {
           upsertChatFromSession(entry);
@@ -453,9 +468,13 @@ export function useSessionSync() {
         // Set hasMore if we hit the limit (server may have more)
         setHasMore(sessions.length >= INITIAL_LOAD_LIMIT);
         setInitialLoadComplete(true);
+
+        klog.session("Session sync complete", {
+          chatCount: useChatStore.getState().chats.size,
+        });
       })
       .catch((err) => {
-        console.warn("[useSessionSync] sessions.list (initial) failed:", err);
+        klog.sessionError("sessions.list (initial) failed:", err);
         setInitialLoadComplete(true);
       });
 

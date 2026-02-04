@@ -26,7 +26,17 @@ interface ChatEventPayload {
   errorMessage?: string;
 }
 
-export function useMessages(sessionKey: string, chatId: string) {
+interface UseMessagesOptions {
+  /**
+   * Called after history reload completes (e.g., after a streaming run ends).
+   * Use this to clear streaming state to avoid flash where streaming text
+   * disappears before final message arrives.
+   */
+  onHistoryReload?: () => void;
+}
+
+export function useMessages(sessionKey: string, chatId: string, options: UseMessagesOptions = {}) {
+  const { onHistoryReload } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [initialLoading, setInitialLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -83,13 +93,21 @@ export function useMessages(sessionKey: string, chatId: string) {
 
   // Initial history load when connected
   useEffect(() => {
+    klog.messages("useMessages effect triggered", {
+      sessionKey: sessionKey || "(empty)",
+      connected,
+      messageCount: messages.length,
+    });
+
     if (!sessionKey) {
+      klog.messages("No sessionKey, skipping history load");
       setInitialLoading(false);
       return;
     }
 
     // Wait for gateway connection before fetching
     if (!connected) {
+      klog.messages("Not connected, waiting for gateway");
       return;
     }
 
@@ -97,6 +115,7 @@ export function useMessages(sessionKey: string, chatId: string) {
     if (messages.length === 0) {
       setInitialLoading(true);
     }
+    klog.messages("Loading history for sessionKey:", sessionKey);
     loadHistory().finally(() => setInitialLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only run on sessionKey/connected change, not messages
   }, [sessionKey, connected, loadHistory]);
@@ -141,12 +160,15 @@ export function useMessages(sessionKey: string, chatId: string) {
 
         // Reload history to get the final message from the server
         // This matches the web UI's pattern and ensures consistency
-        void loadHistory();
+        // Call onHistoryReload after load completes to clear streaming state
+        void loadHistory().then(() => {
+          onHistoryReload?.();
+        });
       }
     });
 
     return unsubscribe;
-  }, [sessionKey, subscribe, loadHistory]);
+  }, [sessionKey, subscribe, loadHistory, onHistoryReload]);
 
   return { messages, loading: initialLoading, error, addMessage };
 }

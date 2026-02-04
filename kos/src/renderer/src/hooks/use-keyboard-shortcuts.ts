@@ -18,8 +18,12 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       for (const shortcut of shortcuts) {
+        // For metaKey: if ctrlKey is explicitly set, don't cross-platform match metaKey with ctrlKey
         const metaMatch =
-          shortcut.metaKey === undefined || shortcut.metaKey === (e.metaKey || e.ctrlKey);
+          shortcut.metaKey === undefined ||
+          (shortcut.ctrlKey !== undefined
+            ? shortcut.metaKey === e.metaKey // explicit ctrl, match meta independently
+            : shortcut.metaKey === (e.metaKey || e.ctrlKey)); // cross-platform: meta or ctrl
         const ctrlMatch = shortcut.ctrlKey === undefined || shortcut.ctrlKey === e.ctrlKey;
         const shiftMatch = shortcut.shiftKey === undefined || shortcut.shiftKey === e.shiftKey;
         const altMatch = shortcut.altKey === undefined || shortcut.altKey === e.altKey;

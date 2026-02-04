@@ -1,8 +1,10 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import type { ActiveTool } from "@/hooks/use-streaming";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "@/types/message";
+import { ExecutingToolsSummary } from "./ExecutingTools";
 import { MessageGroup } from "./MessageGroup";
 import { StreamingIndicator } from "./StreamingIndicator";
 
@@ -10,6 +12,7 @@ interface MessageListProps {
   messages: ChatMessage[];
   isStreaming?: boolean;
   streamText?: string;
+  activeTools?: ActiveTool[];
   className?: string;
 }
 
@@ -50,7 +53,13 @@ function groupConsecutiveMessages(messages: ChatMessage[]): MessageGrouping[] {
   return groups;
 }
 
-export function MessageList({ messages, isStreaming, streamText, className }: MessageListProps) {
+export function MessageList({
+  messages,
+  isStreaming,
+  streamText,
+  activeTools = [],
+  className,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -118,22 +127,28 @@ export function MessageList({ messages, isStreaming, streamText, className }: Me
   }, []);
 
   return (
-    <div className="relative flex flex-col h-full">
+    <div className="relative flex flex-col flex-1 min-h-0">
       {/* Scrollable message container */}
       <div
         ref={containerRef}
         className={cn("flex-1 overflow-y-auto overflow-x-hidden", "px-4 py-4", className)}
+        role="log"
+        aria-live="polite"
+        aria-label="Chat messages"
       >
         {messages.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             No messages yet. Start a conversation!
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-4 max-w-3xl mx-auto w-full">
             {messageGroups.map((group, idx) => {
               const isLastGroup = idx === messageGroups.length - 1;
-              // Only show streaming indicator on assistant messages, not user messages
-              const shouldShowStreaming = isLastGroup && isStreaming && group.role === "assistant";
+              // Show streaming on last assistant group when actively streaming OR when we have
+              // pending stream text (between "final" event and history reload completing)
+              const hasStreamContent = isStreaming || !!streamText;
+              const shouldShowStreaming =
+                isLastGroup && hasStreamContent && group.role === "assistant";
               // Show timestamp only at turn boundaries (last group before role change or end)
               const nextGroup = messageGroups[idx + 1];
               const isEndOfTurn = !nextGroup || nextGroup.role !== group.role;
@@ -150,11 +165,13 @@ export function MessageList({ messages, isStreaming, streamText, className }: Me
               );
             })}
 
-            {/* Show streaming content when assistant is responding */}
-            {isStreaming &&
+            {/* Show streaming content when assistant is responding (or pending clear) */}
+            {(isStreaming || streamText) &&
               messageGroups.length > 0 &&
               messageGroups[messageGroups.length - 1].role !== "assistant" && (
                 <div className="flex flex-col gap-2 items-start">
+                  {/* Show executing tools */}
+                  {activeTools.length > 0 && <ExecutingToolsSummary tools={activeTools} />}
                   <div className="max-w-[85%] text-foreground">
                     {streamText ? (
                       <div className="whitespace-pre-wrap">{streamText}</div>
@@ -179,6 +196,7 @@ export function MessageList({ messages, isStreaming, streamText, className }: Me
             variant="secondary"
             onClick={scrollToBottom}
             className="shadow-lg gap-1"
+            aria-label="Scroll to bottom - new messages"
           >
             <ChevronDown className="w-4 h-4" />
             New messages

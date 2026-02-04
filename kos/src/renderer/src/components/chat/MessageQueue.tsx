@@ -37,11 +37,6 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
     });
   };
 
-  const truncateText = (text: string, maxLength = 60) => {
-    if (text.length <= maxLength) return text;
-    return text.slice(0, maxLength) + "...";
-  };
-
   return (
     <div className="border-t border-border bg-muted/30 p-3">
       <div className="flex items-center justify-between mb-2">
@@ -75,15 +70,25 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
           <div
             key={msg.id}
             className={cn(
-              "flex items-center justify-between gap-2",
+              "flex items-start gap-2",
               "rounded-md bg-background border border-border p-2",
               "hover:border-muted-foreground/20 transition-colors",
             )}
           >
-            <div className="flex-1 flex items-center gap-2 min-w-0">
-              <span className="text-sm text-foreground truncate">{truncateText(msg.text)}</span>
-              <span className="text-xs text-muted-foreground shrink-0">
-                · {formatTimestamp(msg.timestamp)}
+            <div className="flex-1 min-w-0">
+              {/* Message preview with 3-line clamp */}
+              <p
+                className={cn(
+                  "text-sm text-foreground whitespace-pre-wrap break-words",
+                  "overflow-hidden line-clamp-3",
+                )}
+                title={msg.text}
+              >
+                {msg.text}
+              </p>
+              {/* Timestamp */}
+              <span className="text-xs text-muted-foreground mt-1 block">
+                {formatTimestamp(msg.timestamp)}
               </span>
             </div>
             <button
@@ -93,6 +98,7 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
                 "text-muted-foreground hover:text-foreground",
               )}
               title="Remove"
+              aria-label="Remove queued message"
             >
               <X className="h-3.5 w-3.5" />
             </button>

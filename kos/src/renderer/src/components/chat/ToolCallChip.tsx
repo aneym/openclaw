@@ -5,6 +5,7 @@ import {
   FilePen,
   FolderSearch,
   Globe,
+  Loader2,
   MessageSquare,
   Monitor,
   Pencil,
@@ -22,6 +23,8 @@ interface ToolCallChipProps {
   onClick?: () => void;
   /** If true, start expanded */
   defaultOpen?: boolean;
+  /** If true, show executing state with spinner */
+  isExecuting?: boolean;
 }
 
 /** Static icon map - defined outside component to avoid recreation */
@@ -100,7 +103,12 @@ function formatResult(result: unknown): { content: string; isJson: boolean } {
   }
 }
 
-export function ToolCallChip({ part, onClick, defaultOpen = false }: ToolCallChipProps) {
+export function ToolCallChip({
+  part,
+  onClick,
+  defaultOpen = false,
+  isExecuting = false,
+}: ToolCallChipProps) {
   const [open, setOpen] = useState(defaultOpen);
   const details = getToolDetails(part);
   const isResult = part.type === "tool-result";
@@ -127,16 +135,35 @@ export function ToolCallChip({ part, onClick, defaultOpen = false }: ToolCallChi
         className={cn(
           "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
           "border border-border/50",
-          isError
-            ? "bg-destructive/10 text-destructive border-destructive/30"
-            : isResult
-              ? "bg-muted/50 text-foreground"
-              : "bg-muted/30 text-muted-foreground",
+          isExecuting
+            ? "bg-primary/10 text-primary border-primary/30 animate-pulse"
+            : isError
+              ? "bg-destructive/10 text-destructive border-destructive/30"
+              : isResult
+                ? "bg-muted/50 text-foreground"
+                : "bg-muted/30 text-muted-foreground",
           (hasContent || isClickable) && "cursor-pointer hover:bg-muted/70 hover:border-border",
           !hasContent && !isClickable && "cursor-default",
         )}
+        role={isClickable || hasContent ? "button" : undefined}
+        tabIndex={isClickable || hasContent ? 0 : undefined}
+        onKeyDown={
+          isClickable || hasContent
+            ? (e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  handleClick();
+                }
+              }
+            : undefined
+        }
+        title={`Tool: ${part.toolName}${isExecuting ? " (executing)" : ""}`}
       >
-        <ToolIcon name={part.toolName} className="w-3.5 h-3.5" />
+        {isExecuting ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        ) : (
+          <ToolIcon name={part.toolName} className="w-3.5 h-3.5" />
+        )}
         <span className="font-mono">{part.toolName}</span>
         {details && (
           <>

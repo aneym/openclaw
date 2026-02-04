@@ -1,5 +1,7 @@
 import { ChevronRight, Brain } from "lucide-react";
 import { useState } from "react";
+import { collapse } from "@/lib/animation-variants";
+import { motion, AnimatePresence } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { TextPart } from "./TextPart";
 
@@ -24,11 +26,19 @@ export function ReasoningBlock({ reasoning, durationMs }: ReasoningBlockProps) {
         </span>
         <ChevronRight className={cn("w-3 h-3 transition-transform", open && "rotate-90")} />
       </button>
-      {open && (
-        <div className="mt-1 pl-4 border-l-2 border-accent text-sm text-muted-foreground">
-          <TextPart text={reasoning} />
-        </div>
-      )}
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            variants={collapse}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            className="mt-1 pl-4 border-l-2 border-accent text-sm text-muted-foreground"
+          >
+            <TextPart text={reasoning} />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -1,5 +1,7 @@
-import { useMemo } from "react";
+import { useMemo, memo } from "react";
 import type { ChatMessage, MessagePart, ToolCallPart, ToolResultPart } from "@/types/message";
+import { slideUp } from "@/lib/animation-variants";
+import { motion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 import { ImageAttachment } from "./ImageAttachment";
 import { ReasoningBlock } from "./ReasoningBlock";
@@ -105,7 +107,7 @@ function extractPartsByType(messages: ChatMessage[]) {
  * 3. Text content - actual chat message
  * 4. Images
  */
-export function MessageGroup({
+export const MessageGroup = memo(function MessageGroup({
   messages,
   role,
   isStreaming,
@@ -136,7 +138,12 @@ export function MessageGroup({
   const hasTextContent = textParts.length > 0 || (isStreaming && streamText);
 
   return (
-    <div className={cn("flex flex-col group", role === "user" ? "items-end" : "items-start")}>
+    <motion.div
+      variants={slideUp}
+      initial="initial"
+      animate="animate"
+      className={cn("flex flex-col group", role === "user" ? "items-end" : "items-start")}
+    >
       {/* 1. Tool calls and reasoning grouped tightly */}
       {(toolMessages.length > 0 || reasoningParts.length > 0) && (
         <div className="flex flex-col">
@@ -181,6 +188,6 @@ export function MessageGroup({
 
       {/* 4. Timestamp pinned at bottom of entire turn */}
       {showTimestamp && <GroupFooter role={role} timestamp={messages[0].createdAt} />}
-    </div>
+    </motion.div>
   );
-}
+});
