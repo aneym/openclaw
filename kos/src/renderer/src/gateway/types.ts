@@ -72,3 +72,10 @@ export type GatewayCdpResponseFrame = {
   result?: unknown;
   error?: string;
 };
+
+// Browser info update - sent when browser panel state changes
+export type GatewayBrowserInfoFrame = {
+  type: "browser-info";
+  cdpUrl: string | null;
+  isActive: boolean;
+};

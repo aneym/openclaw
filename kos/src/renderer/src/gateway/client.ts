@@ -4,8 +4,10 @@ import type {
   GatewayHelloOk,
   GatewayClientOptions,
   GatewayCdpFrame,
+  GatewayBrowserInfoFrame,
   Pending,
 } from "./types";
+import { useBrowserStore } from "../stores/browser-store";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
 import { buildDeviceAuthPayload } from "./device-auth-payload";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity";
@@ -38,6 +40,7 @@ export class GatewayClient {
   private connectSent = false;
   private connectTimer: number | null = null;
   private backoffMs = 800;
+  private browserStoreUnsub: (() => void) | null = null;
 
   constructor(private opts: GatewayClientOptions) {}
 
@@ -48,6 +51,8 @@ export class GatewayClient {
 
   stop() {
     this.closed = true;
+    this.browserStoreUnsub?.();
+    this.browserStoreUnsub = null;
     this.ws?.close();
     this.ws = null;
     this.flushPending(new Error("gateway client stopped"));
@@ -190,6 +195,7 @@ export class GatewayClient {
         });
       }
       this.backoffMs = 800;
+      this.subscribeToBrowserStore();
       this.opts.onHello?.(hello);
     } catch (err) {
       if (canFallbackToShared && deviceIdentity) {
@@ -266,6 +272,31 @@ export class GatewayClient {
       const error = err instanceof Error ? err.message : String(err);
       this.send({ type: "cdp-response", id: cdp.id, error });
     }
+  }
+
+  private subscribeToBrowserStore() {
+    // Clean up any existing subscription
+    this.browserStoreUnsub?.();
+
+    // Send current browser state immediately
+    this.sendBrowserInfo();
+
+    // Subscribe to future changes
+    this.browserStoreUnsub = useBrowserStore.subscribe((state, prevState) => {
+      if (state.cdpUrl !== prevState.cdpUrl || state.isActive !== prevState.isActive) {
+        this.sendBrowserInfo();
+      }
+    });
+  }
+
+  private sendBrowserInfo() {
+    const { cdpUrl, isActive } = useBrowserStore.getState();
+    const frame: GatewayBrowserInfoFrame = {
+      type: "browser-info",
+      cdpUrl,
+      isActive,
+    };
+    this.send(frame);
   }
 
   private send(frame: object) {
