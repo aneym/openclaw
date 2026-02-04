@@ -1,9 +1,14 @@
-import { useEffect, useState, useMemo } from "react";
-import { Panel, PanelGroup, PanelResizeHandle } from "react-resizable-panels";
+import { useEffect, useMemo, useCallback } from "react";
+import { Panel, PanelGroup } from "react-resizable-panels";
 import type { PanelLayout, PanelNode, PanelState } from "../../types";
+import { scaleIn, fastTransition } from "../../lib/animation-variants";
+import { motion } from "../../lib/motion";
 import { usePanelStore } from "../../stores/panel-store";
+import { DroppableGutter } from "./DroppableGutter";
+import { DroppablePane } from "./DroppablePane";
 import { PanelContent } from "./PanelContent";
-import { PanelToolbar } from "./PanelToolbar";
+import { PanelDndProvider } from "./PanelDndProvider";
+import { PanelTabBar } from "./PanelTabBar";
 
 interface PanelContainerProps {
   workspaceId: string;
@@ -34,12 +39,15 @@ export function PanelContainer({ workspaceId, activeChatId }: PanelContainerProp
   }
 
   return (
-    <RenderNode
-      node={layout.root}
-      panels={layout.panels}
-      workspaceId={workspaceId}
-      activeChatId={activeChatId}
-    />
+    <PanelDndProvider workspaceId={workspaceId}>
+      <RenderNode
+        node={layout.root}
+        panels={layout.panels}
+        workspaceId={workspaceId}
+        activeChatId={activeChatId}
+        path=""
+      />
+    </PanelDndProvider>
   );
 }
 
@@ -48,30 +56,30 @@ interface RenderNodeProps {
   panels: Map<string, PanelState>;
   workspaceId: string;
   activeChatId?: string;
+  /** Path identifier for generating unique gutter IDs */
+  path: string;
 }
 
-function RenderNode({ node, panels, workspaceId, activeChatId }: RenderNodeProps) {
-  const [isVisible, setIsVisible] = useState(false);
+function RenderNode({ node, panels, workspaceId, activeChatId, path }: RenderNodeProps) {
   const setFocusedPanelId = usePanelStore((s) => s.setFocusedPanelId);
+  const closePanel = usePanelStore((s) => s.closePanel);
   // Track focused panel for visual indicator
   const focusedPanelIdsMap = usePanelStore((s) => s.focusedPanelIds);
+
+  // Derive panelId once for leaf nodes
+  const panelId = node.type === "leaf" ? node.panelId : null;
+
   const isFocused = useMemo(
-    () => node.type === "leaf" && focusedPanelIdsMap.get(workspaceId) === node.panelId,
-    [focusedPanelIdsMap, workspaceId, node],
+    () => panelId !== null && focusedPanelIdsMap.get(workspaceId) === panelId,
+    [focusedPanelIdsMap, workspaceId, panelId],
   );
 
-  // Trigger entrance animation on mount
-  useEffect(() => {
-    const timer = setTimeout(() => setIsVisible(true), 10);
-    return () => clearTimeout(timer);
-  }, []);
-
-  // Handle click to set focus on this panel
-  const handleFocus = () => {
-    if (node.type === "leaf") {
-      setFocusedPanelId(workspaceId, node.panelId);
+  // Stable callback to set focus on this panel
+  const handleFocus = useCallback(() => {
+    if (panelId) {
+      setFocusedPanelId(workspaceId, panelId);
     }
-  };
+  }, [panelId, workspaceId, setFocusedPanelId]);
 
   // Leaf node: render the panel content with toolbar
   if (node.type === "leaf") {
@@ -84,54 +92,107 @@ function RenderNode({ node, panels, workspaceId, activeChatId }: RenderNodeProps
       );
     }
 
+    // Check if this chat panel can be closed (not the last one)
+    const canClose = (() => {
+      if (panelState.type !== "chat") return true;
+      const chatPanels = [...panels.values()].filter((p) => p.type === "chat");
+      return chatPanels.length > 1;
+    })();
+
     return (
-      <div
-        onClick={handleFocus}
-        onFocus={handleFocus}
-        className={`h-full w-full flex flex-col transition-all duration-200 ease-out ${
-          isVisible ? "opacity-100 scale-100" : "opacity-0 scale-95"
-        } ${isFocused ? "ring-1 ring-primary/50" : ""}`}
-      >
-        <PanelToolbar
-          panelId={node.panelId}
-          panelType={panelState.type}
-          workspaceId={workspaceId}
-          activeChatId={activeChatId}
-        />
-        <div className="flex-1 overflow-hidden">
-          <PanelContent
-            type={panelState.type}
-            data={panelState.data}
+      <DroppablePane panelId={node.panelId}>
+        <motion.div
+          variants={scaleIn}
+          initial="initial"
+          animate="animate"
+          transition={fastTransition}
+          onClick={handleFocus}
+          onFocus={handleFocus}
+          className={`h-full w-full flex flex-col ${isFocused ? "ring-1 ring-primary/50" : ""}`}
+        >
+          <PanelTabBar
+            panelId={node.panelId}
+            panelType={panelState.type}
             workspaceId={workspaceId}
             activeChatId={activeChatId}
+            panelData={panelState.data}
+            tabs={panelState.tabs}
+            activeTabId={panelState.activeTabId}
+            onClose={canClose ? () => closePanel(workspaceId, node.panelId) : undefined}
           />
-        </div>
-      </div>
+          <div className="flex-1 overflow-hidden">
+            <PanelContent
+              type={panelState.type}
+              panelId={node.panelId}
+              data={panelState.data}
+              workspaceId={workspaceId}
+              activeChatId={activeChatId}
+              tabs={panelState.tabs}
+              activeTabId={panelState.activeTabId}
+            />
+          </div>
+        </motion.div>
+      </DroppablePane>
     );
   }
 
   // Branch node: render a resizable split with two children
+  // Get leaf panel IDs for gutter drop handling
+  // "before" = rightmost/bottommost leaf of the first child
+  // "after" = leftmost/topmost leaf of the second child
+  const beforeLeafId = getLastLeafPanelId(node.children[0]);
+  const afterLeafId = getFirstLeafPanelId(node.children[1]);
+  const gutterId = `${path}gutter`;
+
   return (
     <PanelGroup direction={node.direction}>
-      <Panel defaultSize={node.sizes[0]} minSize={20}>
+      <Panel defaultSize={node.sizes[0]} minSize={15}>
         <RenderNode
           node={node.children[0]}
           panels={panels}
           workspaceId={workspaceId}
           activeChatId={activeChatId}
+          path={`${path}0-`}
         />
       </Panel>
 
-      <PanelResizeHandle className="w-1 bg-border hover:bg-primary transition-colors data-[resize-handle-state=drag]:bg-primary" />
+      <DroppableGutter
+        gutterId={gutterId}
+        direction={node.direction}
+        beforePanelId={beforeLeafId}
+        afterPanelId={afterLeafId}
+      />
 
-      <Panel defaultSize={node.sizes[1]} minSize={20}>
+      <Panel defaultSize={node.sizes[1]} minSize={15}>
         <RenderNode
           node={node.children[1]}
           panels={panels}
           workspaceId={workspaceId}
           activeChatId={activeChatId}
+          path={`${path}1-`}
         />
       </Panel>
     </PanelGroup>
   );
+}
+
+/**
+ * Get the first (leftmost/topmost) leaf panel ID from a node tree.
+ * Used for determining which panel a gutter is adjacent to.
+ */
+function getFirstLeafPanelId(node: PanelNode): string {
+  if (node.type === "leaf") {
+    return node.panelId;
+  }
+  return getFirstLeafPanelId(node.children[0]);
+}
+
+/**
+ * Get the last (rightmost/bottommost) leaf panel ID from a node tree.
+ */
+function getLastLeafPanelId(node: PanelNode): string {
+  if (node.type === "leaf") {
+    return node.panelId;
+  }
+  return getLastLeafPanelId(node.children[1]);
 }

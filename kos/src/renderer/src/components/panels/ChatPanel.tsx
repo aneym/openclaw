@@ -1,6 +1,7 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import type { Chat } from "../../types";
 import { useStreaming } from "../../hooks/use-streaming";
+import { klog } from "../../lib/klog";
 import { useChatStore } from "../../stores/chat-store";
 import { ComposeBar } from "../chat/ComposeBar";
 import { useMessages } from "../chat/hooks/useMessages";
@@ -19,9 +20,24 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
 
   const sessionKey = chat?.sessionKey ?? "";
 
-  // Fetch messages and track streaming state (hooks must be called unconditionally)
-  const { messages, loading, error, addMessage } = useMessages(sessionKey, chatId);
-  const { isStreaming, streamText } = useStreaming(sessionKey);
+  // Diagnostic logging on mount and when chat changes
+  useEffect(() => {
+    klog.session("ChatPanel mounted/updated", {
+      chatId,
+      sessionKey: sessionKey || "(none)",
+      chatExists: !!chat,
+      chatTitle: chat?.title,
+      chatStatus: chat?.status,
+    });
+  }, [chatId, sessionKey, chat]);
+
+  // Track streaming state (hooks must be called unconditionally)
+  const { isStreaming, streamText, activeTools, clearStreaming } = useStreaming(sessionKey);
+
+  // Fetch messages - pass clearStreaming to avoid flash when streaming ends
+  const { messages, loading, error, addMessage } = useMessages(sessionKey, chatId, {
+    onHistoryReload: clearStreaming,
+  });
 
   // If chat doesn't exist or has no sessionKey, show error state
   if (!chat?.sessionKey) {
@@ -56,7 +72,12 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Message list (flex-1 takes remaining space) */}
-      <MessageList messages={messages} isStreaming={isStreaming} streamText={streamText} />
+      <MessageList
+        messages={messages}
+        isStreaming={isStreaming}
+        streamText={streamText}
+        activeTools={activeTools}
+      />
 
       {/* Compose bar (fixed at bottom) */}
       <ComposeBar
