@@ -1,3 +1,4 @@
+export * from "./profile";
 export * from "./project";
 export * from "./workspace";
 export * from "./chat";
@@ -6,3 +7,5 @@ export * from "./panel";
 export * from "./message";
 export * from "./theme";
 export * from "./view";
+export * from "./settings";
+export * from "./linear";

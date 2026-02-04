@@ -2,88 +2,6 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Chat, ChatStatus } from "../types";
 
-// Mock data per spec
-const MOCK_CHATS: Chat[] = [
-  {
-    id: "chat-1",
-    workspaceId: "ws-payme-auth",
-    projectId: "proj-payme",
-    sessionKey: "sess-1",
-    title: "Implement OAuth flow",
-    subtitle: "PAY-123: Auth integration",
-    linkedTaskId: "task-1",
-    status: "active",
-    lastMessageAt: Date.now(),
-    createdAt: Date.now() - 3600000,
-  },
-  {
-    id: "chat-2",
-    workspaceId: "ws-payme-auth",
-    projectId: "proj-payme",
-    sessionKey: "sess-2",
-    title: "Fix token refresh bug",
-    status: "idle",
-    lastMessageAt: Date.now() - 3600000,
-    createdAt: Date.now() - 7200000,
-  },
-  {
-    id: "chat-3",
-    workspaceId: "ws-payme-main",
-    projectId: "proj-payme",
-    sessionKey: "sess-3",
-    title: "Deploy question",
-    status: "active",
-    lastMessageAt: Date.now() - 1800000,
-    createdAt: Date.now() - 3600000,
-  },
-  {
-    id: "chat-4",
-    workspaceId: "ws-wedding-main",
-    projectId: "proj-wedding",
-    sessionKey: "sess-4",
-    title: "Venue research",
-    status: "active",
-    lastMessageAt: Date.now() - 900000,
-    createdAt: Date.now() - 1800000,
-  },
-  {
-    id: "chat-5",
-    workspaceId: "ws-kos-main",
-    projectId: "proj-kos",
-    sessionKey: "sess-5",
-    title: "Panel system rewrite",
-    subtitle: "KOS-8: Adaptive panels",
-    status: "active",
-    lastMessageAt: Date.now() - 300000,
-    createdAt: Date.now() - 600000,
-  },
-  // Unassigned chats (no projectId or workspaceId)
-  {
-    id: "chat-unassigned-1",
-    sessionKey: "sess-unassigned-1",
-    title: "Quick Docker question",
-    status: "active",
-    lastMessageAt: Date.now() - 600000,
-    createdAt: Date.now() - 900000,
-  },
-  {
-    id: "chat-unassigned-2",
-    sessionKey: "sess-unassigned-2",
-    title: "Git rebase help",
-    status: "idle",
-    lastMessageAt: Date.now() - 2400000,
-    createdAt: Date.now() - 3000000,
-  },
-  {
-    id: "chat-unassigned-3",
-    sessionKey: "sess-unassigned-3",
-    title: "SSH key setup",
-    status: "active",
-    lastMessageAt: Date.now() - 120000,
-    createdAt: Date.now() - 300000,
-  },
-];
-
 interface ChatState {
   chats: Map<string, Chat>;
   // Map from workspaceId to active chatId
@@ -118,16 +36,11 @@ interface ChatState {
   getUnassignedChats: () => Chat[];
 }
 
-// Initialize with mock data
+// Initialize empty — chats are populated from gateway via session sync
 const initialChats = new Map<string, Chat>();
-MOCK_CHATS.forEach((c) => initialChats.set(c.id, c));
 
-// Set default active chat per workspace
+// Active chat per workspace — populated as user selects chats
 const initialActiveByWorkspace = new Map<string, string>();
-initialActiveByWorkspace.set("ws-payme-auth", "chat-1");
-initialActiveByWorkspace.set("ws-payme-main", "chat-3");
-initialActiveByWorkspace.set("ws-wedding-main", "chat-4");
-initialActiveByWorkspace.set("ws-kos-main", "chat-5");
 
 export const useChatStore = create<ChatState>()(
   persist(

@@ -1,66 +1,50 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Workspace } from "../types";
+import { HOME_PROJECT_ID } from "../components/layout/ProjectTabs";
 
-// Mock data per spec
-const MOCK_WORKSPACES: Workspace[] = [
-  // PayMe has multiple workspaces (power user)
+// Home workspace ID - exported for use in Shell and other components
+export const HOME_WORKSPACE_ID = "__home__";
+
+// Home workspace - for the Home tab that shows all chats
+const HOME_WORKSPACE: Workspace = {
+  id: HOME_WORKSPACE_ID,
+  projectId: HOME_PROJECT_ID,
+  name: "Home",
+  isDefault: true,
+  createdAt: Date.now(),
+};
+
+// Default workspaces for each project
+const INITIAL_WORKSPACES: Workspace[] = [
+  HOME_WORKSPACE,
   {
-    id: "ws-payme-main",
+    id: "ws-payme",
     projectId: "proj-payme",
-    name: "main",
-    path: "/repos/payme",
-    branch: "main",
+    name: "Main",
     isDefault: true,
-    createdAt: Date.now() - 86400000 * 30,
+    createdAt: Date.now(),
   },
   {
-    id: "ws-payme-auth",
-    projectId: "proj-payme",
-    name: "feat/auth",
-    path: "/repos/payme-auth",
-    branch: "feat/auth",
-    isDefault: false,
-    createdAt: Date.now() - 86400000 * 5,
-  },
-  {
-    id: "ws-payme-hotfix",
-    projectId: "proj-payme",
-    name: "hotfix/billing",
-    path: "/repos/payme-hotfix",
-    branch: "hotfix/billing",
-    isDefault: false,
-    createdAt: Date.now() - 86400000 * 2,
-  },
-  // Relay has 1 workspace (normal user)
-  {
-    id: "ws-relay-main",
+    id: "ws-relay",
     projectId: "proj-relay",
-    name: "main",
-    path: "/repos/relay",
-    branch: "main",
+    name: "Main",
     isDefault: true,
-    createdAt: Date.now() - 86400000 * 20,
+    createdAt: Date.now(),
   },
-  // kOS has 1 workspace
   {
-    id: "ws-kos-main",
+    id: "ws-kos",
     projectId: "proj-kos",
-    name: "main",
-    path: "/repos/kos",
-    branch: "main",
+    name: "Main",
     isDefault: true,
-    createdAt: Date.now() - 86400000 * 10,
+    createdAt: Date.now(),
   },
-  // Wedding has 1 workspace (non-code)
   {
-    id: "ws-wedding-main",
+    id: "ws-wedding",
     projectId: "proj-wedding",
-    name: "Planning",
-    path: undefined,
-    branch: undefined,
+    name: "Main",
     isDefault: true,
-    createdAt: Date.now() - 86400000 * 5,
+    createdAt: Date.now(),
   },
 ];
 
@@ -82,16 +66,17 @@ interface WorkspaceState {
   shouldShowWorkspaceUI: (projectId: string) => boolean;
 }
 
-// Initialize with mock data
+// Initialize with workspaces for each project
 const initialWorkspaces = new Map<string, Workspace>();
-MOCK_WORKSPACES.forEach((w) => initialWorkspaces.set(w.id, w));
+INITIAL_WORKSPACES.forEach((ws) => initialWorkspaces.set(ws.id, ws));
 
-// Set default active workspace per project
+// Active workspace per project
 const initialActiveByProject = new Map<string, string>();
-initialActiveByProject.set("proj-payme", "ws-payme-auth"); // Start on feat/auth for demo
-initialActiveByProject.set("proj-relay", "ws-relay-main");
-initialActiveByProject.set("proj-kos", "ws-kos-main");
-initialActiveByProject.set("proj-wedding", "ws-wedding-main");
+INITIAL_WORKSPACES.forEach((ws) => {
+  if (ws.isDefault) {
+    initialActiveByProject.set(ws.projectId, ws.id);
+  }
+});
 
 export const useWorkspaceStore = create<WorkspaceState>()(
   persist(
@@ -182,7 +167,26 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         const projectWorkspaces = Array.from(workspaces.values() as Iterable<Workspace>).filter(
           (w) => w.projectId === projectId,
         );
-        return projectWorkspaces.find((w) => w.isDefault) || projectWorkspaces[0];
+        const existing = projectWorkspaces.find((w) => w.isDefault) || projectWorkspaces[0];
+        if (existing) {
+          return existing;
+        }
+
+        // Auto-create workspace for existing projects without one (migration)
+        if (!projectId.startsWith("__")) {
+          const now = Date.now();
+          const newWorkspace: Workspace = {
+            id: `ws-${projectId}`,
+            projectId,
+            name: "Main",
+            isDefault: true,
+            createdAt: now,
+          };
+          get().addWorkspace(newWorkspace);
+          return newWorkspace;
+        }
+
+        return undefined;
       },
 
       shouldShowWorkspaceUI: (projectId: string) => {
@@ -221,6 +225,22 @@ export const useWorkspaceStore = create<WorkspaceState>()(
           );
         },
         removeItem: (name) => localStorage.removeItem(name),
+      },
+      // Run migration after hydration to ensure Home workspace exists
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Check if Home workspace is missing and add it
+          if (!state.workspaces.has(HOME_WORKSPACE.id)) {
+            const updated = new Map(state.workspaces)
+            updated.set(HOME_WORKSPACE.id, HOME_WORKSPACE)
+            const updatedActive = new Map(state.activeWorkspaceByProject)
+            updatedActive.set(HOME_PROJECT_ID, HOME_WORKSPACE.id)
+            useWorkspaceStore.setState({
+              workspaces: updated,
+              activeWorkspaceByProject: updatedActive,
+            })
+          }
+        }
       },
     },
   ),

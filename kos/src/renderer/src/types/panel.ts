@@ -8,12 +8,24 @@ export type PanelType =
   | "code" // diff view, file browser
   | "empty"; // placeholder
 
+/** Panel types that support tabs within the panel */
+export const TABBED_PANEL_TYPES: PanelType[] = ["chat", "terminal"];
+
+/** Tab within a panel (for chat and terminal panels) */
+export interface PanelTab {
+  id: string;
+  contentId?: string; // chatId for chat tabs, terminalId for terminal tabs
+  data?: Record<string, unknown>;
+}
+
 export interface PanelState {
   id: string;
   type: PanelType;
   sessionId?: string; // linked CC session, terminal session, etc.
   data?: Record<string, unknown>; // panel-specific state
   isUserOpened: boolean; // user opened vs auto-spawned
+  tabs?: PanelTab[]; // tabs within the panel (for tabbed panel types)
+  activeTabId?: string; // currently active tab ID
 }
 
 // Binary tree for panel splits

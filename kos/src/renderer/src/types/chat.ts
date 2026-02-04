@@ -1,5 +1,6 @@
 export interface Chat {
   id: string;
+  profileId?: string; // profile this chat belongs to (undefined = all profiles)
   workspaceId?: string; // chats can optionally belong to workspaces
   projectId?: string; // direct project assignment (for dashboard)
   sessionKey: string; // OpenClaw session key
