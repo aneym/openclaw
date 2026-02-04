@@ -58,7 +58,11 @@ export function KanbanSetupWizard({
   const fetchTeams = useLinearStore((s) => s.fetchTeams);
 
   // Project store
+  const projectsMap = useProjectStore((s) => s.projects);
   const updateProject = useProjectStore((s) => s.updateProject);
+
+  // Verify project exists
+  const projectExists = projectsMap.has(projectId);
 
   // Local state
   const [apiKey, setApiKey] = useState("");
@@ -105,9 +109,18 @@ export function KanbanSetupWizard({
   }, [apiKey, connectLinear]);
 
   const handleSelectTeam = useCallback(async () => {
-    if (!selectedTeamId || selectedTeamId === "none") return;
+    if (!selectedTeamId || selectedTeamId === "none") {
+      setError("Please select a team first");
+      return;
+    }
+
+    if (!projectExists) {
+      setError(`Project not found: ${projectId}`);
+      return;
+    }
 
     setIsSaving(true);
+    setError(null);
     try {
       await updateProject(projectId, { linearTeamId: selectedTeamId });
       onTeamSelected?.();
@@ -116,7 +129,7 @@ export function KanbanSetupWizard({
     } finally {
       setIsSaving(false);
     }
-  }, [selectedTeamId, projectId, updateProject, onTeamSelected]);
+  }, [selectedTeamId, projectId, projectExists, updateProject, onTeamSelected]);
 
   const handleDisconnectTeam = useCallback(async () => {
     setIsSaving(true);
