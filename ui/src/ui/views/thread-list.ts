@@ -1,7 +1,20 @@
 import type { TemplateResult } from "lit";
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
+import type { GatewayBrowserClient } from "../gateway.ts";
 import { setDragData } from "../split-dnd";
+
+/** Search result from sessions.search RPC */
+export interface SessionSearchResult {
+  sessionKey: string;
+  sessionId: string;
+  score: number;
+  matchCount: number;
+  snippet: string;
+  snippetRole: "user" | "assistant";
+  updatedAt: number | null;
+  derivedTitle?: string;
+}
 
 /** Compact relative time for thread sidebar (e.g. "3m", "2h", "5d") */
 function compactAgo(ms?: number | null): string {
@@ -52,6 +65,8 @@ export interface NavThreadListProps {
   /** Number of active sub-agents per requester session key. */
   subagentCounts: Map<string, number>;
   openPaneKeys: Set<string>;
+  /** Gateway client for server-side search (optional for backward compat). */
+  gateway?: GatewayBrowserClient | null;
   onSelect: (sessionKey: string) => void;
   onRename: (sessionKey: string, label: string) => void;
   onDelete: (sessionKey: string) => void;
@@ -94,6 +109,60 @@ const expandedGroups = new Set<string>();
 
 // Module-level search state (persists across re-renders)
 let threadSearchQuery = "";
+let searchResults: SessionSearchResult[] | null = null;
+let searchLoading = false;
+let searchError: string | null = null;
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Debounced server-side session search */
+function debouncedSearch(
+  query: string,
+  gateway: GatewayBrowserClient | null,
+  onRequestUpdate: () => void,
+) {
+  if (searchDebounceTimer) {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+  }
+
+  // Clear results for short queries
+  if (query.length < 3) {
+    searchResults = null;
+    searchLoading = false;
+    searchError = null;
+    onRequestUpdate();
+    return;
+  }
+
+  // Start loading state immediately
+  searchLoading = true;
+  searchError = null;
+  onRequestUpdate();
+
+  searchDebounceTimer = setTimeout(async () => {
+    if (!gateway) {
+      searchLoading = false;
+      searchError = "Not connected";
+      onRequestUpdate();
+      return;
+    }
+
+    try {
+      const response = (await gateway.request("sessions.search", {
+        query,
+        limit: 20,
+      })) as { results?: SessionSearchResult[] } | undefined;
+      searchResults = response?.results ?? [];
+      searchError = null;
+    } catch (err) {
+      searchError = err instanceof Error ? err.message : String(err);
+      searchResults = null;
+    } finally {
+      searchLoading = false;
+      onRequestUpdate();
+    }
+  }, 300);
+}
 
 // Module-level inline-rename state (survives Lit re-renders)
 let renamingSessionKey: string | null = null;
@@ -154,7 +223,10 @@ function cleanTitle(raw: string): string {
   // Strip "System: [2026-02-02 04:00:10 EST] ..." → keep text after bracket
   t = t.replace(/^System:\s*\[\d{4}-\d{2}-\d{2}\s+[\d:]+\s*\w*\]\s*/i, "");
   // Strip "[WhatsApp +1234 2026-02-02 07:32 EST] ..." → keep text after bracket
-  t = t.replace(/^\[(?:WhatsApp|Signal|Telegram|iMessage)\s+\+?[\d\s()-]+\d{4}-\d{2}-\d{2}\s+[\d:]+\s*\w*\]\s*/i, "");
+  t = t.replace(
+    /^\[(?:WhatsApp|Signal|Telegram|iMessage)\s+\+?[\d\s()-]+\d{4}-\d{2}-\d{2}\s+[\d:]+\s*\w*\]\s*/i,
+    "",
+  );
   // Strip "Slack thread #CHANNELID: " prefix
   t = t.replace(/^Slack\s+thread\s+#\S+:\s*/i, "");
   // Replace Slack user mentions <@U0ABC123> with @user
@@ -165,7 +237,7 @@ function cleanTitle(raw: string): string {
   t = t.replace(/^Cron:\s*/i, "");
   // Strip leading ** (markdown bold) leftover
   t = t.replace(/^\*\*\s*/, "");
-  // Strip trailing ** 
+  // Strip trailing **
   t = t.replace(/\s*\*\*$/, "");
   // Collapse whitespace
   t = t.replace(/\s+/g, " ").trim();
@@ -366,6 +438,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     runningSessions,
     subagentCounts,
     openPaneKeys,
+    gateway,
     onSelect,
     onRename,
     onDelete,
@@ -375,9 +448,16 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     onOpenTerminal,
     onRequestUpdate,
   } = props;
-  const filtered = threadSearchQuery
-    ? sessions.filter((s) => matchesThreadSearch(s, threadSearchQuery))
-    : sessions;
+
+  // Use server search results when available, fall back to client-side filtering
+  const hasServerSearch = threadSearchQuery.length >= 3 && searchResults !== null;
+  const filtered = hasServerSearch
+    ? sessions.filter((s) =>
+        searchResults!.some((r) => r.sessionKey === s.key || r.sessionId === s.key),
+      )
+    : threadSearchQuery
+      ? sessions.filter((s) => matchesThreadSearch(s, threadSearchQuery))
+      : sessions;
   const groups = groupSessions(filtered, openPaneKeys);
 
   return html`
@@ -414,10 +494,18 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
           .value=${threadSearchQuery}
           @input=${(e: Event) => {
             threadSearchQuery = (e.target as HTMLInputElement).value;
+            debouncedSearch(threadSearchQuery, gateway ?? null, onRequestUpdate);
             onRequestUpdate();
           }}
           aria-label="Search threads"
         />
+        ${
+          searchLoading
+            ? html`
+                <span class="nav-threads__search-loading">…</span>
+              `
+            : nothing
+        }
         ${
           threadSearchQuery
             ? html`
@@ -425,6 +513,12 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
             class="nav-threads__search-clear"
             @click=${() => {
               threadSearchQuery = "";
+              searchResults = null;
+              searchError = null;
+              if (searchDebounceTimer) {
+                clearTimeout(searchDebounceTimer);
+                searchDebounceTimer = null;
+              }
               onRequestUpdate();
             }}
             title="Clear search"
@@ -434,6 +528,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
             : nothing
         }
       </div>
+      ${searchError ? html`<div class="nav-threads__search-error">${searchError}</div>` : nothing}
       ${
         groups.length === 0 && threadSearchQuery
           ? html`
@@ -530,6 +625,16 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                             >${label}</span>`
                         }
                         ${(() => {
+                          // Show search snippet if we have server search results
+                          if (hasServerSearch) {
+                            const result = searchResults?.find(
+                              (r) => r.sessionKey === s.key || r.sessionId === s.key,
+                            );
+                            if (result?.snippet) {
+                              const roleIcon = result.snippetRole === "user" ? "👤" : "🤖";
+                              return html`<span class="nav-thread-item__snippet" title="${result.snippet}">${roleIcon} ${result.snippet}</span>`;
+                            }
+                          }
                           const sub = sessionSubtitle(s);
                           return sub
                             ? html`<span class="nav-thread-item__subtitle">${sub}</span>`
@@ -541,12 +646,16 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                             ? html`<span class="nav-thread-item__unread" aria-label="${unread} unread">${unread}</span>`
                             : nothing
                         }
-                        ${subagentCount > 0 ? html`
+                        ${
+                          subagentCount > 0
+                            ? html`
                           <span class="nav-thread-item__subagent" title="${subagentCount} sub-agent${subagentCount > 1 ? "s" : ""} working">
                             <span class="nav-thread-item__subagent-dot"></span>
                             ${subagentCount}
                           </span>
-                        ` : nothing}
+                        `
+                            : nothing
+                        }
                         ${s.updatedAt ? html`<span class="nav-thread-item__time">${compactAgo(s.updatedAt)}</span>` : nothing}
                         ${
                           isArchivedGroup

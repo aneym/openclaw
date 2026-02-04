@@ -84,7 +84,7 @@ Created `src/gateway/session-search.ts` with:
 
 ---
 
-## Phase 3: Frontend Integration (NOT STARTED)
+## Phase 3: Frontend Integration (COMPLETE)
 
 ### Goals
 
@@ -93,23 +93,74 @@ Created `src/gateway/session-search.ts` with:
 - Show search results with snippets
 - Highlight matching text
 
+### Implementation
+
+1. **Module-level State** (`ui/src/ui/views/thread-list.ts`)
+   - Added `searchResults`, `searchLoading`, `searchError` state variables
+   - Added `searchDebounceTimer` for debouncing
+
+2. **Debounced Search Function**
+   - `debouncedSearch()` - calls `sessions.search` RPC when query >= 3 chars
+   - 300ms debounce to avoid excessive API calls
+   - Clears results when query < 3 chars
+
+3. **Props Update** (`NavThreadListProps`)
+   - Added optional `gateway` prop for server-side search
+
+4. **Rendering Updates**
+   - Uses `hasServerSearch` flag when results are available
+   - Filters sessions based on search results (matching by sessionKey or sessionId)
+   - Shows loading indicator with `nav-threads__search-loading`
+   - Shows error message with `nav-threads__search-error`
+   - Shows snippet with role icon in `nav-thread-item__snippet`
+
+5. **CSS Styles** (`ui/src/styles/chat/threads.css`)
+   - Added `.nav-threads__search-loading` with pulsing animation
+   - Added `.nav-threads__search-error` for error display
+   - Added `.nav-thread-item__snippet` for search result snippets
+
+6. **App Integration** (`ui/src/ui/app-render.ts`)
+   - Passed `gateway: state.client` to `renderNavThreadList()`
+
+### Files Modified
+
+- [x] `ui/src/ui/views/thread-list.ts` - Search state, debounced search, snippet rendering
+- [x] `ui/src/ui/app-render.ts` - Pass gateway client to thread list
+- [x] `ui/src/styles/chat/threads.css` - Search UI styles
+
 ---
 
-## Phase 4: Background Sync (NOT STARTED)
+## Phase 4: Background Sync (COMPLETE - via Phase 1)
 
 ### Goals
 
 - Trigger sync on gateway startup
 - Subscribe to transcript updates for live index refresh
 
+### Implementation
+
+Already implemented in Phase 1 within `SessionSearchManager`:
+
+1. **Startup Sync**
+   - `getSessionSearchManager()` creates singleton and calls `sync()` on first access
+   - Gateway startup triggers sync when handler first receives a search request
+
+2. **Live Updates**
+   - `SessionSearchManager.constructor()` subscribes to `onSessionTranscriptUpdate()` events
+   - Debounced reindex (5s) when transcripts change
+   - Updates index incrementally for changed sessions
+
 ---
 
 ## Errors & Resolutions
 
-(None yet)
+1. **ErrorCodes.INTERNAL doesn't exist**
+   - Resolution: Changed to `ErrorCodes.UNAVAILABLE` (available codes: NOT_LINKED, NOT_PAIRED, AGENT_TIMEOUT, INVALID_REQUEST, UNAVAILABLE)
 
 ---
 
 ## Commits
 
-(To be tracked)
+- Phase 1: SessionSearchManager implementation
+- Phase 2: RPC endpoint (`sessions.search`)
+- Phase 3: Frontend integration (this commit)

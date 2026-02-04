@@ -369,6 +369,7 @@ export function renderApp(state: AppViewState) {
                         runningSessions: computeRunningSessions(state),
                         subagentCounts: computeSubagentCounts(state),
                         openPaneKeys: computeOpenPaneKeys(state),
+                        gateway: state.client,
                         onSelect: (sessionKey) => {
                           // In split mode, also update the focused pane's leaf
                           if (state.splitLayout && state.focusedPaneId) {
