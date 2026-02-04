@@ -1,10 +1,5 @@
 import { create } from "zustand";
-import type {
-  GlobalConfig,
-  GitHubConfig,
-  LinearConfig,
-  LinearUser,
-} from "../types";
+import type { GlobalConfig, GitHubConfig, LinearConfig, LinearUser } from "../types";
 
 interface SettingsState {
   globalConfig: GlobalConfig | null;

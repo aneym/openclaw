@@ -231,14 +231,14 @@ export const useWorkspaceStore = create<WorkspaceState>()(
         if (state) {
           // Check if Home workspace is missing and add it
           if (!state.workspaces.has(HOME_WORKSPACE.id)) {
-            const updated = new Map(state.workspaces)
-            updated.set(HOME_WORKSPACE.id, HOME_WORKSPACE)
-            const updatedActive = new Map(state.activeWorkspaceByProject)
-            updatedActive.set(HOME_PROJECT_ID, HOME_WORKSPACE.id)
+            const updated = new Map(state.workspaces);
+            updated.set(HOME_WORKSPACE.id, HOME_WORKSPACE);
+            const updatedActive = new Map(state.activeWorkspaceByProject);
+            updatedActive.set(HOME_PROJECT_ID, HOME_WORKSPACE.id);
             useWorkspaceStore.setState({
               workspaces: updated,
               activeWorkspaceByProject: updatedActive,
-            })
+            });
           }
         }
       },

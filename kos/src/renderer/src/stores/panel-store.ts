@@ -463,7 +463,9 @@ export const usePanelStore = create<PanelStoreState>()(
             const tabHasChat = p.tabs?.some((t) => t.contentId === chatId);
             const dataHasChat = p.data?.chatId === chatId;
             if (tabHasChat || dataHasChat) {
-              console.log("[panel-store] Chat already open in another pane, focusing that pane instead");
+              console.log(
+                "[panel-store] Chat already open in another pane, focusing that pane instead",
+              );
               get().setFocusedPanelId(workspaceId, pId);
               return;
             }
@@ -594,7 +596,13 @@ export const usePanelStore = create<PanelStoreState>()(
 
         // Step 2: Insert source beside target
         const sourceLeaf: PanelLeaf = { type: "leaf", panelId: sourcePanelId };
-        const newRoot = insertLeafBeside(treeWithoutSource, targetPanelId, sourceLeaf, direction, position);
+        const newRoot = insertLeafBeside(
+          treeWithoutSource,
+          targetPanelId,
+          sourceLeaf,
+          direction,
+          position,
+        );
 
         get().setLayout(workspaceId, {
           root: newRoot,

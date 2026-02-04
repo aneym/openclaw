@@ -99,7 +99,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       });
       for (const project of profileProjects) {
         for (const repo of project.repositories) {
-          get().refreshRepoStatus(repo.path).catch(() => {});
+          get()
+            .refreshRepoStatus(repo.path)
+            .catch(() => {});
         }
       }
     } finally {
@@ -117,7 +119,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       if (savedActiveId.startsWith("__") || projects.has(savedActiveId)) {
         // Verify the project belongs to this profile
         const project = projects.get(savedActiveId);
-        if (savedActiveId.startsWith("__") || !project?.profileId || project.profileId === profileId) {
+        if (
+          savedActiveId.startsWith("__") ||
+          !project?.profileId ||
+          project.profileId === profileId
+        ) {
           activeId = savedActiveId;
         }
       }
@@ -261,7 +267,9 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
     // Refresh statuses for all repos
     for (const repo of repositories) {
-      get().refreshRepoStatus(repo.path).catch(() => {});
+      get()
+        .refreshRepoStatus(repo.path)
+        .catch(() => {});
     }
   },
 
@@ -319,9 +327,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
     };
 
     if (updated.repositories.length > 0) {
-      const hadMainRepo = project.repositories.some(
-        (r) => r.id === repoId && r.isMainRepo,
-      );
+      const hadMainRepo = project.repositories.some((r) => r.id === repoId && r.isMainRepo);
       if (hadMainRepo) {
         updated.repositories[0].isMainRepo = true;
       }
@@ -356,9 +362,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   getAllProjects: () =>
-    Array.from(get().projects.values()).sort((a, b) =>
-      a.name.localeCompare(b.name),
-    ),
+    Array.from(get().projects.values()).sort((a, b) => a.name.localeCompare(b.name)),
 
   getProjectsForProfile: (profileId: string) =>
     Array.from(get().projects.values())

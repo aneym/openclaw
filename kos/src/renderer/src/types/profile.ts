@@ -6,31 +6,31 @@
  * - Chats/Sessions (isolated per profile)
  */
 export interface Profile {
-  id: string
-  name: string
-  icon?: string // Emoji for quick recognition
-  color?: string // Accent color (hex)
+  id: string;
+  name: string;
+  icon?: string; // Emoji for quick recognition
+  color?: string; // Accent color (hex)
 
   // Gateway connection
-  gatewayUrl: string
-  gatewayToken?: string
+  gatewayUrl: string;
+  gatewayToken?: string;
 
   // Integration tokens (per-profile)
-  linearApiKey?: string
-  linearTeamId?: string
-  githubToken?: string
+  linearApiKey?: string;
+  linearTeamId?: string;
+  githubToken?: string;
 
   // Metadata
-  isDefault: boolean
-  createdAt: number
-  updatedAt: number
+  isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
 }
 
-export const DEFAULT_PROFILE_ID = "work"
-export const DEFAULT_GATEWAY_URL = "ws://localhost:19001"
+export const DEFAULT_PROFILE_ID = "work";
+export const DEFAULT_GATEWAY_URL = "ws://localhost:19001";
 
 export function createDefaultProfile(): Profile {
-  const now = Date.now()
+  const now = Date.now();
   return {
     id: DEFAULT_PROFILE_ID,
     name: "Work",
@@ -40,11 +40,11 @@ export function createDefaultProfile(): Profile {
     isDefault: true,
     createdAt: now,
     updatedAt: now,
-  }
+  };
 }
 
 export function createPersonalProfile(): Profile {
-  const now = Date.now()
+  const now = Date.now();
   return {
     id: "personal",
     name: "Personal",
@@ -54,5 +54,5 @@ export function createPersonalProfile(): Profile {
     isDefault: false,
     createdAt: now,
     updatedAt: now,
-  }
+  };
 }
