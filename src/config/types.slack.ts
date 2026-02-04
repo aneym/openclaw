@@ -22,6 +22,8 @@ export type SlackDmConfig = {
   groupChannels?: Array<string | number>;
   /** @deprecated Prefer channels.slack.replyToModeByChatType.direct. */
   replyToMode?: ReplyToMode;
+  /** Model override for Slack DM sessions (provider/model string or alias). Overrides channels.slack.model for DMs. */
+  model?: string;
 };
 
 export type SlackChannelConfig = {

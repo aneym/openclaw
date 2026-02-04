@@ -96,16 +96,27 @@ export async function getReplyFromConfig(
     }
   }
 
-  // Channel-level model override: channels.<channel>.model > channels.defaults.model > agent default
+  // Channel-level model override: channels.<channel>.dm.model > channels.<channel>.model > channels.defaults.model > agent default
   if (!opts?.isHeartbeat) {
     const channelKey = ctx.Provider?.trim().toLowerCase();
     const channelCfg = channelKey
       ? (cfg.channels?.[channelKey] as Record<string, unknown> | undefined)
       : undefined;
+
+    // Detect DM sessions via session key pattern (e.g. "agent:main:slack:dm:elie")
+    const sessionKey = ctx.SessionKey ?? "";
+    const isDmSession = /:dm:/i.test(sessionKey);
+
+    // DM-specific model: channels.<channel>.dm.model (overrides channel-level)
+    const dmCfg =
+      isDmSession && channelCfg?.dm ? (channelCfg.dm as Record<string, unknown>) : undefined;
+    const dmModelRaw = (dmCfg?.model as string | undefined)?.trim() ?? "";
+
     const channelModelRaw =
-      (channelCfg?.model as string | undefined)?.trim() ??
-      (cfg.channels?.defaults?.model as string | undefined)?.trim() ??
-      "";
+      dmModelRaw ||
+      ((channelCfg?.model as string | undefined)?.trim() ??
+        (cfg.channels?.defaults?.model as string | undefined)?.trim() ??
+        "");
     if (channelModelRaw) {
       const channelModelRef = resolveModelRefFromString({
         raw: channelModelRaw,
@@ -116,7 +127,7 @@ export async function getReplyFromConfig(
         provider = channelModelRef.ref.provider;
         model = channelModelRef.ref.model;
         console.log(
-          `[MODEL-ROUTING] channel model override: channel=${channelKey} model=${provider}/${model}`,
+          `[MODEL-ROUTING] channel model override: channel=${channelKey}${isDmSession ? " (dm)" : ""} model=${provider}/${model}`,
         );
       }
     }
