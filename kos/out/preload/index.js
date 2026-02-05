@@ -20,6 +20,8 @@ const api = {
     getLinear: () => electron.ipcRenderer.invoke("config:getLinear"),
     saveLinear: (config) => electron.ipcRenderer.invoke("config:saveLinear", config),
     clearLinear: () => electron.ipcRenderer.invoke("config:clearLinear"),
+    getThemes: () => electron.ipcRenderer.invoke("config:getThemes"),
+    saveThemes: (config) => electron.ipcRenderer.invoke("config:saveThemes", config),
   },
   // Project APIs
   projects: {
@@ -139,6 +141,7 @@ const api = {
       electron.ipcRenderer.on("terminal:managed-output", listener);
       return () => electron.ipcRenderer.removeListener("terminal:managed-output", listener);
     },
+    copyManaged: (id) => electron.ipcRenderer.invoke("terminal:copyManaged", id),
   },
   // Browser panel APIs (multi-tab support)
   browser: {

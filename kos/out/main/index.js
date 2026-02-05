@@ -248,6 +248,13 @@ const KOS_DIR = path.join(os.homedir(), ".kos");
 const GLOBAL_CONFIG_PATH = path.join(KOS_DIR, "config.json");
 const GITHUB_CONFIG_PATH = path.join(KOS_DIR, "github.json");
 const LINEAR_CONFIG_PATH = path.join(KOS_DIR, "linear.json");
+const THEMES_CONFIG_PATH = path.join(KOS_DIR, "themes.json");
+const DEFAULT_THEMES_CONFIG = {
+  version: 1,
+  themes: [],
+  activeThemeId: "twitter",
+  mode: "dark",
+};
 const DEFAULT_GLOBAL_CONFIG = {
   version: 1,
   defaultGatewayUrl: "ws://localhost:18789",
@@ -304,6 +311,13 @@ function saveLinearConfig(config) {
 function clearLinearConfig() {
   deleteFile(LINEAR_CONFIG_PATH);
 }
+function getThemesConfig() {
+  const config = readJsonFile(THEMES_CONFIG_PATH);
+  return config ?? DEFAULT_THEMES_CONFIG;
+}
+function saveThemesConfig(config) {
+  writeJsonFile(THEMES_CONFIG_PATH, config);
+}
 function getKosDir() {
   ensureKosDir();
   return KOS_DIR;
@@ -332,6 +346,12 @@ function registerConfigIpc() {
   });
   electron.ipcMain.handle("config:clearLinear", () => {
     clearLinearConfig();
+  });
+  electron.ipcMain.handle("config:getThemes", () => {
+    return getThemesConfig();
+  });
+  electron.ipcMain.handle("config:saveThemes", (_, config) => {
+    saveThemesConfig(config);
   });
 }
 function runGit(args, cwd) {
@@ -1372,6 +1392,13 @@ function listManagedTerminals() {
   }
   return result;
 }
+function copyManagedTerminalOutput(id, maxBytes = 5e4) {
+  const entry = terminals.get(id);
+  if (!entry) throw new Error(`Terminal ${id} not found`);
+  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  const fullOutput = entry.scrollback.join("");
+  return fullOutput.slice(-maxBytes);
+}
 function registerTerminalIpc() {
   electron.ipcMain.handle("terminal:create", (event, cwd, cols, rows, existingId) => {
     const win = electron.BrowserWindow.fromWebContents(event.sender);
@@ -1437,6 +1464,11 @@ function registerTerminalIpc() {
   });
   electron.ipcMain.handle("terminal:listManaged", () => {
     return listManagedTerminals();
+  });
+  electron.ipcMain.handle("terminal:copyManaged", (_, id) => {
+    const output = copyManagedTerminalOutput(id);
+    electron.clipboard.writeText(output);
+    return { copied: true, length: output.length };
   });
 }
 function cleanupTerminals() {
