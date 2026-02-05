@@ -560,13 +560,15 @@ export const usePanelStore = create<PanelStoreState>()(
         chatId: string,
         direction: "horizontal" | "vertical" = "horizontal",
       ) => {
-        // Check if this chat is already open in any pane
+        // Check if this chat is already open in any pane (check both data.chatId and tab.contentId)
         const layout = get().getLayout(workspaceId);
         for (const [pId, p] of layout.panels) {
-          if (p.type === "chat" && p.data?.chatId === chatId) {
-            console.log("[panel-store] Chat already open in a pane, focusing that pane instead");
-            get().setFocusedPanelId(workspaceId, pId);
-            return;
+          if (p.type === "chat") {
+            if (p.data?.chatId === chatId || p.tabs?.some((t) => t.contentId === chatId)) {
+              console.log("[panel-store] Chat already open in a pane, focusing that pane instead");
+              get().setFocusedPanelId(workspaceId, pId);
+              return;
+            }
           }
         }
         // Use existing splitPanel with chat type and chatId in data
