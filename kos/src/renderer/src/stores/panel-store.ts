@@ -174,6 +174,12 @@ interface PanelStoreState {
     direction?: "horizontal" | "vertical",
   ) => void;
 
+  // Clear a chat panel's chatId (both data.chatId and active tab contentId)
+  clearPanelChat: (workspaceId: string, panelId: string) => void;
+
+  // Start a terminal in a tab (assigns contentId + cwd to the tab)
+  startTerminalTab: (workspaceId: string, panelId: string, tabId: string, cwd?: string) => void;
+
   // Tab management
   addTab: (workspaceId: string, panelId: string, tab?: Partial<PanelTab>) => void;
   closeTab: (workspaceId: string, panelId: string, tabId: string) => void;
@@ -744,6 +750,56 @@ export const usePanelStore = create<PanelStoreState>()(
 
         // Focus the new panel
         get().setFocusedPanelId(workspaceId, newPanelId);
+      },
+
+      // Clear a chat panel's chatId (both data.chatId and active tab contentId)
+      clearPanelChat: (workspaceId: string, panelId: string) => {
+        const layout = get().getLayout(workspaceId);
+        const panel = layout.panels.get(panelId);
+        if (!panel || panel.type !== "chat") return;
+
+        // Clear active tab's contentId
+        let updatedTabs = panel.tabs;
+        if (panel.tabs && panel.activeTabId) {
+          updatedTabs = panel.tabs.map((t) =>
+            t.id === panel.activeTabId ? { ...t, contentId: undefined } : t,
+          );
+        }
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, {
+          ...panel,
+          tabs: updatedTabs,
+          data: { ...panel.data, chatId: undefined },
+        });
+
+        get().setLayout(workspaceId, {
+          ...layout,
+          panels: newPanels,
+        });
+      },
+
+      // Start a terminal in a tab (assigns contentId + cwd to the tab)
+      startTerminalTab: (workspaceId: string, panelId: string, tabId: string, cwd?: string) => {
+        const layout = get().getLayout(workspaceId);
+        const panel = layout.panels.get(panelId);
+        if (!panel || !panel.tabs) return;
+
+        const terminalId = `term-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+        const newTabs = panel.tabs.map((t) =>
+          t.id === tabId ? { ...t, contentId: terminalId, data: { cwd } } : t,
+        );
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, {
+          ...panel,
+          tabs: newTabs,
+        });
+
+        get().setLayout(workspaceId, {
+          ...layout,
+          panels: newPanels,
+        });
       },
 
       // Add a tab to a panel (for Cmd+T on tabbed panels)
