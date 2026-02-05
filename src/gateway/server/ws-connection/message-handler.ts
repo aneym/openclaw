@@ -933,6 +933,29 @@ export function attachGatewayWsMessageHandler(params: {
                 `voicewake snapshot failed for ${nodeSession.nodeId}: ${formatForLog(err)}`,
               ),
             );
+        } else if (
+          role === "operator" &&
+          Array.isArray(connectParams.commands) &&
+          connectParams.commands.length > 0
+        ) {
+          // Operator clients that declare commands (e.g. kOS with terminal/browser caps)
+          // also get registered as nodes so agents can invoke commands on them.
+          const cfg = loadConfig();
+          const allowlist = resolveNodeCommandAllowlist(cfg, {
+            platform: connectParams.client.platform,
+            deviceFamily: connectParams.client.deviceFamily,
+          });
+          const declared = connectParams.commands;
+          const filtered = declared
+            .map((cmd) => cmd.trim())
+            .filter((cmd) => cmd.length > 0 && allowlist.has(cmd));
+          connectParams.commands = filtered;
+          if (filtered.length > 0) {
+            const context = buildRequestContext();
+            context.nodeRegistry.register(nextClient, {
+              remoteIp: reportedClientIp,
+            });
+          }
         }
 
         logWs("out", "hello-ok", {

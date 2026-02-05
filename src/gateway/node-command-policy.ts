@@ -20,6 +20,15 @@ const LOCATION_COMMANDS = ["location.get"];
 
 const SMS_COMMANDS = ["sms.send"];
 
+const TERMINAL_COMMANDS = [
+  "terminal.spawn",
+  "terminal.exec",
+  "terminal.read",
+  "terminal.copy",
+  "terminal.close",
+  "terminal.list",
+];
+
 const SYSTEM_COMMANDS = [
   "system.run",
   "system.which",
@@ -44,6 +53,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...SCREEN_COMMANDS,
     ...LOCATION_COMMANDS,
     ...SYSTEM_COMMANDS,
+    ...TERMINAL_COMMANDS,
   ],
   linux: [...SYSTEM_COMMANDS],
   windows: [...SYSTEM_COMMANDS],
@@ -54,6 +64,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...LOCATION_COMMANDS,
     ...SMS_COMMANDS,
     ...SYSTEM_COMMANDS,
+    ...TERMINAL_COMMANDS,
   ],
 };
 

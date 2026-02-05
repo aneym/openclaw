@@ -108,6 +108,12 @@ function authorizeGatewayMethod(method: string, client: GatewayRequestOptions["c
     if (role === "node") {
       return null;
     }
+    // Operators that declare commands are also registered as nodes
+    // and need to call node.invoke.result to return results.
+    const commands = (client.connect as { commands?: string[] }).commands;
+    if (role === "operator" && Array.isArray(commands) && commands.length > 0) {
+      return null;
+    }
     return errorShape(ErrorCodes.INVALID_REQUEST, `unauthorized role: ${role}`);
   }
   if (role === "node") {

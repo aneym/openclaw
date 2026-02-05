@@ -194,7 +194,9 @@ export function attachGatewayWsConnectionHandler(params: {
           },
         );
       }
-      if (client?.connect?.role === "node") {
+      {
+        // Unregister from node registry (handles both role="node" and
+        // operator clients registered as nodes for command invocation)
         const context = buildRequestContext();
         const nodeId = context.nodeRegistry.unregister(connId);
         if (nodeId) {
