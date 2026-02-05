@@ -369,6 +369,7 @@ declare global {
   interface Window {
     electron: ElectronAPI;
     api: {
+      initialThemeConfig: ThemesConfig | null;
       getGatewayConfig: () => Promise<{ url: string; token?: string; source?: string }>;
       openDirectoryDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       config: ConfigAPI;

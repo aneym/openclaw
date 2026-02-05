@@ -59,16 +59,41 @@ Detailed technical specs are in `specs/` within this directory:
 
 These provide implementation-level detail. When a spec and PRD conflict, the PRD wins on product intent; the spec wins on technical approach.
 
-## Rules
+## Rules and Skills Routing
 
-Coding rules are in `rules/`. Check them before making changes.
+**Before writing code, check the relevant rules and skills below.** This is not optional — read the ones that match your task.
+
+### Rules (`rules/`)
+
+| Rule file               | When to read it                                       |
+| ----------------------- | ----------------------------------------------------- |
+| `rules/theme-colors.md` | Any UI work: components, styling, Tailwind classes    |
+| `rules/animations.md`   | Adding transitions, animations, mount/unmount effects |
+
+### Skills (invoke before writing code)
+
+| Skill                         | When to invoke                                              |
+| ----------------------------- | ----------------------------------------------------------- |
+| `vercel-react-best-practices` | Any React component, hook, store, or data-fetching work     |
+| `vercel-composition-patterns` | Component API design, props, compound components, providers |
+| `web-design-guidelines`       | UI review, accessibility audit, design compliance           |
+
+### Routing logic
+
+1. **UI components / styling** → read `rules/theme-colors.md` + `rules/animations.md`
+2. **React code (components, hooks, stores)** → invoke `vercel-react-best-practices`
+3. **Component API design** → invoke `vercel-composition-patterns`
+4. **Main/preload/IPC plumbing** → no extra rules needed (follow existing patterns)
+5. **Gateway protocol work** → read `../ui/src/` for reference patterns
+
+When new rules are added to `rules/`, update this routing table. When rules are removed, remove them here too.
 
 ## Tech Stack
 
 - **Electron** 39 + **React** 19 + **TypeScript** 5.9
 - **Build**: electron-vite (Vite 7) — separate configs for main, preload, renderer
 - **Styling**: Tailwind CSS v4 + shadcn/ui (new-york style, 27 components) + CSS custom properties for theming
-- **State**: Zustand v5 with `persist` middleware (localStorage, `kos-*` prefixed keys)
+- **State**: Zustand v5 (file system persistence via IPC for themes/config; localStorage for transient UI state)
 - **Gateway**: Custom WebSocket client (`src/renderer/src/gateway/client.ts`) connecting to OpenClaw gateway
 - **Panels**: react-resizable-panels (already installed)
 - **Command palette**: cmdk — global `Cmd+K` palette for actions, threads, projects, themes
@@ -271,8 +296,9 @@ kOS uses React 19.2 — follow these patterns:
 | `Ctrl+⇧Tab` | Previous tab                 |
 | `⌘]`        | Focus next pane              |
 | `⌘[`        | Focus previous pane          |
-| `⌘1`        | Switch to Home               |
-| `⌘2-9`      | Switch to project by index   |
+| `⌘1-9`      | Focus panel by position      |
+| `⌘⇧1`       | Switch to Home               |
+| `⌘⇧2-9`     | Switch to project by index   |
 
 ## Key Decisions
 

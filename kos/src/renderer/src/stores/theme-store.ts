@@ -6,9 +6,7 @@ interface ThemeState {
   themes: ThemeDefinition[];
   activeThemeId: string;
   mode: "light" | "dark" | "system";
-  initialized: boolean;
 
-  initialize: () => Promise<void>;
   setActiveTheme: (id: string) => void;
   setMode: (mode: "light" | "dark" | "system") => void;
   installTheme: (theme: ThemeDefinition) => void;
@@ -27,38 +25,30 @@ function persistToFile(state: ThemeState): void {
   });
 }
 
+// Read initial config synchronously from preload (set before React renders)
+function getInitialState() {
+  const config = window.api?.initialThemeConfig;
+  if (!config) {
+    return { themes: builtInThemes, activeThemeId: "twitter", mode: "dark" as const };
+  }
+
+  const userThemes = (config.themes ?? []).filter((t) => !t.isBuiltIn) as ThemeDefinition[];
+  const merged = [...builtInThemes, ...userThemes];
+  const activeExists = merged.some((t) => t.id === config.activeThemeId);
+
+  return {
+    themes: merged,
+    activeThemeId: activeExists ? config.activeThemeId : "twitter",
+    mode: config.mode ?? ("dark" as const),
+  };
+}
+
+const initial = getInitialState();
+
 export const useThemeStore = create<ThemeState>()((set, get) => ({
-  themes: builtInThemes,
-  activeThemeId: "twitter",
-  mode: "dark",
-  initialized: false,
-
-  initialize: async () => {
-    if (get().initialized) return;
-    try {
-      const config = await window.api?.config.getThemes();
-      if (!config) {
-        set({ initialized: true });
-        return;
-      }
-
-      // Merge: built-in themes from code + user themes from disk
-      const userThemes = (config.themes ?? []).filter((t) => !t.isBuiltIn);
-      const merged = [...builtInThemes, ...userThemes];
-
-      // Validate activeThemeId exists in merged set
-      const activeExists = merged.some((t) => t.id === config.activeThemeId);
-
-      set({
-        themes: merged,
-        activeThemeId: activeExists ? config.activeThemeId : "twitter",
-        mode: config.mode ?? "dark",
-        initialized: true,
-      });
-    } catch {
-      set({ initialized: true });
-    }
-  },
+  themes: initial.themes,
+  activeThemeId: initial.activeThemeId,
+  mode: initial.mode,
 
   setActiveTheme: (id: string) => {
     const theme = get().themes.find((t) => t.id === id);

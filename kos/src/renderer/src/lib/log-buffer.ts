@@ -22,24 +22,47 @@ const originalConsole = {
   debug: console.debug.bind(console),
 };
 
-// Patterns to filter out (fluff only - keep meaningful logs)
+// Patterns to filter out (only true noise — keep everything else)
 const NOISE_PATTERNS = [
   /^%c/, // Styled console messages (React DevTools, etc.)
   /Download the React DevTools/,
   /\[vite\] hot updated/, // Dev tooling HMR noise
   /\[vite\] connecting/, // Vite connection noise
+  /\[vite\] connected/, // Vite connection noise
+];
+
+// Stack trace frames to strip (framework internals, not app code)
+const STACK_NOISE_PATTERNS = [
+  /^\s+at (runWithFiberInDEV|processDispatchQueue|dispatchEvent|batchedUpdates|commitHook|commitPassive|reconnectPassive|recursivelyTraverse|performUnitOfWork|workLoopSync|renderRootSync|performWorkOnRoot|flushPassiveEffects|flushPendingEffects|flushSyncWork|flushSpawnedWork|commitRoot|commitRootWhenReady|commitDoubleInvoke|doubleInvokeEffects|performWorkUntilDeadline)\b/,
+  /^\s+at Object\.react_stack_bottom_frame\b/,
+  /react-dom_client\.js/,
+  /react_jsx-dev-runtime\.js/,
 ];
 
 function isNoise(message: string): boolean {
   return NOISE_PATTERNS.some((pattern) => pattern.test(message));
 }
 
+function cleanStack(stack: string): string {
+  return stack
+    .split("\n")
+    .filter((line) => !STACK_NOISE_PATTERNS.some((p) => p.test(line)))
+    .join("\n");
+}
+
 function formatArg(arg: unknown): string {
   if (arg === undefined) return "undefined";
   if (arg === null) return "null";
-  if (typeof arg === "string") return arg;
+  if (typeof arg === "string") {
+    // Clean stack traces embedded in string messages
+    if (arg.includes("\n    at ")) return cleanStack(arg);
+    return arg;
+  }
   if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
-  if (arg instanceof Error) return `${arg.name}: ${arg.message}\n${arg.stack || ""}`;
+  if (arg instanceof Error) {
+    const stack = arg.stack ? cleanStack(arg.stack) : "";
+    return `${arg.name}: ${arg.message}\n${stack}`;
+  }
   try {
     return JSON.stringify(arg, null, 2);
   } catch {
@@ -95,8 +118,29 @@ function installConsoleInterceptor(): void {
   };
 }
 
+// Capture unhandled errors and promise rejections (browser logs these
+// directly, bypassing console.error, so the interceptor misses them)
+function installGlobalErrorHandlers(): void {
+  window.addEventListener("error", (event) => {
+    const message = event.error
+      ? `${event.error.name || "Error"}: ${event.error.message}\n${event.error.stack || ""}`
+      : `${event.message} (${event.filename}:${event.lineno}:${event.colno})`;
+    captureLog("error", [`[uncaught] ${message}`]);
+  });
+
+  window.addEventListener("unhandledrejection", (event) => {
+    const reason = event.reason;
+    const message =
+      reason instanceof Error
+        ? `${reason.name}: ${reason.message}\n${reason.stack || ""}`
+        : formatArg(reason);
+    captureLog("error", [`[unhandledrejection] ${message}`]);
+  });
+}
+
 // Install on import
 installConsoleInterceptor();
+installGlobalErrorHandlers();
 
 /**
  * Filter and deduplicate logs for clean LLM context
@@ -111,11 +155,11 @@ function getFilteredLogs(): LogEntry[] {
     // Skip noise patterns
     if (isNoise(message)) continue;
 
-    // Skip duplicate consecutive messages (within 1 second)
+    // Skip exact duplicate consecutive messages (within 500ms)
     if (
       message === lastMessage &&
       filtered.length > 0 &&
-      entry.timestamp - filtered[filtered.length - 1].timestamp < 1000
+      entry.timestamp - filtered[filtered.length - 1].timestamp < 500
     ) {
       continue;
     }
@@ -132,8 +176,8 @@ function getFilteredLogs(): LogEntry[] {
  */
 export function getLogsAsText(): string {
   const filtered = getFilteredLogs();
-  const header = `=== kOS Console Logs (filtered for LLM context) ===
-Captured: ${buffer.length} total, ${filtered.length} after filtering
+  const header = `=== kOS Console Logs ===
+Captured: ${buffer.length} total, ${filtered.length} shown (deduped, dev noise removed)
 Exported: ${new Date().toISOString()}
 ${"=".repeat(50)}
 

@@ -1,7 +1,15 @@
 "use strict";
 const preload = require("@electron-toolkit/preload");
 const electron = require("electron");
+const initialThemeConfig = (() => {
+  try {
+    return electron.ipcRenderer.sendSync("config:getThemesSync");
+  } catch {
+    return null;
+  }
+})();
 const api = {
+  initialThemeConfig,
   getGatewayConfig: () => electron.ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
   // Logs API (for debugging and agent self-iteration)

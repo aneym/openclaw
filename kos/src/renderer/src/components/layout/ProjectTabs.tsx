@@ -32,26 +32,31 @@ export function ProjectTabs({
   const [logsCopied, setLogsCopied] = useState(false);
 
   const handleCopyLogs = async () => {
-    // Get renderer logs (filtered for LLM context)
+    // Get renderer logs (all captured console output + uncaught errors)
     const rendererLogs = getLogsAsText();
 
-    // Export to file for agent access AND copy to clipboard
-    // File: ~/.openclaw/kos-debug.log (agents can read this directly)
-    try {
-      const result = await window.api.logs.exportToFile(rendererLogs);
-      if (result.success) {
-        console.log(`[logs] Exported to ${result.path}`);
+    // Export to file for agent access (only if preload loaded successfully)
+    if (window.api?.logs) {
+      try {
+        const result = await window.api.logs.exportToFile(rendererLogs);
+        if (result.success) {
+          console.log(`[logs] Exported to ${result.path}`);
+        }
+      } catch (err) {
+        console.error("Failed to export logs to file:", err);
       }
-    } catch (err) {
-      console.error("Failed to export logs to file:", err);
     }
 
-    // Get main process logs for clipboard
+    // Get main process logs for clipboard (only if preload loaded)
     let mainLogs = "";
-    try {
-      mainLogs = await window.api.logs.getMainLogs();
-    } catch (err) {
-      console.error("Failed to get main process logs:", err);
+    if (window.api?.logs) {
+      try {
+        mainLogs = await window.api.logs.getMainLogs();
+      } catch (err) {
+        console.error("Failed to get main process logs:", err);
+      }
+    } else {
+      mainLogs = "(unavailable — preload script failed to load)";
     }
 
     // Combine for clipboard

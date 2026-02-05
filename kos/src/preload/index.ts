@@ -201,8 +201,19 @@ interface LinearValidationResult {
   error?: string;
 }
 
+// Read theme config synchronously to prevent flash of wrong theme on startup.
+// Exposed on window.api so the renderer can apply the dark class before React mounts.
+const initialThemeConfig: ThemesConfig | null = (() => {
+  try {
+    return ipcRenderer.sendSync("config:getThemesSync") as ThemesConfig;
+  } catch {
+    return null;
+  }
+})();
+
 // Custom APIs for renderer
 const api = {
+  initialThemeConfig,
   getGatewayConfig: (): Promise<{ url: string; token?: string; source?: string }> =>
     ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>

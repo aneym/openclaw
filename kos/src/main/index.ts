@@ -333,6 +333,13 @@ function createWindow(): void {
   });
 
   // HMR for renderer base on electron-vite cli.
+  // Suppress noisy Autofill CDP errors that Electron doesn't support
+  mainWindow.webContents.on("console-message", (event, _level, message) => {
+    if (message.includes("Autofill.")) {
+      event.preventDefault();
+    }
+  });
+
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
     // Open DevTools in development

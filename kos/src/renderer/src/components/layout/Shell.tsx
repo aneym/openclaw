@@ -26,7 +26,13 @@ import { StatusBar } from "./StatusBar";
 const SIDEBAR_STORAGE_KEY = "kos-sidebar-layout-v2";
 
 export function Shell() {
-  const [view, setView] = useState<View>("home");
+  const [view, setViewRaw] = useState<View>(
+    () => (localStorage.getItem("kos-view") as View) || "home",
+  );
+  const setView = useCallback((v: View) => {
+    localStorage.setItem("kos-view", v);
+    setViewRaw(v);
+  }, []);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false);
   const [createProjectOpen, setCreateProjectOpen] = useState(false);
@@ -73,6 +79,8 @@ export function Shell() {
   const focusNextPanel = usePanelStore((s) => s.focusNextPanel);
   const focusPrevPanel = usePanelStore((s) => s.focusPrevPanel);
   const duplicatePanel = usePanelStore((s) => s.duplicatePanel);
+  const getAllLeafIds = usePanelStore((s) => s.getAllLeafIds);
+  const setFocusedPanelId = usePanelStore((s) => s.setFocusedPanelId);
   const addTab = usePanelStore((s) => s.addTab);
   const closeTab = usePanelStore((s) => s.closeTab);
   const nextTab = usePanelStore((s) => s.nextTab);
@@ -315,11 +323,30 @@ export function Shell() {
       },
     ];
 
-    // Number shortcuts for project switching (⌘1 = Home, ⌘2-9 = projects 1-8)
+    // ⌘1-9: Focus panel by position (1st leaf, 2nd leaf, etc.)
+    for (let i = 1; i <= 9; i += 1) {
+      items.push({
+        key: String(i),
+        metaKey: true,
+        shiftKey: false,
+        handler: () => {
+          const wsId = getWsId();
+          if (!wsId) return;
+          const leafIds = getAllLeafIds(wsId);
+          const targetId = leafIds[i - 1];
+          if (targetId) {
+            setFocusedPanelId(wsId, targetId);
+          }
+        },
+        description: `Focus panel ${i}`,
+      });
+    }
+
+    // ⌘⇧1 = Home, ⌘⇧2-9 = projects 1-8
     items.push({
       key: "1",
       metaKey: true,
-      shiftKey: false,
+      shiftKey: true,
       handler: () => handleSelectProject(HOME_PROJECT_ID),
       description: "Switch to Home",
     });
@@ -327,9 +354,9 @@ export function Shell() {
       items.push({
         key: String(i),
         metaKey: true,
-        shiftKey: false,
+        shiftKey: true,
         handler: () => {
-          const project = projectsRef.current[i - 2]; // ⌘2 = project[0], ⌘3 = project[1], etc.
+          const project = projectsRef.current[i - 2];
           if (project) {
             handleSelectProject(project.id);
           }
@@ -343,7 +370,9 @@ export function Shell() {
     // Only stable dependencies - store methods don't change
     toggleSidebar,
     getFocusedPanelId,
+    setFocusedPanelId,
     getFocusedPanel,
+    getAllLeafIds,
     closePanel,
     closeTab,
     splitPanel,

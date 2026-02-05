@@ -347,6 +347,9 @@ function registerConfigIpc() {
   electron.ipcMain.handle("config:clearLinear", () => {
     clearLinearConfig();
   });
+  electron.ipcMain.on("config:getThemesSync", (event) => {
+    event.returnValue = getThemesConfig();
+  });
   electron.ipcMain.handle("config:getThemes", () => {
     return getThemesConfig();
   });

@@ -53,6 +53,10 @@ export function registerConfigIpc(): void {
   });
 
   // Themes config
+  ipcMain.on("config:getThemesSync", (event) => {
+    event.returnValue = getThemesConfig();
+  });
+
   ipcMain.handle("config:getThemes", () => {
     return getThemesConfig();
   });
