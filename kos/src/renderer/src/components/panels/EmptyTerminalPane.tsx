@@ -6,8 +6,10 @@
  */
 
 import { Keyboard, Play, FolderOpen } from "lucide-react";
-import { useCallback, useState } from "react";
+import { useCallback, useState, useMemo } from "react";
 import { usePanelStore } from "../../stores/panel-store";
+import { useProjectStore } from "../../stores/project-store";
+import { useWorkspaceStore } from "../../stores/workspace-store";
 import { Button } from "../ui/button";
 import { PanelTypeSwitcher } from "./PanelTypeSwitcher";
 
@@ -21,7 +23,19 @@ interface EmptyTerminalPaneProps {
 export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTerminalPaneProps) {
   const layoutsMap = usePanelStore((s) => s.layouts);
   const setLayout = usePanelStore((s) => s.setLayout);
-  const [selectedCwd, setSelectedCwd] = useState(cwd);
+
+  // Get workspace and project for default cwd
+  const workspacesMap = useWorkspaceStore((s) => s.workspaces);
+  const projectsMap = useProjectStore((s) => s.projects);
+  const workspace = useMemo(() => workspacesMap.get(workspaceId), [workspacesMap, workspaceId]);
+  const project = useMemo(
+    () => (workspace?.projectId ? projectsMap.get(workspace.projectId) : undefined),
+    [projectsMap, workspace?.projectId],
+  );
+
+  // Default cwd: prop > workspace.path > project.workspacePath > undefined (homedir)
+  const defaultCwd = cwd || workspace?.path || project?.workspacePath;
+  const [selectedCwd, setSelectedCwd] = useState(defaultCwd);
 
   const handleStartTerminal = useCallback(() => {
     // Generate a terminal ID and assign it to the tab's contentId

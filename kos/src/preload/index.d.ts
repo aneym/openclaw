@@ -278,6 +278,7 @@ export interface TerminalAPI {
   isManaged: (id: string) => Promise<boolean>;
   listManaged: () => Promise<{ id: string; pid: number; cwd: string; createdAt: number }[]>;
   onManagedOutput: (callback: (data: string) => void) => () => void;
+  copyManaged: (id: string) => Promise<{ copied: boolean; length: number }>;
 }
 
 export interface BrowserAPI {

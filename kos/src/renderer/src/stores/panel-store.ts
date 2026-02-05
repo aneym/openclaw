@@ -466,7 +466,9 @@ export const usePanelStore = create<PanelStoreState>()(
       hasPanelType: (workspaceId: string, type: PanelType) => {
         const layout = get().layouts.get(workspaceId);
         if (!layout) return false;
-        return [...layout.panels.values()].some((p) => p.type === type);
+        // Only check panels that are actually in the render tree (not orphaned in the Map)
+        const leafIds = new Set(collectAllLeafIds(layout.root));
+        return [...layout.panels.entries()].some(([id, p]) => p.type === type && leafIds.has(id));
       },
 
       // Open a thread in a specific pane (updates panel data with chatId)
@@ -987,13 +989,22 @@ export const usePanelStore = create<PanelStoreState>()(
           if (!str) return null;
           const { state } = JSON.parse(str);
 
-          // Deserialize layouts with nested Maps
+          // Deserialize layouts with nested Maps and clean up orphaned panels
           const layouts = new Map<string, PanelLayout>();
           if (state.layouts) {
             for (const [wsId, layout] of state.layouts) {
+              const panels = new Map<string, PanelState>(layout.panels || []);
+              // Clean up orphaned panels (in Map but not in tree)
+              const treeLeafIds = new Set(collectAllLeafIds(layout.root));
+              for (const panelId of panels.keys()) {
+                if (!treeLeafIds.has(panelId)) {
+                  console.log(`[panel-store] Cleaning up orphaned panel: ${panelId}`);
+                  panels.delete(panelId);
+                }
+              }
               layouts.set(wsId, {
                 ...layout,
-                panels: new Map(layout.panels || []),
+                panels,
               });
             }
           }
@@ -1011,7 +1022,7 @@ export const usePanelStore = create<PanelStoreState>()(
 
           // Serialize layouts with nested Maps
           const layoutsArray: [string, { root: PanelNode; panels: [string, PanelState][] }][] = [];
-          state.layouts.forEach((layout, wsId) => {
+          state.layouts.forEach((layout: PanelLayout, wsId: string) => {
             layoutsArray.push([
               wsId,
               {

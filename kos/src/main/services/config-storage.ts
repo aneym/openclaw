@@ -9,6 +9,7 @@ const KOS_DIR = join(homedir(), ".kos");
 const GLOBAL_CONFIG_PATH = join(KOS_DIR, "config.json");
 const GITHUB_CONFIG_PATH = join(KOS_DIR, "github.json");
 const LINEAR_CONFIG_PATH = join(KOS_DIR, "linear.json");
+const THEMES_CONFIG_PATH = join(KOS_DIR, "themes.json");
 
 // Types
 export interface GlobalConfig {
@@ -30,6 +31,34 @@ export interface LinearConfig {
   userName: string;
   validatedAt: number;
 }
+
+// Theme types (duplicated from renderer — main process can't import renderer types)
+export interface ThemeDefinition {
+  id: string;
+  name: string;
+  source?: string;
+  isBuiltIn: boolean;
+  cssVars: {
+    theme?: Record<string, string>;
+    light: Record<string, string>;
+    dark: Record<string, string>;
+  };
+  installedAt: number;
+}
+
+export interface ThemesConfig {
+  version: 1;
+  themes: ThemeDefinition[];
+  activeThemeId: string;
+  mode: "light" | "dark" | "system";
+}
+
+const DEFAULT_THEMES_CONFIG: ThemesConfig = {
+  version: 1,
+  themes: [],
+  activeThemeId: "twitter",
+  mode: "dark",
+};
 
 // Default config
 const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
@@ -106,6 +135,16 @@ export function saveLinearConfig(config: LinearConfig): void {
 
 export function clearLinearConfig(): void {
   deleteFile(LINEAR_CONFIG_PATH);
+}
+
+// Themes config
+export function getThemesConfig(): ThemesConfig {
+  const config = readJsonFile<ThemesConfig>(THEMES_CONFIG_PATH);
+  return config ?? DEFAULT_THEMES_CONFIG;
+}
+
+export function saveThemesConfig(config: ThemesConfig): void {
+  writeJsonFile(THEMES_CONFIG_PATH, config);
 }
 
 // Get the kOS directory path (for use in other services)

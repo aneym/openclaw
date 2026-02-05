@@ -555,12 +555,13 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
           onClick={() => {
             if (!workspaceId) return;
             if (hasPanelType(workspaceId, "terminal")) return;
-            spawnPanel(workspaceId, "terminal", {});
+            // Pass project's workspacePath as the terminal cwd (undefined defaults to homedir)
+            spawnPanel(workspaceId, "terminal", { cwd: activeProject?.workspacePath });
           }}
           disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "terminal") : false)}
           title={
             !workspaceId
-              ? "Select a project first"
+              ? "Select a workspace first"
               : workspaceId && hasPanelType(workspaceId, "terminal")
                 ? "Terminal already open"
                 : "Open terminal panel"

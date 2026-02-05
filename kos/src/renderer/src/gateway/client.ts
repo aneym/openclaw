@@ -37,6 +37,7 @@ const COMMANDS = [
   "terminal.spawn",
   "terminal.exec",
   "terminal.read",
+  "terminal.copy",
   "terminal.close",
   "terminal.list",
 ]; // Commands this node can handle
@@ -350,6 +351,11 @@ export class GatewayClient {
         case "terminal.close": {
           await window.api.terminal.closeManaged(params.terminalId, params.force);
           sendResult(true, { closed: true });
+          break;
+        }
+        case "terminal.copy": {
+          const result = await window.api.terminal.copyManaged(params.terminalId);
+          sendResult(true, result);
           break;
         }
         case "terminal.list": {

@@ -561,3 +561,14 @@ export function listManagedTerminals(): {
 
   return result;
 }
+
+// Copy managed terminal output to clipboard and return the copied text
+export function copyManagedTerminalOutput(id: string, maxBytes = 50000): string {
+  const entry = terminals.get(id);
+  if (!entry) throw new Error(`Terminal ${id} not found`);
+  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+
+  // Get recent scrollback
+  const fullOutput = entry.scrollback.join("");
+  return fullOutput.slice(-maxBytes);
+}

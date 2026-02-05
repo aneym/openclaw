@@ -373,6 +373,8 @@ const api = {
       ipcRenderer.on("terminal:managed-output", listener);
       return () => ipcRenderer.removeListener("terminal:managed-output", listener);
     },
+    copyManaged: (id: string): Promise<{ copied: boolean; length: number }> =>
+      ipcRenderer.invoke("terminal:copyManaged", id),
   },
 
   // Browser panel APIs (multi-tab support)

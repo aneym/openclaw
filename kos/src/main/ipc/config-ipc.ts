@@ -8,9 +8,12 @@ import {
   getLinearConfig,
   saveLinearConfig,
   clearLinearConfig,
+  getThemesConfig,
+  saveThemesConfig,
   type GlobalConfig,
   type GitHubConfig,
   type LinearConfig,
+  type ThemesConfig,
 } from "../services/config-storage";
 
 export function registerConfigIpc(): void {
@@ -47,5 +50,14 @@ export function registerConfigIpc(): void {
 
   ipcMain.handle("config:clearLinear", () => {
     clearLinearConfig();
+  });
+
+  // Themes config
+  ipcMain.handle("config:getThemes", () => {
+    return getThemesConfig();
+  });
+
+  ipcMain.handle("config:saveThemes", (_, config: ThemesConfig) => {
+    saveThemesConfig(config);
   });
 }

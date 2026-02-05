@@ -1,4 +1,5 @@
 import { ipcMain, BrowserWindow } from "electron";
+import { clipboard } from "electron";
 import {
   createTerminal,
   writeTerminal,
@@ -14,6 +15,7 @@ import {
   closeManagedTerminal,
   isManagedTerminal,
   listManagedTerminals,
+  copyManagedTerminalOutput,
 } from "../services/terminal-service";
 
 export function registerTerminalIpc(): void {
@@ -120,6 +122,13 @@ export function registerTerminalIpc(): void {
   // List all managed terminals
   ipcMain.handle("terminal:listManaged", () => {
     return listManagedTerminals();
+  });
+
+  // Copy managed terminal output to clipboard
+  ipcMain.handle("terminal:copyManaged", (_, id: string) => {
+    const output = copyManagedTerminalOutput(id);
+    clipboard.writeText(output);
+    return { copied: true, length: output.length };
   });
 }
 
