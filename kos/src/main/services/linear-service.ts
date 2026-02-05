@@ -189,17 +189,22 @@ export async function listTeams(apiKey?: string): Promise<LinearTeam[]> {
   }));
 }
 
-// Get issues for a team
+// Get issues for a team (excluding completed/canceled to reduce complexity)
 export async function getTeamIssues(teamId: string, apiKey?: string): Promise<LinearIssue[]> {
+  // First query: get active issues (simpler, without relations)
   const query = `
     query($teamId: String!) {
       team(id: $teamId) {
-        issues(first: 100) {
+        issues(
+          first: 50
+          filter: {
+            state: { type: { nin: ["completed", "canceled"] } }
+          }
+        ) {
           nodes {
             id
             identifier
             title
-            description
             priority
             state {
               id
@@ -214,14 +219,14 @@ export async function getTeamIssues(teamId: string, apiKey?: string): Promise<Li
               displayName
               avatarUrl
             }
-            labels {
+            labels(first: 5) {
               nodes {
                 id
                 name
                 color
               }
             }
-            relations {
+            relations(first: 10) {
               nodes {
                 type
                 relatedIssue {
@@ -230,6 +235,7 @@ export async function getTeamIssues(teamId: string, apiKey?: string): Promise<Li
                   title
                   state {
                     name
+                    type
                   }
                 }
               }
@@ -276,7 +282,7 @@ export async function getTeamIssues(teamId: string, apiKey?: string): Promise<Li
                 id: string;
                 identifier: string;
                 title: string;
-                state: { name: string };
+                state: { name: string; type: string };
               };
             }>;
           };
@@ -294,16 +300,19 @@ export async function getTeamIssues(teamId: string, apiKey?: string): Promise<Li
         id: r.relatedIssue.id,
         identifier: r.relatedIssue.identifier,
         title: r.relatedIssue.title,
-        state: { name: r.relatedIssue.state.name },
+        state: {
+          name: r.relatedIssue.state.name,
+          type: r.relatedIssue.state.type as LinearState["type"],
+        },
       },
     }));
 
-    // Check if blocked by any unresolved issue
+    // Check if blocked by any unresolved issue (using state type, not name)
     const isBlocked = relations.some(
       (r) =>
         r.type === "is_blocked_by" &&
-        r.relatedIssue.state.name !== "Done" &&
-        r.relatedIssue.state.name !== "Canceled",
+        r.relatedIssue.state.type !== "completed" &&
+        r.relatedIssue.state.type !== "canceled",
     );
 
     // Count downstream issues (issues this one blocks)

@@ -1,5 +1,7 @@
-import { Home, Plus, Settings as SettingsIcon } from "lucide-react";
+import { Home, Plus, Settings as SettingsIcon, ScrollText, Check } from "lucide-react";
+import { useState } from "react";
 import type { Project } from "../../types";
+import { getLogsAsText } from "../../lib/log-buffer";
 import { ProjectIcon } from "../../lib/project-icons";
 import { cn } from "../../lib/utils";
 import { ProfileSwitcher } from "./ProfileSwitcher";
@@ -27,6 +29,48 @@ export function ProjectTabs({
   onCreateProfile,
 }: ProjectTabsProps) {
   const isHomeActive = activeProjectId === HOME_PROJECT_ID;
+  const [logsCopied, setLogsCopied] = useState(false);
+
+  const handleCopyLogs = async () => {
+    // Get renderer logs (filtered for LLM context)
+    const rendererLogs = getLogsAsText();
+
+    // Export to file for agent access AND copy to clipboard
+    // File: ~/.openclaw/kos-debug.log (agents can read this directly)
+    try {
+      const result = await window.api.logs.exportToFile(rendererLogs);
+      if (result.success) {
+        console.log(`[logs] Exported to ${result.path}`);
+      }
+    } catch (err) {
+      console.error("Failed to export logs to file:", err);
+    }
+
+    // Get main process logs for clipboard
+    let mainLogs = "";
+    try {
+      mainLogs = await window.api.logs.getMainLogs();
+    } catch (err) {
+      console.error("Failed to get main process logs:", err);
+    }
+
+    // Combine for clipboard
+    const combined = `${rendererLogs}
+
+${"=".repeat(50)}
+=== Main Process Logs ===
+${"=".repeat(50)}
+
+${mainLogs}`;
+
+    try {
+      await navigator.clipboard.writeText(combined);
+      setLogsCopied(true);
+      setTimeout(() => setLogsCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy logs:", err);
+    }
+  };
 
   return (
     <div className="flex items-center h-10 border-b border-border bg-muted/30 px-2 gap-1 [-webkit-app-region:drag]">
@@ -35,11 +79,11 @@ export function ProjectTabs({
         <button
           onClick={() => onSelectProject(HOME_PROJECT_ID)}
           className={cn(
-            "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-            "flex items-center gap-2",
+            "px-3 py-1.5 rounded-md text-sm transition-all",
+            "flex items-center gap-2 relative",
             isHomeActive
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+              ? "bg-background text-foreground shadow-md font-semibold border-b-2 border-primary"
+              : "text-muted-foreground hover:text-foreground hover:bg-background/50 font-medium",
           )}
         >
           <Home className="h-4 w-4" />
@@ -52,11 +96,11 @@ export function ProjectTabs({
             key={project.id}
             onClick={() => onSelectProject(project.id)}
             className={cn(
-              "px-3 py-1.5 rounded-md text-sm font-medium transition-colors",
-              "flex items-center gap-2",
+              "px-3 py-1.5 rounded-md text-sm transition-all",
+              "flex items-center gap-2 relative",
               project.id === activeProjectId
-                ? "bg-background text-foreground shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-background/50",
+                ? "bg-background text-foreground shadow-md font-semibold border-b-2 border-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-background/50 font-medium",
             )}
           >
             <ProjectIcon icon={project.icon} size="sm" />
@@ -79,6 +123,17 @@ export function ProjectTabs({
 
       <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
         <ProfileSwitcher onOpenSettings={onOpenProfileSettings} onCreateProfile={onCreateProfile} />
+        <button
+          onClick={handleCopyLogs}
+          className={cn(
+            "px-2 py-1.5 rounded-md text-muted-foreground",
+            "hover:text-foreground hover:bg-background/50 transition-colors",
+            logsCopied && "text-green-500",
+          )}
+          title="Copy console logs"
+        >
+          {logsCopied ? <Check className="h-4 w-4" /> : <ScrollText className="h-4 w-4" />}
+        </button>
         <button
           onClick={onSettings}
           className={cn(

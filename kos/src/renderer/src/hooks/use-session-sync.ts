@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, ChatStatus } from "../types";
 import { klog } from "../lib/klog";
+import { sessionKeysMatch } from "../lib/session-keys";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
 
@@ -160,8 +161,13 @@ export async function loadMoreChats(): Promise<void> {
     }
 
     // Archive chats not in the full list
+    // Normalize keys for comparison since gateway returns canonical keys (agent:main:...)
+    // but local chats may have bare keys (kos:thread:...)
     for (const chat of chats.values()) {
-      if (!seen.has(chat.sessionKey) && chat.status !== "archived") {
+      const isInFullList = Array.from(seen).some((seenKey) =>
+        sessionKeysMatch(seenKey, chat.sessionKey),
+      );
+      if (!isInFullList && chat.status !== "archived") {
         archiveChat(chat.id);
       }
     }
@@ -196,6 +202,10 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
     }
 
     const patch: Partial<Chat> = {};
+
+    if (sessionKey !== existing.sessionKey) {
+      patch.sessionKey = sessionKey;
+    }
 
     if (isExplicit && title !== existing.title) {
       patch.title = title;
@@ -243,7 +253,7 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
 
 const findChatBySessionKey = (chats: Map<string, Chat>, sessionKey: string): Chat | undefined => {
   for (const chat of chats.values()) {
-    if (chat.sessionKey === sessionKey) return chat;
+    if (sessionKeysMatch(chat.sessionKey, sessionKey)) return chat;
   }
   return undefined;
 };
@@ -290,6 +300,10 @@ export function useSessionSync() {
         }
 
         const patch: Partial<Chat> = {};
+
+        if (sessionKey !== existing.sessionKey) {
+          patch.sessionKey = sessionKey;
+        }
 
         if (isExplicit && title !== existing.title) {
           patch.title = title;
@@ -447,17 +461,18 @@ export function useSessionSync() {
         if (cancelled) return;
         const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
 
-        klog.session("Received sessions from gateway", {
+        // Always log session sync for debugging
+        console.log("[session-sync] Received sessions from gateway", {
           count: sessions.length,
           hasMore: sessions.length >= INITIAL_LOAD_LIMIT,
         });
 
-        // Log first few sessions for debugging
-        sessions.slice(0, 3).forEach((entry, i) => {
+        // Log first few sessions for debugging (always, not just when klog enabled)
+        sessions.slice(0, 5).forEach((entry, i) => {
           const sessionKey = resolveSessionKey(entry);
           const session = resolveSessionRecord(entry);
           const { title } = resolveSessionTitle(session ?? {});
-          klog.session(`  [${i}] sessionKey=${sessionKey}, title="${title}"`);
+          console.log(`[session-sync]   [${i}] sessionKey=${sessionKey}, title="${title}"`);
         });
 
         // Process sessions without archiving (partial list)
@@ -509,8 +524,13 @@ export function useSessionSync() {
       }
 
       // Archive chats not in the full list
+      // Normalize keys for comparison since gateway returns canonical keys (agent:main:...)
+      // but local chats may have bare keys (kos:thread:...)
       for (const chat of chatsRef.current.values()) {
-        if (!seen.has(chat.sessionKey) && chat.status !== "archived") {
+        const isInFullList = Array.from(seen).some((seenKey) =>
+          sessionKeysMatch(seenKey, chat.sessionKey),
+        );
+        if (!isInFullList && chat.status !== "archived") {
           archiveChat(chat.id);
         }
       }

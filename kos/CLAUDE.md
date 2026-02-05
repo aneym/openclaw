@@ -91,6 +91,33 @@ npm run build:mac            # Build macOS app (no typecheck — just vite build
 
 Add shadcn components via: `bunx shadcn@latest add [component]`
 
+## Development Speed (HMR Strategy)
+
+Electron has 3 layers with different reload behavior:
+
+| Layer        | Path            | Hot Reload? | On Change           |
+| ------------ | --------------- | ----------- | ------------------- |
+| **Renderer** | `src/renderer/` | ✅ HMR      | Instant, no restart |
+| **Preload**  | `src/preload/`  | ❌          | Full app restart    |
+| **Main**     | `src/main/`     | ❌          | Full app restart    |
+
+**For fast iteration, keep logic in renderer whenever possible:**
+
+- ✅ **Renderer**: UI components, state management, data transformation, API calls via existing IPC
+- ⚠️ **Main/Preload**: Only for new native capabilities (file system, PTY, native dialogs)
+
+**When you must change main/preload:**
+
+1. Make changes
+2. Restart `npm run dev` (Ctrl+C, then `npm run dev`)
+3. Test thoroughly — no partial reloads
+
+**Patterns that preserve dev speed:**
+
+- Add new IPC handlers only when truly needed (native APIs not available in renderer)
+- Put business logic in renderer, main process is just a thin bridge
+- Use Zustand stores (renderer) over main process state when possible
+
 ## Architecture
 
 ```
@@ -229,18 +256,23 @@ kOS uses React 19.2 — follow these patterns:
 
 ## Keyboard Shortcuts
 
-| Shortcut    | Action                                                           |
-| ----------- | ---------------------------------------------------------------- |
-| `⌘K`        | Open command palette (search threads, projects, actions, themes) |
-| `⌘T`        | Open project picker                                              |
-| `⌘\`        | Toggle sidebar                                                   |
-| `⌘⇧\`       | Split panel horizontally                                         |
-| `⌘W`        | Close current panel                                              |
-| `⌘⇧W`       | Close current tab                                                |
-| `Ctrl+Tab`  | Next tab                                                         |
-| `Ctrl+⇧Tab` | Previous tab                                                     |
-| `⌘1-9`      | Switch to tab by index                                           |
-| `⌘⇧1-9`     | Switch to thread by index                                        |
+| Shortcut    | Action                       |
+| ----------- | ---------------------------- |
+| `⌘K`        | Open command palette         |
+| `⌘⇧P`       | Open profile switcher        |
+| `⌘\`        | Toggle sidebar               |
+| `⌘⇧\`       | Split panel right            |
+| `⌘W`        | Close current tab or panel   |
+| `⌘T`        | New tab in focused panel     |
+| `⌘D`        | Duplicate panel (horizontal) |
+| `⌘⇧D`       | Duplicate panel (vertical)   |
+| `⌘⇧B`       | Open browser panel           |
+| `Ctrl+Tab`  | Next tab                     |
+| `Ctrl+⇧Tab` | Previous tab                 |
+| `⌘]`        | Focus next pane              |
+| `⌘[`        | Focus previous pane          |
+| `⌘1`        | Switch to Home               |
+| `⌘2-9`      | Switch to project by index   |
 
 ## Key Decisions
 

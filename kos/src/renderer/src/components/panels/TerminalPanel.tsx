@@ -1,11 +1,13 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
+import { Bot } from "lucide-react";
 import { useEffect, useRef, useCallback, useState } from "react";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPanelProps {
   terminalId?: string;
   cwd?: string;
+  managed?: boolean; // True if controlled by AI agent
 }
 
 // Get computed CSS color and convert to hex for xterm
@@ -69,7 +71,7 @@ function buildTheme() {
   };
 }
 
-export function TerminalPanel({ cwd }: TerminalPanelProps) {
+export function TerminalPanel({ terminalId: stableId, cwd, managed }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -100,34 +102,46 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
 
+    // Capture references at schedule time to avoid race conditions with React StrictMode
+    // (RAF may run after component remounts, seeing the wrong terminal instance)
+    const capturedTerminal = terminal;
+    const capturedFitAddon = fitAddon;
+
     // Defer fit() and PTY creation to next frame to ensure terminal viewport is initialized
     // This fixes "Cannot read properties of undefined (reading 'dimensions')" error
     requestAnimationFrame(async () => {
-      if (!fitAddonRef.current || !terminalRef.current) return;
+      // Check if this terminal is still the current one (not replaced by remount)
+      if (terminalRef.current !== capturedTerminal) return;
 
-      fitAddonRef.current.fit();
+      capturedFitAddon.fit();
 
       // Get dimensions after fit
-      const cols = terminalRef.current.cols;
-      const rows = terminalRef.current.rows;
+      const cols = capturedTerminal.cols;
+      const rows = capturedTerminal.rows;
 
-      // Create PTY process
+      // Create PTY process (or reattach to existing if stableId provided and PTY still exists)
       try {
-        const result = await window.api.terminal.create(cwd, cols, rows);
+        console.log(`[TerminalPanel] 📡 Requesting terminal: stableId=${stableId}`);
+        const result = await window.api.terminal.create(cwd, cols, rows, stableId);
         terminalIdRef.current = result.id;
         setIsConnected(true);
+        console.log(`[TerminalPanel] ✅ Connected: id=${result.id}, pid=${result.pid}`);
+
+        // Auto-focus the terminal (e.g., when split creates a new terminal pane)
+        capturedTerminal.focus();
 
         // Forward input to PTY
-        terminalRef.current.onData((data) => {
+        capturedTerminal.onData((data) => {
           if (terminalIdRef.current) {
             window.api.terminal.write(terminalIdRef.current, data);
           }
         });
       } catch (err) {
-        terminalRef.current?.writeln(`\x1b[31mFailed to create terminal: ${err}\x1b[0m`);
+        console.error(`[TerminalPanel] ❌ Failed to create terminal:`, err);
+        capturedTerminal.writeln(`\x1b[31mFailed to create terminal: ${err}\x1b[0m`);
       }
     });
-  }, [cwd]);
+  }, [cwd, stableId]);
 
   // Handle data from PTY
   useEffect(() => {
@@ -155,11 +169,14 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     initTerminal();
 
     return () => {
-      // Cleanup terminal and PTY process
+      // Detach from PTY without killing it (keeps PTY alive for HMR reconnection)
+      // The PTY survives in the main process and we can reattach on remount
       if (terminalIdRef.current) {
-        window.api.terminal.kill(terminalIdRef.current);
+        console.log(`[TerminalPanel] 🔌 Detaching from terminal: ${terminalIdRef.current}`);
+        window.api.terminal.detach(terminalIdRef.current);
         terminalIdRef.current = null;
       }
+      // Dispose xterm UI (will be recreated on remount)
       if (terminalRef.current) {
         terminalRef.current.dispose();
         terminalRef.current = null;
@@ -168,26 +185,47 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
     };
   }, [initTerminal]);
 
-  // Handle resize
+  // Handle resize with debouncing to prevent rapid PTY resize calls during drag
   useEffect(() => {
     if (!isConnected) return;
 
     const container = containerRef.current;
     if (!container) return;
 
+    let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+    let lastCols = terminalRef.current?.cols ?? 0;
+    let lastRows = terminalRef.current?.rows ?? 0;
+
     const handleResize = () => {
-      if (fitAddonRef.current && terminalRef.current && terminalIdRef.current) {
+      // Debounce: wait for resize to settle before updating PTY
+      if (resizeTimeout) clearTimeout(resizeTimeout);
+
+      resizeTimeout = setTimeout(() => {
+        if (!fitAddonRef.current || !terminalRef.current || !terminalIdRef.current) return;
+
+        // Fit xterm to container
         fitAddonRef.current.fit();
+
         const cols = terminalRef.current.cols;
         const rows = terminalRef.current.rows;
-        window.api.terminal.resize(terminalIdRef.current, cols, rows);
-      }
+
+        // Only send resize to PTY if dimensions actually changed
+        if (cols !== lastCols || rows !== lastRows) {
+          lastCols = cols;
+          lastRows = rows;
+          window.api.terminal.resize(terminalIdRef.current, cols, rows);
+        }
+      }, 100); // 100ms debounce
     };
 
     const observer = new ResizeObserver(handleResize);
     observer.observe(container);
 
+    // Also handle when terminal first becomes visible (e.g., tab switch)
+    handleResize();
+
     return () => {
+      if (resizeTimeout) clearTimeout(resizeTimeout);
       observer.disconnect();
     };
   }, [isConnected]);
@@ -214,10 +252,18 @@ export function TerminalPanel({ cwd }: TerminalPanelProps) {
   }, []);
 
   return (
-    <div
-      ref={containerRef}
-      className="h-full w-full bg-background overflow-hidden"
-      onClick={handleContainerClick}
-    />
+    <div className="h-full w-full relative">
+      {managed && (
+        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
+          <Bot className="h-3 w-3" />
+          AI-controlled
+        </div>
+      )}
+      <div
+        ref={containerRef}
+        className="h-full w-full bg-background overflow-hidden"
+        onClick={handleContainerClick}
+      />
+    </div>
   );
 }

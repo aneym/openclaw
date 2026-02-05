@@ -126,7 +126,10 @@ export interface LinearRelation {
     id: string;
     identifier: string;
     title: string;
-    state: { name: string };
+    state: {
+      name: string;
+      type: "backlog" | "unstarted" | "started" | "completed" | "canceled";
+    };
   };
 }
 
@@ -247,16 +250,34 @@ export interface BrowserTabInfo {
 
 // Terminal types
 export interface TerminalAPI {
+  // Create new terminal or reattach to existing one (for HMR persistence)
   create: (
     cwd: string | undefined,
     cols: number,
     rows: number,
+    existingId?: string,
   ) => Promise<{ id: string; pid: number }>;
   write: (id: string, data: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
+  // Detach without killing (for HMR - keeps PTY alive)
+  detach: (id: string) => Promise<boolean>;
+  // Check if terminal still exists in main process
+  exists: (id: string) => Promise<boolean>;
   onData: (callback: (id: string, data: string) => void) => () => void;
   onExit: (callback: (id: string, code: number) => void) => () => void;
+  // Managed terminal methods (for AI agent control)
+  createManaged: (cwd?: string) => Promise<{ id: string; pid: number; managed: true }>;
+  execManaged: (
+    id: string,
+    command: string,
+    timeoutMs?: number,
+  ) => Promise<{ output: string; exitCode?: number }>;
+  readManaged: (id: string, since?: number, maxBytes?: number) => Promise<string>;
+  closeManaged: (id: string, force?: boolean) => Promise<void>;
+  isManaged: (id: string) => Promise<boolean>;
+  listManaged: () => Promise<{ id: string; pid: number; cwd: string; createdAt: number }[]>;
+  onManagedOutput: (callback: (data: string) => void) => () => void;
 }
 
 export interface BrowserAPI {
@@ -284,6 +305,15 @@ export interface BrowserAPI {
   listTabs: () => Promise<BrowserTabInfo[]>;
   getTab: (tabId: string) => Promise<BrowserTabInfo | null>;
   getActiveTab: () => Promise<string | null>;
+}
+
+// Logs API (for debugging and agent self-iteration)
+export interface LogsAPI {
+  getMainLogs: () => Promise<string>;
+  // Export to ~/.openclaw/kos-debug.log for agent access
+  exportToFile: (
+    rendererLogs: string,
+  ) => Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 export interface SimulatorAPI {
@@ -322,6 +352,7 @@ declare global {
       git: GitAPI;
       github: GitHubAPI;
       linear: LinearAPI;
+      logs: LogsAPI;
       simulator: SimulatorAPI;
       browser: BrowserAPI;
       terminal: TerminalAPI;

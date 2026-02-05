@@ -4,9 +4,9 @@
  * Wrapper that makes a chat/thread item in the sidebar draggable.
  */
 
-import type { ReactNode } from "react";
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
+import { memo, useMemo, type ReactNode } from "react";
 import type { ThreadDragData } from "../../lib/panel-dnd";
 import type { Chat } from "../../types";
 import { cn } from "../../lib/utils";
@@ -16,12 +16,19 @@ interface DraggableChatItemProps {
   children: ReactNode;
 }
 
-export function DraggableChatItem({ chat, children }: DraggableChatItemProps) {
-  const dragData: ThreadDragData = {
-    type: "thread",
-    chatId: chat.id,
-    title: chat.title,
-  };
+export const DraggableChatItem = memo(function DraggableChatItem({
+  chat,
+  children,
+}: DraggableChatItemProps) {
+  // Memoize dragData to avoid creating new object every render
+  const dragData: ThreadDragData = useMemo(
+    () => ({
+      type: "thread",
+      chatId: chat.id,
+      title: chat.title,
+    }),
+    [chat.id, chat.title],
+  );
 
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `thread-${chat.id}`,
@@ -47,4 +54,4 @@ export function DraggableChatItem({ chat, children }: DraggableChatItemProps) {
       {children}
     </div>
   );
-}
+});

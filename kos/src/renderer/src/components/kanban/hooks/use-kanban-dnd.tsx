@@ -15,6 +15,7 @@ import {
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { useState, useCallback, createContext, useContext, type ReactNode } from "react";
+import { toast } from "sonner";
 import type { LinearIssue } from "../../../types/linear";
 import { useLinearStore } from "../../../stores/linear-store";
 
@@ -114,8 +115,10 @@ export function KanbanDndProvider({ children, teamId }: KanbanDndProviderProps) 
       try {
         await updateIssueState(issueId, targetStateId);
       } catch (err) {
-        // Error is set in store, could show toast here
-        console.error("Failed to update issue state:", err);
+        const message = err instanceof Error ? err.message : "Failed to update issue";
+        toast.error("Failed to move issue", {
+          description: message,
+        });
       }
     },
     [issuesByTeam, teamId, updateIssueState],

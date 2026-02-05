@@ -14,6 +14,7 @@ import { useGatewayStore } from "../../stores/gateway-store";
 import { usePanelStore } from "../../stores/panel-store";
 import { Button } from "../ui/button";
 import { Textarea } from "../ui/textarea";
+import { PanelTypeSwitcher } from "./PanelTypeSwitcher";
 
 interface EmptyChatPaneProps {
   workspaceId: string;
@@ -117,6 +118,11 @@ export function EmptyChatPane({ workspaceId, panelId, openChatIds }: EmptyChatPa
 
   return (
     <div className="flex flex-col h-full">
+      {/* Type switcher - allows changing panel type before content is assigned */}
+      <div className="shrink-0 border-b border-border/50 px-3 py-1.5 bg-muted/30">
+        <PanelTypeSwitcher workspaceId={workspaceId} panelId={panelId} currentType="chat" />
+      </div>
+
       {/* Session picker */}
       <div className="flex-1 overflow-y-auto p-4">
         <div className="max-w-md mx-auto">

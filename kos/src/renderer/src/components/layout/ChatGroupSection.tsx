@@ -2,8 +2,6 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { memo, useCallback, useMemo } from "react";
 import type { ChatGroup } from "../../lib/chat-grouping";
 import type { Chat, Project } from "../../types";
-import { collapse } from "../../lib/animation-variants";
-import { motion, AnimatePresence } from "../../lib/motion";
 import { cn } from "../../lib/utils";
 import { ChatItem } from "./ChatItem";
 import { DraggableChatItem } from "./DraggableChatItem";
@@ -23,7 +21,7 @@ interface ChatGroupSectionProps {
   onAssignToProject?: (chatId: string, projectId: string | null) => void;
 }
 
-export function ChatGroupSection({
+export const ChatGroupSection = memo(function ChatGroupSection({
   group,
   chats,
   isCollapsed,
@@ -52,36 +50,28 @@ export function ChatGroupSection({
         <span className="uppercase tracking-wider">{group}</span>
         <span className="ml-auto text-muted-foreground/50">{chats.length}</span>
       </button>
-      <AnimatePresence initial={false}>
-        {!isCollapsed && (
-          <motion.div
-            key="content"
-            variants={collapse}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            className="space-y-0.5 mt-1"
-          >
-            {chats.map((chat) => (
-              <MemoizedChatItemWrapper
-                key={chat.id}
-                chat={chat}
-                isActive={chat.id === activeChatId}
-                onSelectChat={onSelectChat}
-                onArchiveChat={onArchiveChat}
-                onCopySessionId={onCopySessionId}
-                projectsMap={projectsMap}
-                showProjectBadges={showProjectBadges}
-                projects={projects}
-                onAssignToProject={onAssignToProject}
-              />
-            ))}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* No animation - immediate show/hide for performance */}
+      {!isCollapsed && (
+        <div className="space-y-0.5 mt-1">
+          {chats.map((chat) => (
+            <MemoizedChatItemWrapper
+              key={chat.id}
+              chat={chat}
+              isActive={chat.id === activeChatId}
+              onSelectChat={onSelectChat}
+              onArchiveChat={onArchiveChat}
+              onCopySessionId={onCopySessionId}
+              projectsMap={projectsMap}
+              showProjectBadges={showProjectBadges}
+              projects={projects}
+              onAssignToProject={onAssignToProject}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
-}
+});
 
 // Memoized wrapper that creates stable callbacks per-chat
 interface ChatItemWrapperProps {

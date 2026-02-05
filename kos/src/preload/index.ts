@@ -187,6 +187,16 @@ const api = {
   openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
     ipcRenderer.invoke("dialog:openDirectory"),
 
+  // Logs API (for debugging and agent self-iteration)
+  logs: {
+    getMainLogs: (): Promise<string> => ipcRenderer.invoke("logs:getMainLogs"),
+    // Export to ~/.openclaw/kos-debug.log for agent access
+    exportToFile: (
+      rendererLogs: string,
+    ): Promise<{ success: boolean; path?: string; error?: string }> =>
+      ipcRenderer.invoke("logs:exportToFile", rendererLogs),
+  },
+
   // Config APIs
   config: {
     getGlobal: (): Promise<GlobalConfig> => ipcRenderer.invoke("config:getGlobal"),
@@ -315,17 +325,23 @@ const api = {
 
   // Terminal APIs
   terminal: {
+    // Create new terminal or reattach to existing one (for HMR persistence)
     create: (
       cwd: string | undefined,
       cols: number,
       rows: number,
+      existingId?: string,
     ): Promise<{ id: string; pid: number }> =>
-      ipcRenderer.invoke("terminal:create", cwd, cols, rows),
+      ipcRenderer.invoke("terminal:create", cwd, cols, rows, existingId),
     write: (id: string, data: string): Promise<void> =>
       ipcRenderer.invoke("terminal:write", id, data),
     resize: (id: string, cols: number, rows: number): Promise<void> =>
       ipcRenderer.invoke("terminal:resize", id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke("terminal:kill", id),
+    // Detach without killing (for HMR - keeps PTY alive)
+    detach: (id: string): Promise<boolean> => ipcRenderer.invoke("terminal:detach", id),
+    // Check if terminal still exists in main process
+    exists: (id: string): Promise<boolean> => ipcRenderer.invoke("terminal:exists", id),
     onData: (callback: (id: string, data: string) => void) => {
       const listener = (_: unknown, id: string, data: string) => callback(id, data);
       ipcRenderer.on("terminal:data", listener);
@@ -335,6 +351,27 @@ const api = {
       const listener = (_: unknown, id: string, code: number) => callback(id, code);
       ipcRenderer.on("terminal:exit", listener);
       return () => ipcRenderer.removeListener("terminal:exit", listener);
+    },
+    // Managed terminal methods (for AI agent control)
+    createManaged: (cwd?: string): Promise<{ id: string; pid: number; managed: true }> =>
+      ipcRenderer.invoke("terminal:createManaged", cwd),
+    execManaged: (
+      id: string,
+      command: string,
+      timeoutMs?: number,
+    ): Promise<{ output: string; exitCode?: number }> =>
+      ipcRenderer.invoke("terminal:execManaged", id, command, timeoutMs),
+    readManaged: (id: string, since?: number, maxBytes?: number): Promise<string> =>
+      ipcRenderer.invoke("terminal:readManaged", id, since, maxBytes),
+    closeManaged: (id: string, force?: boolean): Promise<void> =>
+      ipcRenderer.invoke("terminal:closeManaged", id, force),
+    isManaged: (id: string): Promise<boolean> => ipcRenderer.invoke("terminal:isManaged", id),
+    listManaged: (): Promise<{ id: string; pid: number; cwd: string; createdAt: number }[]> =>
+      ipcRenderer.invoke("terminal:listManaged"),
+    onManagedOutput: (callback: (data: string) => void) => {
+      const listener = (_: unknown, data: string) => callback(data);
+      ipcRenderer.on("terminal:managed-output", listener);
+      return () => ipcRenderer.removeListener("terminal:managed-output", listener);
     },
   },
 

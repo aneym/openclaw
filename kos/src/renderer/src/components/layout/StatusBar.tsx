@@ -2,8 +2,9 @@ import { Activity, Circle, Zap } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { cn } from "@/lib/utils";
 import type { Chat, Project, Workspace } from "../../types";
-import { useStreaming } from "../../hooks/use-streaming";
+import { useChatSession } from "../../hooks/use-chat-session";
 import { ProjectIcon } from "../../lib/project-icons";
+import { sessionKeysMatch } from "../../lib/session-keys";
 import { useChatStore } from "../../stores/chat-store";
 import { useGatewayStore } from "../../stores/gateway-store";
 import { useProjectStore } from "../../stores/project-store";
@@ -70,7 +71,7 @@ export function StatusBar() {
     [chatsMap, activeChatId],
   );
 
-  const { isStreaming, runId } = useStreaming(activeChat?.sessionKey ?? "");
+  const { isStreaming, runId } = useChatSession(activeChat?.sessionKey ?? "", activeChat?.id ?? "");
 
   // Track current model and agent from events
   const [currentModel, setCurrentModel] = useState<string | null>(null);
@@ -85,7 +86,7 @@ export function StatusBar() {
     const unsubscribe = subscribe("agent", (payload: unknown) => {
       const agentPayload = payload as AgentEventPayload;
 
-      if (agentPayload.sessionKey !== activeChat.sessionKey) {
+      if (!sessionKeysMatch(agentPayload.sessionKey, activeChat.sessionKey)) {
         return;
       }
 

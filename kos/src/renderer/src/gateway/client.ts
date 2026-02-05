@@ -8,6 +8,9 @@ import type {
   Pending,
 } from "./types";
 import { useBrowserStore } from "../stores/browser-store";
+import { usePanelStore } from "../stores/panel-store";
+import { useProjectStore } from "../stores/project-store";
+import { useWorkspaceStore } from "../stores/workspace-store";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
 import { buildDeviceAuthPayload } from "./device-auth-payload";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity";
@@ -29,7 +32,14 @@ const CLIENT_MODE = "webchat";
 const CLIENT_VERSION = "0.1.0";
 const ROLE = "operator";
 const SCOPES = ["operator.admin", "operator.approvals", "operator.pairing"];
-const CAPS = ["browser"]; // Advertise browser capability for CDP routing
+const CAPS = ["browser", "terminal"]; // Advertise browser and terminal capabilities
+const COMMANDS = [
+  "terminal.spawn",
+  "terminal.exec",
+  "terminal.read",
+  "terminal.close",
+  "terminal.list",
+]; // Commands this node can handle
 
 export class GatewayClient {
   private ws: WebSocket | null = null;
@@ -178,6 +188,7 @@ export class GatewayClient {
       role: ROLE,
       scopes: SCOPES,
       caps: CAPS,
+      commands: COMMANDS,
       device,
       auth,
       userAgent: navigator.userAgent,
@@ -226,6 +237,11 @@ export class GatewayClient {
         }
         return;
       }
+      // Handle node.invoke.request events for terminal commands
+      if (evt.event === "node.invoke.request") {
+        void this.handleNodeInvokeRequest(evt.payload);
+        return;
+      }
       const seq = typeof evt.seq === "number" ? evt.seq : null;
       if (seq !== null) {
         if (this.lastSeq !== null && seq > this.lastSeq + 1) {
@@ -271,6 +287,82 @@ export class GatewayClient {
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
       this.send({ type: "cdp-response", id: cdp.id, error });
+    }
+  }
+
+  private async handleNodeInvokeRequest(payload: unknown) {
+    if (!payload || typeof payload !== "object") return;
+
+    const req = payload as {
+      id: string;
+      nodeId: string;
+      command: string;
+      paramsJSON?: string | null;
+      timeoutMs?: number;
+    };
+
+    const params = req.paramsJSON ? JSON.parse(req.paramsJSON) : {};
+
+    const sendResult = (ok: boolean, resultPayload?: unknown, error?: string) => {
+      this.request("node.invoke.result", {
+        id: req.id,
+        nodeId: req.nodeId,
+        ok,
+        payload: resultPayload,
+        error: error ? { message: error } : null,
+      }).catch(console.error);
+    };
+
+    try {
+      switch (req.command) {
+        case "terminal.spawn": {
+          const result = await window.api.terminal.createManaged(params.cwd);
+          // Open a terminal panel for the managed terminal
+          const projectId = useProjectStore.getState().activeProjectId;
+          if (projectId) {
+            const activeWorkspaceByProject = useWorkspaceStore.getState().activeWorkspaceByProject;
+            const workspaceId = activeWorkspaceByProject.get(projectId);
+            if (workspaceId) {
+              usePanelStore.getState().openManagedTerminal(workspaceId, result.id, params.cwd);
+            }
+          }
+          sendResult(true, { terminalId: result.id, pid: result.pid });
+          break;
+        }
+        case "terminal.exec": {
+          const result = await window.api.terminal.execManaged(
+            params.terminalId,
+            params.command,
+            params.timeoutMs,
+          );
+          sendResult(true, result);
+          break;
+        }
+        case "terminal.read": {
+          const output = await window.api.terminal.readManaged(
+            params.terminalId,
+            params.since,
+            params.maxBytes,
+          );
+          sendResult(true, { output });
+          break;
+        }
+        case "terminal.close": {
+          await window.api.terminal.closeManaged(params.terminalId, params.force);
+          sendResult(true, { closed: true });
+          break;
+        }
+        case "terminal.list": {
+          const terminals = await window.api.terminal.listManaged();
+          sendResult(true, { terminals });
+          break;
+        }
+        default:
+          sendResult(false, undefined, `Unknown command: ${req.command}`);
+      }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      sendResult(false, undefined, error);
     }
   }
 

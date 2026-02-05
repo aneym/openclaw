@@ -1,11 +1,41 @@
 "use strict";
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __copyProps = (to, from, except, desc) => {
+  if ((from && typeof from === "object") || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, {
+          get: () => from[key],
+          enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable,
+        });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (
+  (target = mod != null ? __create(__getProtoOf(mod)) : {}),
+  __copyProps(
+    // If the importer is in node compatibility mode or this is not an ESM
+    // file that has been converted to a CommonJS file using a Babel-
+    // compatible transform (i.e. "__esModule" has not been set), then set
+    // "default" to the CommonJS "module.exports" for node compatibility.
+    isNodeMode || !mod || !mod.__esModule
+      ? __defProp(target, "default", { value: mod, enumerable: true })
+      : target,
+    mod,
+  )
+);
 const utils = require("@electron-toolkit/utils");
 const electron = require("electron");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const crypto = require("crypto");
 const child_process = require("child_process");
+const crypto = require("crypto");
 const pty = require("node-pty");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
@@ -302,99 +332,6 @@ function registerConfigIpc() {
   });
   electron.ipcMain.handle("config:clearLinear", () => {
     clearLinearConfig();
-  });
-}
-function getProjectsDir() {
-  const kosDir = getKosDir();
-  const projectsDir = path.join(kosDir, "projects");
-  if (!fs.existsSync(projectsDir)) {
-    fs.mkdirSync(projectsDir, { recursive: true });
-  }
-  return projectsDir;
-}
-function getProjectDir(projectId) {
-  return path.join(getProjectsDir(), projectId);
-}
-function getProjectConfigPath(projectId) {
-  return path.join(getProjectDir(projectId), "config.json");
-}
-function listProjects() {
-  const projectsDir = getProjectsDir();
-  try {
-    const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
-    const projects = [];
-    for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      const projectId = entry.name;
-      const configPath = getProjectConfigPath(projectId);
-      if (!fs.existsSync(configPath)) continue;
-      try {
-        const raw = fs.readFileSync(configPath, "utf-8");
-        const configFile = JSON.parse(raw);
-        projects.push({
-          id: projectId,
-          ...configFile.project,
-        });
-      } catch {
-        continue;
-      }
-    }
-    return projects.sort((a, b) => a.name.localeCompare(b.name));
-  } catch {
-    return [];
-  }
-}
-function getProject(id) {
-  const configPath = getProjectConfigPath(id);
-  if (!fs.existsSync(configPath)) return null;
-  try {
-    const raw = fs.readFileSync(configPath, "utf-8");
-    const configFile = JSON.parse(raw);
-    return {
-      id,
-      ...configFile.project,
-    };
-  } catch {
-    return null;
-  }
-}
-function saveProject(project) {
-  const projectDir = getProjectDir(project.id);
-  const configPath = getProjectConfigPath(project.id);
-  if (!fs.existsSync(projectDir)) {
-    fs.mkdirSync(projectDir, { recursive: true });
-  }
-  const { id, ...projectData } = project;
-  const configFile = {
-    version: 1,
-    project: projectData,
-  };
-  fs.writeFileSync(configPath, JSON.stringify(configFile, null, 2), "utf-8");
-}
-function deleteProject(id) {
-  const projectDir = getProjectDir(id);
-  if (fs.existsSync(projectDir)) {
-    fs.rmSync(projectDir, { recursive: true, force: true });
-  }
-}
-function generateProjectId() {
-  return `proj-${crypto.randomUUID().slice(0, 8)}`;
-}
-function registerProjectIpc() {
-  electron.ipcMain.handle("projects:list", () => {
-    return listProjects();
-  });
-  electron.ipcMain.handle("projects:get", (_, id) => {
-    return getProject(id);
-  });
-  electron.ipcMain.handle("projects:save", (_, project) => {
-    saveProject(project);
-  });
-  electron.ipcMain.handle("projects:delete", (_, id) => {
-    deleteProject(id);
-  });
-  electron.ipcMain.handle("projects:generateId", () => {
-    return generateProjectId();
   });
 }
 function runGit(args, cwd) {
@@ -856,12 +793,16 @@ async function getTeamIssues(teamId, apiKey) {
   const query = `
     query($teamId: String!) {
       team(id: $teamId) {
-        issues(first: 100) {
+        issues(
+          first: 50
+          filter: {
+            state: { type: { nin: ["completed", "canceled"] } }
+          }
+        ) {
           nodes {
             id
             identifier
             title
-            description
             priority
             state {
               id
@@ -876,14 +817,14 @@ async function getTeamIssues(teamId, apiKey) {
               displayName
               avatarUrl
             }
-            labels {
+            labels(first: 5) {
               nodes {
                 id
                 name
                 color
               }
             }
-            relations {
+            relations(first: 10) {
               nodes {
                 type
                 relatedIssue {
@@ -892,6 +833,7 @@ async function getTeamIssues(teamId, apiKey) {
                   title
                   state {
                     name
+                    type
                   }
                 }
               }
@@ -909,14 +851,17 @@ async function getTeamIssues(teamId, apiKey) {
         id: r.relatedIssue.id,
         identifier: r.relatedIssue.identifier,
         title: r.relatedIssue.title,
-        state: { name: r.relatedIssue.state.name },
+        state: {
+          name: r.relatedIssue.state.name,
+          type: r.relatedIssue.state.type,
+        },
       },
     }));
     const isBlocked = relations.some(
       (r) =>
         r.type === "is_blocked_by" &&
-        r.relatedIssue.state.name !== "Done" &&
-        r.relatedIssue.state.name !== "Canceled",
+        r.relatedIssue.state.type !== "completed" &&
+        r.relatedIssue.state.type !== "canceled",
     );
     const downstreamCount = relations.filter((r) => r.type === "blocks").length;
     return {
@@ -982,6 +927,157 @@ function registerLinearIpc() {
     return updateIssueState(issueId, stateId);
   });
 }
+function getProjectsDir() {
+  const kosDir = getKosDir();
+  const projectsDir = path.join(kosDir, "projects");
+  if (!fs.existsSync(projectsDir)) {
+    fs.mkdirSync(projectsDir, { recursive: true });
+  }
+  return projectsDir;
+}
+function getProjectDir(projectId) {
+  return path.join(getProjectsDir(), projectId);
+}
+function getProjectConfigPath(projectId) {
+  return path.join(getProjectDir(projectId), "config.json");
+}
+function listProjects() {
+  const projectsDir = getProjectsDir();
+  try {
+    const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
+    const projects = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const projectId = entry.name;
+      const configPath = getProjectConfigPath(projectId);
+      if (!fs.existsSync(configPath)) continue;
+      try {
+        const raw = fs.readFileSync(configPath, "utf-8");
+        const configFile = JSON.parse(raw);
+        projects.push({
+          id: projectId,
+          ...configFile.project,
+        });
+      } catch {
+        continue;
+      }
+    }
+    return projects.sort((a, b) => a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+function getProject(id) {
+  const configPath = getProjectConfigPath(id);
+  if (!fs.existsSync(configPath)) return null;
+  try {
+    const raw = fs.readFileSync(configPath, "utf-8");
+    const configFile = JSON.parse(raw);
+    return {
+      id,
+      ...configFile.project,
+    };
+  } catch {
+    return null;
+  }
+}
+function saveProject(project) {
+  const projectDir = getProjectDir(project.id);
+  const configPath = getProjectConfigPath(project.id);
+  if (!fs.existsSync(projectDir)) {
+    fs.mkdirSync(projectDir, { recursive: true });
+  }
+  const { id, ...projectData } = project;
+  const configFile = {
+    version: 1,
+    project: projectData,
+  };
+  fs.writeFileSync(configPath, JSON.stringify(configFile, null, 2), "utf-8");
+}
+function deleteProject(id) {
+  const projectDir = getProjectDir(id);
+  if (fs.existsSync(projectDir)) {
+    fs.rmSync(projectDir, { recursive: true, force: true });
+  }
+}
+function generateProjectId() {
+  return `proj-${crypto.randomUUID().slice(0, 8)}`;
+}
+function registerProjectIpc() {
+  electron.ipcMain.handle("projects:list", () => {
+    return listProjects();
+  });
+  electron.ipcMain.handle("projects:get", (_, id) => {
+    return getProject(id);
+  });
+  electron.ipcMain.handle("projects:save", (_, project) => {
+    saveProject(project);
+  });
+  electron.ipcMain.handle("projects:delete", (_, id) => {
+    deleteProject(id);
+  });
+  electron.ipcMain.handle("projects:generateId", () => {
+    return generateProjectId();
+  });
+}
+const SCROLLBACK_DIR = path.join(os.homedir(), ".kos", "terminals");
+function ensureScrollbackDir() {
+  if (!fs.existsSync(SCROLLBACK_DIR)) {
+    fs.mkdirSync(SCROLLBACK_DIR, { recursive: true });
+  }
+}
+function getScrollbackPath(terminalId) {
+  const safeId = terminalId.replace(/[^a-zA-Z0-9_-]/g, "_");
+  return path.join(SCROLLBACK_DIR, `${safeId}.scrollback`);
+}
+function saveScrollback(terminalId, scrollback) {
+  try {
+    ensureScrollbackDir();
+    const data = scrollback.join("");
+    fs.writeFileSync(getScrollbackPath(terminalId), data, "utf-8");
+  } catch (err) {
+    console.error(`[terminal-service] Failed to save scrollback for ${terminalId}:`, err);
+  }
+}
+function loadScrollback(terminalId) {
+  try {
+    const path2 = getScrollbackPath(terminalId);
+    if (fs.existsSync(path2)) {
+      return fs.readFileSync(path2, "utf-8");
+    }
+  } catch (err) {
+    console.error(`[terminal-service] Failed to load scrollback for ${terminalId}:`, err);
+  }
+  return null;
+}
+function deleteScrollback(terminalId) {
+  try {
+    const path2 = getScrollbackPath(terminalId);
+    if (fs.existsSync(path2)) {
+      fs.unlinkSync(path2);
+    }
+  } catch {}
+}
+function cleanupOldScrollback() {
+  try {
+    ensureScrollbackDir();
+    const now = Date.now();
+    const maxAge = 7 * 24 * 60 * 60 * 1e3;
+    const files = fs.readdirSync(SCROLLBACK_DIR);
+    for (const file of files) {
+      if (!file.endsWith(".scrollback")) continue;
+      const filePath = path.join(SCROLLBACK_DIR, file);
+      const stat = fs.statSync(filePath);
+      if (now - stat.mtimeMs > maxAge) {
+        fs.unlinkSync(filePath);
+        console.log(`[terminal-service] Cleaned up old scrollback: ${file}`);
+      }
+    }
+  } catch (err) {
+    console.error("[terminal-service] Failed to cleanup old scrollback:", err);
+  }
+}
+const MAX_SCROLLBACK_BYTES = 500 * 1024;
 const terminals = /* @__PURE__ */ new Map();
 function generateId() {
   return `term-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -1002,12 +1098,37 @@ function getDefaultShell() {
   }
   return process.env.COMSPEC || "cmd.exe";
 }
-function createTerminal(cwd, cols, rows, onData, onExit) {
-  const id = generateId();
+function createTerminal(cwd, cols, rows, onData, onExit, existingId) {
+  if (existingId) {
+    const existing = terminals.get(existingId);
+    if (existing) {
+      console.log(
+        `[terminal-service] ✅ REATTACH to existing terminal: id=${existingId}, pid=${existing.pty.pid}, scrollback=${existing.scrollbackBytes} bytes`,
+      );
+      existing.onData = onData;
+      existing.onExit = onExit;
+      existing.pty.resize(Math.max(cols, 1), Math.max(rows, 1));
+      if (existing.scrollback.length > 0) {
+        const scrollbackData = existing.scrollback.join("");
+        setImmediate(() => {
+          existing.onData?.(scrollbackData);
+        });
+      }
+      return {
+        id: existingId,
+        pid: existing.pty.pid,
+        cwd: existing.cwd,
+        cols: existing.pty.cols,
+        rows: existing.pty.rows,
+      };
+    }
+    console.log(`[terminal-service] 🆕 Terminal ${existingId} not found, will create new`);
+  }
+  const id = existingId || generateId();
   const shell = getDefaultShell();
   const effectiveCwd = cwd && fs.existsSync(cwd) ? cwd : os.homedir();
   console.log(
-    `[terminal-service] Creating terminal: shell=${shell}, cwd=${effectiveCwd}, cols=${cols}, rows=${rows}`,
+    `[terminal-service] Creating terminal: id=${id}, shell=${shell}, cwd=${effectiveCwd}, cols=${cols}, rows=${rows}`,
   );
   const ptyProcess = pty__namespace.spawn(shell, [], {
     name: "xterm-256color",
@@ -1021,14 +1142,47 @@ function createTerminal(cwd, cols, rows, onData, onExit) {
     },
   });
   console.log(`[terminal-service] Terminal created: id=${id}, pid=${ptyProcess.pid}`);
+  const savedScrollback = loadScrollback(id);
+  const initialScrollback = savedScrollback ? [savedScrollback] : [];
+  const initialBytes = savedScrollback?.length ?? 0;
+  const entry = {
+    pty: ptyProcess,
+    onData,
+    onExit,
+    cwd: effectiveCwd,
+    scrollback: initialScrollback,
+    scrollbackBytes: initialBytes,
+    saveTimeout: null,
+  };
+  if (savedScrollback) {
+    console.log(
+      `[terminal-service] Loaded ${savedScrollback.length} bytes of saved scrollback for ${id}`,
+    );
+    setImmediate(() => {
+      entry.onData?.(savedScrollback);
+    });
+  }
   ptyProcess.onData((data) => {
-    onData(data);
+    entry.scrollback.push(data);
+    entry.scrollbackBytes += data.length;
+    while (entry.scrollbackBytes > MAX_SCROLLBACK_BYTES && entry.scrollback.length > 1) {
+      const removed = entry.scrollback.shift();
+      entry.scrollbackBytes -= removed.length;
+    }
+    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    entry.saveTimeout = setTimeout(() => {
+      saveScrollback(id, entry.scrollback);
+    }, 5e3);
+    entry.onData?.(data);
   });
   ptyProcess.onExit(({ exitCode }) => {
+    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    saveScrollback(id, entry.scrollback);
+    const exitCallback = entry.onExit;
     terminals.delete(id);
-    onExit(exitCode);
+    exitCallback?.(exitCode);
   });
-  terminals.set(id, ptyProcess);
+  terminals.set(id, entry);
   return {
     id,
     pid: ptyProcess.pid,
@@ -1037,45 +1191,189 @@ function createTerminal(cwd, cols, rows, onData, onExit) {
     rows,
   };
 }
+function detachTerminal(id) {
+  const entry = terminals.get(id);
+  if (entry) {
+    console.log(
+      `[terminal-service] 🔌 DETACH terminal: id=${id}, pid=${entry.pty.pid} (PTY stays alive)`,
+    );
+    entry.onData = null;
+    entry.onExit = null;
+    return true;
+  }
+  console.log(`[terminal-service] ⚠️ DETACH failed - terminal not found: id=${id}`);
+  return false;
+}
+function hasTerminal(id) {
+  return terminals.has(id);
+}
 function writeTerminal(id, data) {
-  const term = terminals.get(id);
-  if (term) {
-    term.write(data);
+  const entry = terminals.get(id);
+  if (entry) {
+    entry.pty.write(data);
   }
 }
 function resizeTerminal(id, cols, rows) {
-  const term = terminals.get(id);
-  if (term) {
-    term.resize(cols, rows);
+  const entry = terminals.get(id);
+  if (entry) {
+    entry.pty.resize(cols, rows);
   }
 }
-function killTerminal(id) {
-  const term = terminals.get(id);
-  if (term) {
-    term.kill();
+function killTerminal(id, preserveScrollback = true) {
+  const entry = terminals.get(id);
+  if (entry) {
+    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (preserveScrollback) {
+      saveScrollback(id, entry.scrollback);
+    } else {
+      deleteScrollback(id);
+    }
+    entry.pty.kill();
     terminals.delete(id);
   }
 }
 function getTerminalInfo(id) {
-  const term = terminals.get(id);
-  if (!term) return null;
+  const entry = terminals.get(id);
+  if (!entry) return null;
   return {
     id,
-    pid: term.pid,
-    cwd: "",
-    // node-pty doesn't expose cwd after creation
-    cols: term.cols,
-    rows: term.rows,
+    pid: entry.pty.pid,
+    cwd: entry.cwd,
+    cols: entry.pty.cols,
+    rows: entry.pty.rows,
   };
 }
 function killAllTerminals() {
-  for (const [id, term] of terminals) {
-    term.kill();
+  for (const [id, entry] of terminals) {
+    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    saveScrollback(id, entry.scrollback);
+    entry.pty.kill();
     terminals.delete(id);
   }
 }
+function getTerminalChildProcesses(id) {
+  const entry = terminals.get(id);
+  if (!entry) return [];
+  try {
+    const { execSync } = require("child_process");
+    const result = execSync(`pgrep -P ${entry.pty.pid} 2>/dev/null || true`, {
+      encoding: "utf-8",
+    }).trim();
+    if (!result) return [];
+    const childPids = result.split("\n").filter(Boolean);
+    const names = [];
+    for (const pid of childPids) {
+      try {
+        const name = execSync(`ps -p ${pid} -o comm= 2>/dev/null || true`, {
+          encoding: "utf-8",
+        }).trim();
+        if (name) names.push(name);
+      } catch {}
+    }
+    return names;
+  } catch {
+    return [];
+  }
+}
+function getTerminalsWithProcesses() {
+  const result = [];
+  for (const [id, entry] of terminals) {
+    const processes = getTerminalChildProcesses(id);
+    if (processes.length > 0) {
+      result.push({ id, pid: entry.pty.pid, processes });
+    }
+  }
+  return result;
+}
+const managedTerminals = /* @__PURE__ */ new Map();
+function createManagedTerminal(cwd, onOutput) {
+  const id = `managed-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const effectiveCwd = cwd && fs.existsSync(cwd) ? cwd : os.homedir();
+  console.log(`[terminal-service] Creating managed terminal: id=${id}, cwd=${effectiveCwd}`);
+  const info = createTerminal(
+    effectiveCwd,
+    80,
+    24,
+    onOutput,
+    // Stream output back to renderer
+    (code) => {
+      console.log(`[terminal-service] Managed terminal exited: id=${id}, code=${code}`);
+      managedTerminals.delete(id);
+    },
+    id,
+  );
+  managedTerminals.set(id, {
+    cwd: effectiveCwd,
+    createdAt: Date.now(),
+  });
+  return { id: info.id, pid: info.pid, managed: true };
+}
+async function execInManagedTerminal(id, command, timeoutMs = 3e4) {
+  const entry = terminals.get(id);
+  if (!entry) throw new Error(`Terminal ${id} not found`);
+  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  return new Promise((resolve) => {
+    let output = "";
+    const originalOnData = entry.onData;
+    entry.onData = (data) => {
+      output += data;
+      originalOnData?.(data);
+    };
+    entry.pty.write(command + "\n");
+    const marker = `__OPENCLAW_EXEC_DONE_${Date.now()}__`;
+    setTimeout(() => {
+      entry.pty.write(`echo "${marker}"
+`);
+    }, 100);
+    const checkInterval = setInterval(() => {
+      if (output.includes(marker)) {
+        clearInterval(checkInterval);
+        clearTimeout(timer);
+        entry.onData = originalOnData;
+        const cleanOutput = output.split(marker)[0].replace(`echo "${marker}"`, "").trim();
+        resolve({ output: cleanOutput });
+      }
+    }, 100);
+    const timer = setTimeout(() => {
+      clearInterval(checkInterval);
+      entry.onData = originalOnData;
+      resolve({ output });
+    }, timeoutMs);
+  });
+}
+function readManagedTerminalOutput(id, _since, maxBytes = 5e4) {
+  const entry = terminals.get(id);
+  if (!entry) throw new Error(`Terminal ${id} not found`);
+  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  const fullOutput = entry.scrollback.join("");
+  return fullOutput.slice(-maxBytes);
+}
+function closeManagedTerminal(id, force = false) {
+  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  console.log(`[terminal-service] Closing managed terminal: id=${id}, force=${force}`);
+  managedTerminals.delete(id);
+  killTerminal(id, !force);
+}
+function isManagedTerminal(id) {
+  return managedTerminals.has(id);
+}
+function listManagedTerminals() {
+  const result = [];
+  for (const [id, meta] of managedTerminals) {
+    const entry = terminals.get(id);
+    if (entry) {
+      result.push({
+        id,
+        pid: entry.pty.pid,
+        cwd: meta.cwd,
+        createdAt: meta.createdAt,
+      });
+    }
+  }
+  return result;
+}
 function registerTerminalIpc() {
-  electron.ipcMain.handle("terminal:create", (event, cwd, cols, rows) => {
+  electron.ipcMain.handle("terminal:create", (event, cwd, cols, rows, existingId) => {
     const win = electron.BrowserWindow.fromWebContents(event.sender);
     const info = createTerminal(
       cwd,
@@ -1093,8 +1391,15 @@ function registerTerminalIpc() {
           win.webContents.send("terminal:exit", info.id, code);
         }
       },
+      existingId,
     );
     return { id: info.id, pid: info.pid };
+  });
+  electron.ipcMain.handle("terminal:detach", (_, id) => {
+    return detachTerminal(id);
+  });
+  electron.ipcMain.handle("terminal:exists", (_, id) => {
+    return hasTerminal(id);
   });
   electron.ipcMain.handle("terminal:write", (_, id, data) => {
     writeTerminal(id, data);
@@ -1108,6 +1413,31 @@ function registerTerminalIpc() {
   electron.ipcMain.handle("terminal:info", (_, id) => {
     return getTerminalInfo(id);
   });
+  electron.ipcMain.handle("terminal:createManaged", async (event, cwd) => {
+    const win = electron.BrowserWindow.fromWebContents(event.sender);
+    if (!win) throw new Error("No window");
+    const onOutput = (data) => {
+      if (!win.isDestroyed()) {
+        win.webContents.send("terminal:managed-output", data);
+      }
+    };
+    return createManagedTerminal(cwd, onOutput);
+  });
+  electron.ipcMain.handle("terminal:execManaged", async (_, id, command, timeoutMs) => {
+    return execInManagedTerminal(id, command, timeoutMs);
+  });
+  electron.ipcMain.handle("terminal:readManaged", (_, id, since, maxBytes) => {
+    return readManagedTerminalOutput(id, since, maxBytes);
+  });
+  electron.ipcMain.handle("terminal:closeManaged", (_, id, force) => {
+    return closeManagedTerminal(id, force);
+  });
+  electron.ipcMain.handle("terminal:isManaged", (_, id) => {
+    return isManagedTerminal(id);
+  });
+  electron.ipcMain.handle("terminal:listManaged", () => {
+    return listManagedTerminals();
+  });
 }
 function cleanupTerminals() {
   killAllTerminals();
@@ -1119,6 +1449,105 @@ function registerAllIpc() {
   registerGitHubIpc();
   registerLinearIpc();
   registerTerminalIpc();
+}
+const MAX_BUFFER_SIZE = 500;
+const buffer = [];
+const originalConsole = {
+  log: console.log.bind(console),
+  info: console.info.bind(console),
+  warn: console.warn.bind(console),
+  error: console.error.bind(console),
+  debug: console.debug.bind(console),
+};
+const NOISE_PATTERNS = [
+  /Terminal .* not found, will create new/,
+  // Routine terminal creation
+  /\[terminal-service\] Creating terminal/,
+  // Routine
+  /\[terminal-service\] Loaded .* scrollback/,
+  // Routine
+  /\[terminal-service\].*REATTACH/,
+  // Routine HMR reattach
+  /\[terminal-service\].*DETACH/,
+  // Routine HMR detach
+];
+function isNoise(message) {
+  return NOISE_PATTERNS.some((pattern) => pattern.test(message));
+}
+function formatArg(arg) {
+  if (arg === void 0) return "undefined";
+  if (arg === null) return "null";
+  if (typeof arg === "string") return arg;
+  if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
+  if (arg instanceof Error)
+    return `${arg.name}: ${arg.message}
+${arg.stack || ""}`;
+  try {
+    return JSON.stringify(arg, null, 2);
+  } catch {
+    return String(arg);
+  }
+}
+function captureLog(level, args) {
+  buffer.push({
+    level,
+    timestamp: Date.now(),
+    args,
+  });
+  if (buffer.length > MAX_BUFFER_SIZE) {
+    buffer.splice(0, buffer.length - MAX_BUFFER_SIZE);
+  }
+}
+function installConsoleInterceptor() {
+  console.log = (...args) => {
+    captureLog("log", args);
+    originalConsole.log(...args);
+  };
+  console.info = (...args) => {
+    captureLog("info", args);
+    originalConsole.info(...args);
+  };
+  console.warn = (...args) => {
+    captureLog("warn", args);
+    originalConsole.warn(...args);
+  };
+  console.error = (...args) => {
+    captureLog("error", args);
+    originalConsole.error(...args);
+  };
+  console.debug = (...args) => {
+    captureLog("debug", args);
+    originalConsole.debug(...args);
+  };
+}
+function formatEntry(entry) {
+  const time = new Date(entry.timestamp).toISOString();
+  const level = entry.level.toUpperCase().padEnd(5);
+  const message = entry.args.map(formatArg).join(" ");
+  return `[${time}] [${level}] ${message}`;
+}
+function getFilteredLogs() {
+  const filtered = [];
+  let lastMessage = "";
+  for (const entry of buffer) {
+    const message = entry.args.map(formatArg).join(" ");
+    if (isNoise(message)) continue;
+    if (
+      message === lastMessage &&
+      filtered.length > 0 &&
+      entry.timestamp - filtered[filtered.length - 1].timestamp < 1e3
+    ) {
+      continue;
+    }
+    filtered.push(entry);
+    lastMessage = message;
+  }
+  return filtered;
+}
+function getLogsAsText() {
+  const filtered = getFilteredLogs();
+  if (filtered.length === 0) return "(no main process logs)";
+  return filtered.map(formatEntry).join("\n");
 }
 const STATE_FILE = path.join(os.homedir(), ".kos", "window-state.json");
 let debounceTimer = null;
@@ -1156,6 +1585,7 @@ function trackWindowState(win) {
   win.on("move", saveState);
   win.on("close", saveState);
 }
+installConsoleInterceptor();
 let kosNative = null;
 if (process.platform === "darwin") {
   try {
@@ -1205,6 +1635,29 @@ electron.ipcMain.handle("dialog:openDirectory", async () => {
     properties: ["openDirectory", "createDirectory"],
   });
   return result;
+});
+electron.ipcMain.handle("logs:getMainLogs", () => {
+  return getLogsAsText();
+});
+electron.ipcMain.handle("logs:exportToFile", async (_, rendererLogs) => {
+  const { writeFileSync, mkdirSync } = await import("fs");
+  const logDir = path.join(os.homedir(), ".openclaw");
+  const logPath = path.join(logDir, "kos-debug.log");
+  try {
+    mkdirSync(logDir, { recursive: true });
+    const mainLogs = getLogsAsText();
+    const combined = `${rendererLogs}
+
+${"=".repeat(50)}
+=== Main Process Logs ===
+${"=".repeat(50)}
+
+${mainLogs}`;
+    writeFileSync(logPath, combined, "utf-8");
+    return { success: true, path: logPath };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 });
 const activeCaptures = /* @__PURE__ */ new Map();
 electron.ipcMain.handle("simulator:list-windows", async () => {
@@ -1387,6 +1840,7 @@ function createWindow() {
   }
 }
 electron.app.whenReady().then(() => {
+  cleanupOldScrollback();
   registerAllIpc();
   createMenu();
   utils.electronApp.setAppUserModelId("com.kinetic.kos");
@@ -1403,6 +1857,33 @@ electron.app.on("window-all-closed", () => {
     electron.app.quit();
   }
 });
-electron.app.on("before-quit", () => {
-  cleanupTerminals();
+let forceQuit = false;
+electron.app.on("before-quit", async (event) => {
+  if (forceQuit) {
+    cleanupTerminals();
+    return;
+  }
+  const activeTerminals = getTerminalsWithProcesses();
+  if (activeTerminals.length === 0) {
+    cleanupTerminals();
+    return;
+  }
+  event.preventDefault();
+  const processList = activeTerminals.map((t) => `  • ${t.processes.join(", ")}`).join("\n");
+  const { response } = await electron.dialog.showMessageBox({
+    type: "warning",
+    buttons: ["Cancel", "Quit Anyway"],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Terminals have running processes",
+    message: `${activeTerminals.length} terminal${activeTerminals.length > 1 ? "s have" : " has"} running processes:`,
+    detail: `${processList}
+
+Quitting will terminate these processes.`,
+  });
+  if (response === 1) {
+    forceQuit = true;
+    cleanupTerminals();
+    electron.app.quit();
+  }
 });

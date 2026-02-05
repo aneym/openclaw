@@ -141,10 +141,13 @@ export function Shell() {
   const projectsRef = useRef(projects);
   projectsRef.current = projects;
 
+  const isHomeRef = useRef(isHome);
+  isHomeRef.current = isHome;
+
   // Keyboard shortcuts - stable array, handlers read from refs
   const shortcuts = useMemo(() => {
-    // Helper to get current workspace ID from ref
-    const getWsId = () => activeWorkspaceRef.current?.id;
+    // Helper to get current workspace ID from ref - use HOME_WORKSPACE_ID when on Home tab
+    const getWsId = () => (isHomeRef.current ? HOME_WORKSPACE_ID : activeWorkspaceRef.current?.id);
 
     const items = [
       {
@@ -312,19 +315,26 @@ export function Shell() {
       },
     ];
 
-    // Number shortcuts for project switching
-    for (let i = 1; i <= 9; i += 1) {
+    // Number shortcuts for project switching (⌘1 = Home, ⌘2-9 = projects 1-8)
+    items.push({
+      key: "1",
+      metaKey: true,
+      shiftKey: false,
+      handler: () => handleSelectProject(HOME_PROJECT_ID),
+      description: "Switch to Home",
+    });
+    for (let i = 2; i <= 9; i += 1) {
       items.push({
         key: String(i),
         metaKey: true,
         shiftKey: false,
         handler: () => {
-          const project = projectsRef.current[i - 1];
+          const project = projectsRef.current[i - 2]; // ⌘2 = project[0], ⌘3 = project[1], etc.
           if (project) {
             handleSelectProject(project.id);
           }
         },
-        description: `Switch to project ${i}`,
+        description: `Switch to project ${i - 1}`,
       });
     }
 
@@ -381,7 +391,7 @@ export function Shell() {
         >
           <Sidebar
             projectId={activeProjectId}
-            workspaceId={activeWorkspace?.id}
+            workspaceId={isHome ? HOME_WORKSPACE_ID : activeWorkspace?.id}
             onNavigate={setView}
             currentView={view}
             isHome={isHome}

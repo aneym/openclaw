@@ -1,4 +1,4 @@
-import { RefreshCw } from "lucide-react";
+import { ExternalLink, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useCallback, useState } from "react";
 import { useLinearStore } from "../../stores/linear-store";
 import { Button } from "../ui/button";
@@ -135,15 +135,27 @@ export function KanbanBoard({ teamId, projectId }: KanbanBoardProps) {
               {issues.length} issue{issues.length !== 1 ? "s" : ""}
             </span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={isLoading}
-            className="h-7 px-2"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={isLoading}
+              className="h-7 px-2"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? "animate-spin" : ""}`} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2"
+              onClick={() => {
+                window.open(`https://linear.app/team/${team.key}/board`, "_blank");
+              }}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         </div>
 
         {/* Board */}

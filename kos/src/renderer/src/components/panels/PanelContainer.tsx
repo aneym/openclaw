@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useCallback } from "react";
 import { Panel, PanelGroup } from "react-resizable-panels";
 import type { PanelLayout, PanelNode, PanelState } from "../../types";
-import { scaleIn, fastTransition } from "../../lib/animation-variants";
+import { scaleIn, slideFromRight, slideFromBottom } from "../../lib/animation-variants";
 import { motion } from "../../lib/motion";
 import { usePanelStore } from "../../stores/panel-store";
 import { DroppableGutter } from "./DroppableGutter";
@@ -58,9 +58,18 @@ interface RenderNodeProps {
   activeChatId?: string;
   /** Path identifier for generating unique gutter IDs */
   path: string;
+  /** Entry direction for animation (set when this is the "new" panel from a split) */
+  entryDirection?: "horizontal" | "vertical";
 }
 
-function RenderNode({ node, panels, workspaceId, activeChatId, path }: RenderNodeProps) {
+function RenderNode({
+  node,
+  panels,
+  workspaceId,
+  activeChatId,
+  path,
+  entryDirection,
+}: RenderNodeProps) {
   const setFocusedPanelId = usePanelStore((s) => s.setFocusedPanelId);
   const closePanel = usePanelStore((s) => s.closePanel);
   // Track focused panel for visual indicator
@@ -99,16 +108,24 @@ function RenderNode({ node, panels, workspaceId, activeChatId, path }: RenderNod
       return chatPanels.length > 1;
     })();
 
+    // Pick animation based on entry direction (how this panel was split in)
+    const variants =
+      entryDirection === "horizontal"
+        ? slideFromRight
+        : entryDirection === "vertical"
+          ? slideFromBottom
+          : scaleIn;
+
     return (
       <DroppablePane panelId={node.panelId}>
         <motion.div
-          variants={scaleIn}
+          key={node.panelId}
+          variants={variants}
           initial="initial"
           animate="animate"
-          transition={fastTransition}
           onClick={handleFocus}
           onFocus={handleFocus}
-          className={`h-full w-full flex flex-col ${isFocused ? "ring-1 ring-primary/50" : ""}`}
+          className={`h-full w-full flex flex-col overflow-hidden border ${isFocused ? "border-primary/40" : "border-transparent"}`}
         >
           <PanelTabBar
             panelId={node.panelId}
@@ -129,6 +146,7 @@ function RenderNode({ node, panels, workspaceId, activeChatId, path }: RenderNod
               activeChatId={activeChatId}
               tabs={panelState.tabs}
               activeTabId={panelState.activeTabId}
+              isFocused={isFocused}
             />
           </div>
         </motion.div>
@@ -170,6 +188,7 @@ function RenderNode({ node, panels, workspaceId, activeChatId, path }: RenderNod
           workspaceId={workspaceId}
           activeChatId={activeChatId}
           path={`${path}1-`}
+          entryDirection={node.direction}
         />
       </Panel>
     </PanelGroup>

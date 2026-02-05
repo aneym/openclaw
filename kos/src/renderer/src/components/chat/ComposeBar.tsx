@@ -1,41 +1,52 @@
 import { Send, Square, X, ImageIcon } from "lucide-react";
-import { useState, useRef, KeyboardEvent, ClipboardEvent, DragEvent } from "react";
-import type { ChatMessage } from "../../types/message";
-import { useGatewayConnected, useGatewayRequest } from "../../gateway/hooks";
+import { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent, DragEvent } from "react";
+import type { QueuedMessage } from "../../stores/chat-session-store";
+import { useGatewayConnected } from "../../gateway/hooks";
 import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
 import { useImageAttachments } from "../../hooks/use-image-attachments";
-import { useStreaming } from "../../hooks/use-streaming";
 import { klog } from "../../lib/klog";
-import { notifications } from "../../lib/notifications";
 import { cn } from "../../lib/utils";
-import { generateUUID } from "../../lib/uuid";
-import { useAbortStore } from "../../stores/abort-store";
-import { useMessageQueueStore } from "../../stores/message-queue-store";
 import { MessageQueue } from "./MessageQueue";
 
 interface ComposeBarProps {
   sessionKey: string;
   chatId: string;
-  disabled?: boolean;
-  onAddMessage?: (message: ChatMessage) => void;
+  isStreaming: boolean;
+  autoFocus?: boolean;
+  queue: QueuedMessage[];
+  onSend: (text: string, attachments?: unknown[]) => Promise<void>;
+  onSendNow: (text: string, attachments?: unknown[]) => Promise<void>;
+  onAbort: () => Promise<void>;
+  onRemoveFromQueue: (messageId: string) => void;
 }
 
 export function ComposeBar({
   sessionKey,
   chatId,
-  disabled = false,
-  onAddMessage,
+  isStreaming,
+  autoFocus = false,
+  queue,
+  onSend,
+  onSendNow,
+  onAbort,
+  onRemoveFromQueue,
 }: ComposeBarProps) {
   const [text, setText] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  // Use individual selectors to avoid re-render on unrelated store changes
-  const request = useGatewayRequest();
+
+  // Auto-focus on mount when requested
+  useEffect(() => {
+    if (!autoFocus) return;
+    // Small delay to ensure panel animation completes
+    const timer = setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [autoFocus]);
+
+  // Gateway connection state
   const connected = useGatewayConnected();
-  const { isStreaming } = useStreaming(sessionKey);
   const { images, addImage, removeImage, clearImages } = useImageAttachments();
-  const addToQueue = useMessageQueueStore((state) => state.addToQueue);
-  const dequeue = useMessageQueueStore((state) => state.dequeue);
-  const { markPending, clearPending } = useAbortStore();
 
   // Auto-resize textarea based on content
   useAutoResizeTextarea(textareaRef, text);
@@ -114,130 +125,55 @@ export function ComposeBar({
     }
   };
 
-  const canSend = connected && !disabled && (text.trim().length > 0 || images.length > 0);
+  const canSend = connected && (text.trim().length > 0 || images.length > 0);
 
   const handleSend = async (immediate = false) => {
     if (!canSend) return;
 
     const messageText = text.trim();
-    const messageId = generateUUID();
+    const currentImages = [...images];
     setText("");
     clearImages();
 
     klog.compose("handleSend called", {
       sessionKey,
       chatId,
-      messageId,
       textLength: messageText.length,
       immediate,
       isStreaming,
     });
 
-    // If agent is streaming and not immediate, queue the message
-    if (isStreaming && !immediate) {
-      klog.compose("Queueing message (agent is streaming)");
-      addToQueue(chatId, messageText);
-      // Note: images are not queued, only text messages
-      return;
-    }
+    // Build attachments from images
+    const attachments =
+      currentImages.length > 0 ? currentImages.map((img) => ({ dataUrl: img.dataUrl })) : undefined;
 
-    // If immediate and streaming, abort current run first
-    if (immediate && isStreaming) {
-      klog.compose("Aborting current run before immediate send");
-      try {
-        await request("chat.abort", { sessionKey });
-      } catch (err) {
-        klog.composeError("abort failed:", err);
-      }
-    }
-
-    // Add user message locally (optimistic update)
-    if (onAddMessage) {
-      klog.compose("Adding optimistic user message");
-      onAddMessage({
-        id: messageId,
-        role: "user",
-        parts: [{ type: "text", text: messageText }],
-        createdAt: Date.now(),
-        chatId,
-      });
-    }
-
-    try {
-      klog.compose("Sending chat.send request", {
-        sessionKey,
-        messageId,
-        imageCount: images.length,
-      });
-      // Build attachments array from images
-      const attachments = images.map((img) => ({
-        type: "image" as const,
-        mimeType: "image/jpeg",
-        data: img.dataUrl.replace(/^data:image\/[a-z]+;base64,/, ""),
-      }));
-      const result = await request("chat.send", {
-        sessionKey,
-        message: messageText,
-        deliver: false,
-        idempotencyKey: messageId,
-        ...(attachments.length > 0 && { attachments }),
-      });
-      klog.compose("chat.send response:", result);
-    } catch (err) {
-      klog.composeError("send failed:", err);
-      notifications.messageFailed(
-        err instanceof Error ? err.message : "Unknown error",
-        err instanceof Error ? { message: err.message, stack: err.stack } : undefined,
-      );
+    if (immediate) {
+      // Send immediately (will abort if streaming)
+      await onSendNow(messageText, attachments);
+    } else {
+      // Normal send (will queue if streaming)
+      await onSend(messageText, attachments);
     }
   };
 
-  const handleSendNow = async () => {
+  const handleSendQueuedNow = async () => {
     // Abort current run and send the first queued message
-    try {
-      await request("chat.abort", { sessionKey });
-    } catch (err) {
-      console.error("[compose] abort failed:", err);
-    }
+    if (queue.length === 0) return;
 
-    const firstMessage = dequeue(chatId);
-    if (firstMessage) {
-      try {
-        await request("chat.send", {
-          sessionKey,
-          message: firstMessage.text,
-          deliver: false,
-          idempotencyKey: generateUUID(),
-        });
-      } catch (err) {
-        console.error("[compose] send queued message failed:", err);
-      }
-    }
+    const firstMessage = queue[0];
+    onRemoveFromQueue(firstMessage.id);
+
+    klog.compose("handleSendQueuedNow", { id: firstMessage.id });
+
+    // Send immediately (will abort first)
+    await onSendNow(firstMessage.text, firstMessage.attachments);
   };
 
   const handleAbort = async () => {
     if (!isStreaming) return;
 
     klog.compose("handleAbort called", { sessionKey, connected });
-
-    // If not connected, mark as pending for retry after reconnect
-    if (!connected) {
-      klog.compose("Not connected, marking abort as pending");
-      markPending(sessionKey);
-      notifications.info("Abort queued", "Will stop when connection is restored");
-      return;
-    }
-
-    try {
-      await request("chat.abort", { sessionKey });
-      klog.compose("Abort successful");
-      clearPending(sessionKey);
-    } catch (err) {
-      klog.composeError("Abort failed:", err);
-      // Mark as pending for retry
-      markPending(sessionKey);
-      notifications.error("Failed to stop", err instanceof Error ? err.message : "Unknown error");
-    }
+    await onAbort();
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -255,7 +191,7 @@ export function ComposeBar({
 
   return (
     <>
-      <MessageQueue chatId={chatId} onSendNow={handleSendNow} />
+      <MessageQueue queue={queue} onSendNow={handleSendQueuedNow} onRemove={onRemoveFromQueue} />
       <div
         className="relative border-t border-border bg-background px-4 py-3"
         onDragEnter={handleDragEnter}
@@ -311,13 +247,11 @@ export function ComposeBar({
               placeholder={
                 !connected
                   ? "Disconnected..."
-                  : disabled
-                    ? "Waiting..."
-                    : isStreaming
-                      ? "Message will be queued..."
-                      : "Type a message..."
+                  : isStreaming
+                    ? "Message will be queued..."
+                    : "Type a message..."
               }
-              disabled={!connected || disabled}
+              disabled={!connected}
               rows={1}
               className={cn(
                 "flex-1 resize-none rounded-md border border-input bg-background px-3 py-2",

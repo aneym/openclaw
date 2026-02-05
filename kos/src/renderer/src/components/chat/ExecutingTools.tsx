@@ -4,7 +4,7 @@
  */
 
 import { Loader2, Wrench } from "lucide-react";
-import type { ActiveTool } from "@/hooks/use-streaming";
+import type { ActiveTool } from "@/stores/chat-session-store";
 import { cn } from "@/lib/utils";
 
 interface ExecutingToolsProps {

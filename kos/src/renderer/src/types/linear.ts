@@ -25,7 +25,10 @@ export interface LinearRelation {
     id: string;
     identifier: string;
     title: string;
-    state: { name: string };
+    state: {
+      name: string;
+      type: "backlog" | "unstarted" | "started" | "completed" | "canceled";
+    };
   };
 }
 

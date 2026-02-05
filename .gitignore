@@ -77,3 +77,7 @@ USER.md
 
 # Local caches
 .serena/
+
+# Reference repos (local only, for inspiration)
+ai-chatbot/
+webclaw/

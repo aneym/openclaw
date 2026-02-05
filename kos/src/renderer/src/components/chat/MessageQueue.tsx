@@ -4,26 +4,16 @@
  */
 
 import { X } from "lucide-react";
-import { useMemo } from "react";
+import type { QueuedMessage } from "../../stores/chat-session-store";
 import { cn } from "../../lib/utils";
-import { useMessageQueueStore } from "../../stores/message-queue-store";
 
 interface MessageQueueProps {
-  chatId: string;
+  queue: QueuedMessage[];
   onSendNow: () => void;
+  onRemove: (messageId: string) => void;
 }
 
-// Empty array constant to avoid creating new arrays on each render
-const EMPTY_QUEUE: never[] = [];
-
-export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
-  const queuesMap = useMessageQueueStore((state) => state.queues);
-  const removeFromQueue = useMessageQueueStore((state) => state.removeFromQueue);
-  const clearQueue = useMessageQueueStore((state) => state.clearQueue);
-
-  // Memoize to avoid infinite loop from new array reference
-  const queue = useMemo(() => queuesMap.get(chatId) ?? EMPTY_QUEUE, [queuesMap, chatId]);
-
+export function MessageQueue({ queue, onSendNow, onRemove }: MessageQueueProps) {
   if (queue.length === 0) {
     return null;
   }
@@ -35,6 +25,13 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
       minute: "2-digit",
       hour12: true,
     });
+  };
+
+  const handleClearAll = () => {
+    // Remove all items from queue
+    for (const msg of queue) {
+      onRemove(msg.id);
+    }
   };
 
   return (
@@ -54,7 +51,7 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
             Send Now
           </button>
           <button
-            onClick={() => clearQueue(chatId)}
+            onClick={handleClearAll}
             className={cn(
               "text-xs px-2 py-1 rounded bg-muted text-muted-foreground",
               "hover:bg-muted/80 transition-colors",
@@ -88,11 +85,11 @@ export function MessageQueue({ chatId, onSendNow }: MessageQueueProps) {
               </p>
               {/* Timestamp */}
               <span className="text-xs text-muted-foreground mt-1 block">
-                {formatTimestamp(msg.timestamp)}
+                {formatTimestamp(msg.createdAt)}
               </span>
             </div>
             <button
-              onClick={() => removeFromQueue(chatId, msg.id)}
+              onClick={() => onRemove(msg.id)}
               className={cn(
                 "shrink-0 p-0.5 rounded hover:bg-muted transition-colors",
                 "text-muted-foreground hover:text-foreground",

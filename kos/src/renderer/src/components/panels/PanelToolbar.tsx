@@ -18,20 +18,34 @@ import {
 } from "lucide-react";
 import { useMemo, memo } from "react";
 import type { Chat, PanelType } from "../../types";
+import { useChatSession } from "../../hooks/use-chat-session";
 import { useSessionActions } from "../../hooks/use-session-actions";
-import { useStreaming } from "../../hooks/use-streaming";
 import { useChatStore } from "../../stores/chat-store";
 import { usePanelStore } from "../../stores/panel-store";
+import { PANEL_TYPE_LABELS } from "../../types/panel";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { DraggableTitlebar } from "./DraggableTitlebar";
+
+/** Panel types available in the split menu (excludes 'empty' which isn't user-selectable) */
+const SPLITTABLE_PANEL_TYPES: PanelType[] = [
+  "chat",
+  "terminal",
+  "browser",
+  "tasks",
+  "preview",
+  "code",
+  "coding-session",
+];
 
 interface PanelToolbarProps {
   panelId: string;
@@ -67,8 +81,7 @@ export const PanelToolbar = memo(function PanelToolbar({
   const sessionKey = chat?.sessionKey ?? "";
 
   // Session state and actions (only used for chat panels)
-  // Use useStreaming instead of useSession to avoid duplicate subscriptions
-  const { isStreaming } = useStreaming(sessionKey);
+  const { isStreaming } = useChatSession(sessionKey, chatId ?? "");
   const { archive, copySessionKey, isLoading, connected } = useSessionActions(
     sessionKey,
     chatId ?? "",
@@ -164,29 +177,41 @@ export const PanelToolbar = memo(function PanelToolbar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            {/* Quick split (same type as current) */}
-            <DropdownMenuItem onClick={() => handleSplitWithType("horizontal", "chat")}>
-              <SplitSquareHorizontal className="mr-2 h-4 w-4" />
-              <span>Split Right (Chat)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleSplitWithType("vertical", "chat")}>
-              <SplitSquareVertical className="mr-2 h-4 w-4" />
-              <span>Split Down (Chat)</span>
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            {/* Split with different panel types */}
-            <DropdownMenuItem onClick={() => handleSplitWithType("horizontal", "browser")}>
-              <Globe className="mr-2 h-4 w-4" />
-              <span>Split Right (Browser)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleSplitWithType("horizontal", "terminal")}>
-              <Keyboard className="mr-2 h-4 w-4" />
-              <span>Split Right (Terminal)</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleSplitWithType("horizontal", "tasks")}>
-              <ClipboardList className="mr-2 h-4 w-4" />
-              <span>Split Right (Tasks)</span>
-            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <SplitSquareHorizontal className="mr-2 h-4 w-4" />
+                <span>Split Right</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {SPLITTABLE_PANEL_TYPES.map((type) => (
+                  <DropdownMenuItem
+                    key={type}
+                    onClick={() => handleSplitWithType("horizontal", type)}
+                  >
+                    <PanelTypeIcon type={type} className="mr-2 h-4 w-4" />
+                    <span>{PANEL_TYPE_LABELS[type]}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <SplitSquareVertical className="mr-2 h-4 w-4" />
+                <span>Split Down</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {SPLITTABLE_PANEL_TYPES.map((type) => (
+                  <DropdownMenuItem
+                    key={type}
+                    onClick={() => handleSplitWithType("vertical", type)}
+                  >
+                    <PanelTypeIcon type={type} className="mr-2 h-4 w-4" />
+                    <span>{PANEL_TYPE_LABELS[type]}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
           </DropdownMenuContent>
         </DropdownMenu>
 

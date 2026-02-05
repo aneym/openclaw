@@ -14,6 +14,7 @@ import { useState, useEffect } from "react";
 import type { ChatMessage, ToolCallPart, ToolResultPart } from "../../../types/message";
 import type { CodingPhase } from "../PhaseIndicator";
 import { normalizeMessage } from "../../../gateway/normalize";
+import { sessionKeysMatch } from "../../../lib/session-keys";
 import { useGatewayStore } from "../../../stores/gateway-store";
 
 interface CodingEvent {
@@ -220,7 +221,7 @@ export function useCodingSession(sessionKey: string) {
 
     const unsubscribe = subscribe("chat", (payload) => {
       const event = payload as ChatEventPayload;
-      if (event.sessionKey === sessionKey && event.message) {
+      if (sessionKeysMatch(event.sessionKey, sessionKey) && event.message) {
         const message = normalizeMessage(event.message, sessionKey);
 
         setEvents((prevEvents) => {

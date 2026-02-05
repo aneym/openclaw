@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { memo, useMemo, useCallback } from "react";
 import type { Chat, PanelType, PanelTab } from "../../types";
+import { useChatSession } from "../../hooks/use-chat-session";
 import { useSessionActions } from "../../hooks/use-session-actions";
-import { useStreaming } from "../../hooks/use-streaming";
 import { cn } from "../../lib/utils";
 import { useChatStore } from "../../stores/chat-store";
 import { usePanelStore } from "../../stores/panel-store";
@@ -76,7 +76,7 @@ export const PanelTabBar = memo(function PanelTabBar({
   const sessionKey = chat?.sessionKey ?? "";
 
   // Session state and actions (only for chat panels)
-  const { isStreaming } = useStreaming(sessionKey);
+  const { isStreaming } = useChatSession(sessionKey, chatId ?? "");
   const { archive, reload, copySessionKey, isLoading, connected } = useSessionActions(
     sessionKey,
     chatId ?? "",

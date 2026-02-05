@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import type { ActiveTool } from "@/hooks/use-streaming";
+import type { ActiveTool } from "@/stores/chat-session-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "@/types/message";
@@ -13,6 +13,7 @@ interface MessageListProps {
   isStreaming?: boolean;
   streamText?: string;
   activeTools?: ActiveTool[];
+  awaitingResponse?: boolean;
   className?: string;
 }
 
@@ -58,6 +59,7 @@ export function MessageList({
   isStreaming,
   streamText,
   activeTools = [],
+  awaitingResponse = false,
   className,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -66,12 +68,31 @@ export function MessageList({
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const prevMessageCountRef = useRef(messages.length);
 
+  // Scroll throttling refs for streaming autoscroll
+  const scrollThrottleRef = useRef<number | null>(null);
+  const userScrolledAwayRef = useRef(false);
+
   // Group consecutive same-role messages
   const messageGroups = useMemo(() => groupConsecutiveMessages(messages), [messages]);
 
   // Scroll to bottom instantly on initial mount
   useEffect(() => {
     sentinelRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
+  }, []);
+
+  // Track user scroll intent — pause autoscroll when user scrolls up
+  const handleScroll = useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const distanceFromBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+
+    // If user scrolled more than 200px from bottom, pause autoscroll
+    if (distanceFromBottom > 200) {
+      userScrolledAwayRef.current = true;
+    } else if (distanceFromBottom < 50) {
+      userScrolledAwayRef.current = false;
+    }
   }, []);
 
   // Track when we're at the bottom using IntersectionObserver
@@ -86,6 +107,7 @@ export function MessageList({
         // Clear "new messages" badge when we reach the bottom
         if (entry.isIntersecting) {
           setHasNewMessages(false);
+          userScrolledAwayRef.current = false;
         }
       },
       {
@@ -114,12 +136,28 @@ export function MessageList({
     }
   }, [messages.length, isAtBottom]);
 
-  // Auto-scroll during streaming (if at bottom)
+  // Auto-scroll during streaming with throttling (if at bottom and user hasn't scrolled away)
   useEffect(() => {
-    if (isStreaming && isAtBottom) {
+    if (!isStreaming || !isAtBottom || userScrolledAwayRef.current) return;
+
+    // Throttle: only scroll once per 120ms frame
+    if (scrollThrottleRef.current) return;
+
+    scrollThrottleRef.current = requestAnimationFrame(() => {
       sentinelRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
-    }
-  }, [isStreaming, isAtBottom, streamText]);
+      setTimeout(() => {
+        scrollThrottleRef.current = null;
+      }, 120);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      if (scrollThrottleRef.current) {
+        cancelAnimationFrame(scrollThrottleRef.current);
+        scrollThrottleRef.current = null;
+      }
+    };
+  }, [isStreaming, isAtBottom]); // NO streamText dependency - throttle handles updates
 
   // Scroll to bottom handler
   const scrollToBottom = useCallback(() => {
@@ -131,6 +169,7 @@ export function MessageList({
       {/* Scrollable message container */}
       <div
         ref={containerRef}
+        onScroll={handleScroll}
         className={cn("flex-1 overflow-y-auto overflow-x-hidden", "px-4 py-4", className)}
         role="log"
         aria-live="polite"
@@ -164,6 +203,14 @@ export function MessageList({
                 />
               );
             })}
+
+            {/* Show "Thinking..." when awaiting response but no streaming yet */}
+            {awaitingResponse && !isStreaming && !streamText && (
+              <div className="flex items-start gap-2 py-2">
+                <StreamingIndicator />
+                <span className="text-muted-foreground text-sm">Thinking...</span>
+              </div>
+            )}
 
             {/* Show streaming content when assistant is responding (or pending clear) */}
             {(isStreaming || streamText) &&

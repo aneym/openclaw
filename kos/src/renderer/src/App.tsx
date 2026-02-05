@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Shell } from "./components/layout/Shell";
 import { Toaster } from "./components/ui/sonner";
-import { useAbortRetry } from "./hooks/use-abort-retry";
 import { useSessionSync } from "./hooks/use-session-sync";
 import { useTheme } from "./hooks/use-theme";
 import { klog } from "./lib/klog";
@@ -19,6 +18,11 @@ function App() {
   const disconnect = useGatewayStore((s) => s.disconnect);
   const connected = useGatewayStore((s) => s.connected);
 
+  // Debug: log when connected state changes
+  useEffect(() => {
+    console.log("[App] Gateway connected state changed:", connected);
+  }, [connected]);
+
   // Profile state
   const activeProfile = useActiveProfile();
   const activeProfileId = useActiveProfileId();
@@ -30,7 +34,7 @@ function App() {
   // Initialize theme system — applies CSS vars and dark/light class on <html>
   useTheme();
   useSessionSync();
-  useAbortRetry(); // Retry pending aborts after reconnection
+  // Note: Abort retry is now handled internally by useChatSession per-session
 
   // Connect to gateway on startup and reconnect on profile change
   useEffect(() => {

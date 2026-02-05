@@ -10,6 +10,8 @@ import { KanbanEmptyState } from "../kanban/KanbanEmptyState";
 import { BrowserPanel } from "./BrowserPanel";
 import { ChatPanel } from "./ChatPanel";
 import { EmptyChatPane } from "./EmptyChatPane";
+import { EmptyTerminalPane } from "./EmptyTerminalPane";
+import { PanelTypeSwitcher } from "./PanelTypeSwitcher";
 import { TerminalPanel } from "./TerminalPanel";
 
 interface PanelContentProps {
@@ -20,6 +22,7 @@ interface PanelContentProps {
   activeChatId?: string;
   tabs?: PanelTab[];
   activeTabId?: string;
+  isFocused?: boolean;
 }
 
 export function PanelContent({
@@ -30,6 +33,7 @@ export function PanelContent({
   activeChatId,
   tabs,
   activeTabId,
+  isFocused = false,
 }: PanelContentProps) {
   // Get workspace to derive projectId if needed (for legacy panels)
   const workspacesMap = useWorkspaceStore((s) => s.workspaces);
@@ -62,35 +66,62 @@ export function PanelContent({
 
   switch (type) {
     case "chat": {
-      // For tabbed panels, use the active tab's contentId
-      // For non-tabbed (legacy), use panel data or activeChatId
-      let chatId: string | undefined;
-
+      // For tabbed chat panels, use tab's contentId (don't fall back to activeChatId)
+      // This ensures duplicated/split panels show empty state, not the active chat
       if (isTabbed && tabs && tabs.length > 0) {
-        // Tab-based: use active tab's contentId
-        chatId = activeTab?.contentId;
-      } else {
-        // Legacy: check panel data
-        const explicitChatId = data?.chatId as string | undefined;
-        const hasExplicitData = data !== undefined;
-        chatId = explicitChatId ?? (hasExplicitData ? undefined : activeChatId);
+        const chatId = (data?.chatId as string | undefined) ?? activeTab?.contentId;
+
+        console.log("[PanelContent] tabbed chat panel render", {
+          panelId,
+          workspaceId,
+          chatId,
+          activeTabId: activeTab?.id,
+          data,
+        });
+
+        if (!chatId) {
+          // Tab has no contentId - show empty state with session picker
+          return (
+            <EmptyChatPane workspaceId={workspaceId} panelId={panelId} openChatIds={openChatIds} />
+          );
+        }
+        return <ChatPanel chatId={chatId} autoFocus={isFocused} />;
       }
 
+      // For non-tabbed (legacy) panels, fall back to activeChatId
+      const chatId = (data?.chatId as string | undefined) ?? activeChatId;
+
+      console.log("[PanelContent] non-tabbed chat panel render", {
+        panelId,
+        workspaceId,
+        chatId,
+        activeChatId,
+        data,
+      });
+
       if (!chatId) {
-        // Show empty state with session picker
         return (
           <EmptyChatPane workspaceId={workspaceId} panelId={panelId} openChatIds={openChatIds} />
         );
       }
-      return <ChatPanel chatId={chatId} />;
+      return <ChatPanel chatId={chatId} autoFocus={isFocused} />;
     }
 
     case "coding-session": {
       const sessionKey = data?.sessionKey as string | undefined;
       if (!sessionKey) {
         return (
-          <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-            <p className="text-sm">No coding session</p>
+          <div className="flex flex-col h-full">
+            <div className="shrink-0 border-b border-border/50 px-3 py-1.5 bg-muted/30">
+              <PanelTypeSwitcher
+                workspaceId={workspaceId}
+                panelId={panelId}
+                currentType="coding-session"
+              />
+            </div>
+            <div className="flex-1 flex flex-col items-center justify-center bg-background text-muted-foreground">
+              <p className="text-sm">No coding session</p>
+            </div>
           </div>
         );
       }
@@ -99,19 +130,37 @@ export function PanelContent({
 
     case "terminal": {
       // For tabbed panels, use the active tab's contentId as terminalId
-      // For non-tabbed (legacy), use panel data
-      let terminalId: string | undefined;
-      let terminalCwd: string | undefined;
+      // For non-tabbed (legacy), use panel data or panelId as fallback
+      // The stable ID allows PTY to survive HMR (detach on unmount, reattach on remount)
+
+      // Check if this is a managed terminal (AI-controlled)
+      const isManaged = Boolean(data?.managed);
 
       if (isTabbed && tabs && tabs.length > 0) {
-        terminalId = activeTab?.contentId;
-        terminalCwd = activeTab?.data?.cwd as string | undefined;
-      } else {
-        terminalId = data?.terminalId as string | undefined;
-        terminalCwd = data?.cwd as string | undefined;
-      }
+        const terminalId = activeTab?.contentId;
+        const terminalCwd = activeTab?.data?.cwd as string | undefined;
+        const tabManaged = Boolean(activeTab?.data?.managed) || isManaged;
 
-      return <TerminalPanel terminalId={terminalId} cwd={terminalCwd} />;
+        // If no contentId yet, show empty state with type switcher
+        // This allows switching panel type before starting the terminal
+        if (!terminalId) {
+          return (
+            <EmptyTerminalPane
+              workspaceId={workspaceId}
+              panelId={panelId}
+              tabId={activeTab?.id}
+              cwd={terminalCwd}
+            />
+          );
+        }
+
+        return <TerminalPanel terminalId={terminalId} cwd={terminalCwd} managed={tabManaged} />;
+      } else {
+        // Legacy non-tabbed terminal - just start immediately
+        const terminalId = (data?.terminalId as string | undefined) ?? `term-${panelId}`;
+        const terminalCwd = data?.cwd as string | undefined;
+        return <TerminalPanel terminalId={terminalId} cwd={terminalCwd} managed={isManaged} />;
+      }
     }
 
     case "browser": {
@@ -122,9 +171,14 @@ export function PanelContent({
 
     case "preview":
       return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Preview Panel</p>
-          <p className="text-xs mt-2 text-muted-foreground/60">iOS Simulator / Web Preview</p>
+        <div className="flex flex-col h-full">
+          <div className="shrink-0 border-b border-border/50 px-3 py-1.5 bg-muted/30">
+            <PanelTypeSwitcher workspaceId={workspaceId} panelId={panelId} currentType="preview" />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center bg-background text-muted-foreground">
+            <p className="text-sm">Preview Panel</p>
+            <p className="text-xs mt-2 text-muted-foreground/60">iOS Simulator / Web Preview</p>
+          </div>
         </div>
       );
 
@@ -145,17 +199,27 @@ export function PanelContent({
 
     case "code":
       return (
-        <div className="flex flex-col items-center justify-center h-full bg-background text-muted-foreground">
-          <p className="text-sm">Code Panel</p>
-          <p className="text-xs mt-2 text-muted-foreground/60">Diff view / File browser</p>
+        <div className="flex flex-col h-full">
+          <div className="shrink-0 border-b border-border/50 px-3 py-1.5 bg-muted/30">
+            <PanelTypeSwitcher workspaceId={workspaceId} panelId={panelId} currentType="code" />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center bg-background text-muted-foreground">
+            <p className="text-sm">Code Panel</p>
+            <p className="text-xs mt-2 text-muted-foreground/60">Diff view / File browser</p>
+          </div>
         </div>
       );
 
     case "empty":
       return (
-        <div className="flex flex-col items-center justify-center h-full bg-muted/20 text-muted-foreground border-2 border-dashed border-muted">
-          <p className="text-sm">Empty Panel</p>
-          <p className="text-xs mt-2">Split to add content</p>
+        <div className="flex flex-col h-full">
+          <div className="shrink-0 border-b border-border/50 px-3 py-1.5 bg-muted/30">
+            <PanelTypeSwitcher workspaceId={workspaceId} panelId={panelId} currentType="empty" />
+          </div>
+          <div className="flex-1 flex flex-col items-center justify-center bg-muted/20 text-muted-foreground border-2 border-dashed border-muted">
+            <p className="text-sm">Empty Panel</p>
+            <p className="text-xs mt-2">Choose a panel type above</p>
+          </div>
         </div>
       );
 

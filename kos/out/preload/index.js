@@ -4,6 +4,12 @@ const electron = require("electron");
 const api = {
   getGatewayConfig: () => electron.ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
+  // Logs API (for debugging and agent self-iteration)
+  logs: {
+    getMainLogs: () => electron.ipcRenderer.invoke("logs:getMainLogs"),
+    // Export to ~/.openclaw/kos-debug.log for agent access
+    exportToFile: (rendererLogs) => electron.ipcRenderer.invoke("logs:exportToFile", rendererLogs),
+  },
   // Config APIs
   config: {
     getGlobal: () => electron.ipcRenderer.invoke("config:getGlobal"),
@@ -99,10 +105,16 @@ const api = {
   },
   // Terminal APIs
   terminal: {
-    create: (cwd, cols, rows) => electron.ipcRenderer.invoke("terminal:create", cwd, cols, rows),
+    // Create new terminal or reattach to existing one (for HMR persistence)
+    create: (cwd, cols, rows, existingId) =>
+      electron.ipcRenderer.invoke("terminal:create", cwd, cols, rows, existingId),
     write: (id, data) => electron.ipcRenderer.invoke("terminal:write", id, data),
     resize: (id, cols, rows) => electron.ipcRenderer.invoke("terminal:resize", id, cols, rows),
     kill: (id) => electron.ipcRenderer.invoke("terminal:kill", id),
+    // Detach without killing (for HMR - keeps PTY alive)
+    detach: (id) => electron.ipcRenderer.invoke("terminal:detach", id),
+    // Check if terminal still exists in main process
+    exists: (id) => electron.ipcRenderer.invoke("terminal:exists", id),
     onData: (callback) => {
       const listener = (_, id, data) => callback(id, data);
       electron.ipcRenderer.on("terminal:data", listener);
@@ -112,6 +124,20 @@ const api = {
       const listener = (_, id, code) => callback(id, code);
       electron.ipcRenderer.on("terminal:exit", listener);
       return () => electron.ipcRenderer.removeListener("terminal:exit", listener);
+    },
+    // Managed terminal methods (for AI agent control)
+    createManaged: (cwd) => electron.ipcRenderer.invoke("terminal:createManaged", cwd),
+    execManaged: (id, command, timeoutMs) =>
+      electron.ipcRenderer.invoke("terminal:execManaged", id, command, timeoutMs),
+    readManaged: (id, since, maxBytes) =>
+      electron.ipcRenderer.invoke("terminal:readManaged", id, since, maxBytes),
+    closeManaged: (id, force) => electron.ipcRenderer.invoke("terminal:closeManaged", id, force),
+    isManaged: (id) => electron.ipcRenderer.invoke("terminal:isManaged", id),
+    listManaged: () => electron.ipcRenderer.invoke("terminal:listManaged"),
+    onManagedOutput: (callback) => {
+      const listener = (_, data) => callback(data);
+      electron.ipcRenderer.on("terminal:managed-output", listener);
+      return () => electron.ipcRenderer.removeListener("terminal:managed-output", listener);
     },
   },
   // Browser panel APIs (multi-tab support)

@@ -189,8 +189,18 @@ export function loadSessionEntry(sessionKey: string) {
   const agentId = resolveSessionStoreAgentId(cfg, canonicalKey);
   const storePath = resolveStorePath(sessionCfg?.store, { agentId });
   const store = loadSessionStore(storePath);
-  const entry = store[canonicalKey];
-  return { cfg, storePath, store, entry, canonicalKey };
+  let entry = store[canonicalKey];
+  let legacyKey: string | undefined;
+  if (!entry) {
+    // Back-compat: some sessions were stored without the agent prefix.
+    const parsed = parseAgentSessionKey(canonicalKey);
+    const fallback = parsed?.rest;
+    if (fallback && fallback !== canonicalKey) {
+      entry = store[fallback];
+      legacyKey = entry ? fallback : undefined;
+    }
+  }
+  return { cfg, storePath, store, entry, canonicalKey, legacyKey };
 }
 
 export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySessionRow["kind"] {

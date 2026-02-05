@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { sessionKeysMatch } from "../lib/session-keys";
 import { useGatewayStore } from "../stores/gateway-store";
 
 /** Individual selectors to avoid object creation on every render */
@@ -64,14 +65,14 @@ export function useSession(sessionKey: string) {
       // Subscribe to chat events for messages
       subscribe("chat", (payload: unknown) => {
         const p = payload as ChatEventPayload;
-        if (p?.sessionKey === sessionKey && p.message) {
+        if (sessionKeysMatch(p?.sessionKey, sessionKey) && p.message) {
           setMessages((prev) => [...prev, p.message]);
         }
       }),
       // Subscribe to agent events for streaming lifecycle
       subscribe("agent", (payload: unknown) => {
         const p = payload as AgentEventPayload;
-        if (p?.sessionKey !== sessionKey) return;
+        if (!sessionKeysMatch(p?.sessionKey, sessionKey)) return;
 
         // Handle lifecycle events for streaming state
         if (p.stream === "lifecycle") {

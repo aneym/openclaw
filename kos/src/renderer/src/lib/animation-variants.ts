@@ -39,11 +39,31 @@ export const collapse: Variants = {
   },
 };
 
-// Scale in (for panels)
+// Panel transition - clean, no spring
+const panelTransition: Transition = {
+  duration: 0.2,
+  ease: cleanEase,
+};
+
+// Fade in only (for panels without direction context / initial load)
 export const scaleIn: Variants = {
-  initial: { scale: 0.98, opacity: 0 },
-  animate: { scale: 1, opacity: 1, transition: fastTransition },
-  exit: { scale: 0.98, opacity: 0, transition: fastTransition },
+  initial: { opacity: 0 },
+  animate: { opacity: 1, transition: panelTransition },
+  exit: { opacity: 0, transition: fastTransition },
+};
+
+// Slide in from right (horizontal split - new panel appears right)
+export const slideFromRight: Variants = {
+  initial: { x: "100%", opacity: 0.5 },
+  animate: { x: 0, opacity: 1, transition: panelTransition },
+  exit: { x: "100%", opacity: 0, transition: fastTransition },
+};
+
+// Slide in from bottom (vertical split - new panel appears below)
+export const slideFromBottom: Variants = {
+  initial: { y: "100%", opacity: 0.5 },
+  animate: { y: 0, opacity: 1, transition: panelTransition },
+  exit: { y: "100%", opacity: 0, transition: fastTransition },
 };
 
 // Slide up (for messages entering)

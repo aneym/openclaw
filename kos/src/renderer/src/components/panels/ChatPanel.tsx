@@ -1,17 +1,17 @@
 import { useEffect, useMemo } from "react";
 import type { Chat } from "../../types";
-import { useStreaming } from "../../hooks/use-streaming";
+import { useChatSession } from "../../hooks/use-chat-session";
 import { klog } from "../../lib/klog";
 import { useChatStore } from "../../stores/chat-store";
 import { ComposeBar } from "../chat/ComposeBar";
-import { useMessages } from "../chat/hooks/useMessages";
 import { MessageList } from "../chat/MessageList";
 
 interface ChatPanelProps {
   chatId: string;
+  autoFocus?: boolean;
 }
 
-export function ChatPanel({ chatId }: ChatPanelProps) {
+export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
   // Select raw Map to avoid calling method in selector (causes infinite loops)
   const chatsMap = useChatStore((s) => s.chats);
 
@@ -31,13 +31,21 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
     });
   }, [chatId, sessionKey, chat]);
 
-  // Track streaming state (hooks must be called unconditionally)
-  const { isStreaming, streamText, activeTools, clearStreaming } = useStreaming(sessionKey);
-
-  // Fetch messages - pass clearStreaming to avoid flash when streaming ends
-  const { messages, loading, error, addMessage } = useMessages(sessionKey, chatId, {
-    onHistoryReload: clearStreaming,
-  });
+  // Unified chat session state - single hook manages messages + streaming + queue
+  const {
+    messages,
+    loading,
+    error,
+    isStreaming,
+    streamText,
+    activeTools,
+    awaitingResponse,
+    queue,
+    sendMessage,
+    sendNow,
+    abort,
+    removeFromQueue,
+  } = useChatSession(sessionKey, chatId);
 
   // If chat doesn't exist or has no sessionKey, show error state
   if (!chat?.sessionKey) {
@@ -77,14 +85,20 @@ export function ChatPanel({ chatId }: ChatPanelProps) {
         isStreaming={isStreaming}
         streamText={streamText}
         activeTools={activeTools}
+        awaitingResponse={awaitingResponse}
       />
 
       {/* Compose bar (fixed at bottom) */}
       <ComposeBar
         sessionKey={sessionKey}
         chatId={chatId}
-        disabled={isStreaming}
-        onAddMessage={addMessage}
+        isStreaming={isStreaming}
+        autoFocus={autoFocus}
+        queue={queue}
+        onSend={sendMessage}
+        onSendNow={sendNow}
+        onAbort={abort}
+        onRemoveFromQueue={removeFromQueue}
       />
     </div>
   );

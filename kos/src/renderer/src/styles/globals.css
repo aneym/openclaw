@@ -235,7 +235,11 @@ body {
 
 /* Smooth sidebar collapse/expand animation for react-resizable-panels */
 [data-panel-id="sidebar"] {
-  transition: flex-basis 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  transition:
+    flex-basis 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    flex-grow 200ms cubic-bezier(0.16, 1, 0.3, 1),
+    flex-shrink 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Prevent transition during drag resize */

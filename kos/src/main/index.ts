@@ -6,7 +6,12 @@ import { join } from "path";
 import icon from "../../resources/icon.png?asset";
 import { initBrowserPanel } from "./browser-panel";
 import { registerAllIpc, cleanupTerminals } from "./ipc";
+import { installConsoleInterceptor, getLogsAsText } from "./log-buffer";
+import { getTerminalsWithProcesses, cleanupOldScrollback } from "./services/terminal-service";
 import { restoreWindowState, trackWindowState } from "./window-state";
+
+// Install console interceptor early to capture all logs
+installConsoleInterceptor();
 
 // Conditionally import native addon (macOS only)
 let kosNative: typeof import("kos-native") | null = null;
@@ -77,6 +82,34 @@ ipcMain.handle("dialog:openDirectory", async () => {
     properties: ["openDirectory", "createDirectory"],
   });
   return result;
+});
+
+// Get main process logs for debugging
+ipcMain.handle("logs:getMainLogs", () => {
+  return getLogsAsText();
+});
+
+// Export logs to file for agent access (~/.openclaw/kos-debug.log)
+ipcMain.handle("logs:exportToFile", async (_, rendererLogs: string) => {
+  const { writeFileSync, mkdirSync } = await import("fs");
+  const logDir = join(homedir(), ".openclaw");
+  const logPath = join(logDir, "kos-debug.log");
+
+  try {
+    mkdirSync(logDir, { recursive: true });
+    const mainLogs = getLogsAsText();
+    const combined = `${rendererLogs}
+
+${"=".repeat(50)}
+=== Main Process Logs ===
+${"=".repeat(50)}
+
+${mainLogs}`;
+    writeFileSync(logPath, combined, "utf-8");
+    return { success: true, path: logPath };
+  } catch (err) {
+    return { success: false, error: String(err) };
+  }
 });
 
 // iOS Simulator capture handlers (macOS only)
@@ -312,6 +345,9 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(() => {
+  // Clean up old terminal scrollback files (older than 7 days)
+  cleanupOldScrollback();
+
   // Register IPC handlers for project management, git, GitHub, Linear
   registerAllIpc();
 
@@ -342,7 +378,42 @@ app.on("window-all-closed", () => {
   }
 });
 
-// Cleanup terminal processes before quitting
-app.on("before-quit", () => {
-  cleanupTerminals();
+// Track if user confirmed quit (to avoid re-prompting)
+let forceQuit = false;
+
+// Warn about running terminal processes before quitting
+app.on("before-quit", async (event) => {
+  if (forceQuit) {
+    cleanupTerminals();
+    return;
+  }
+
+  const activeTerminals = getTerminalsWithProcesses();
+  if (activeTerminals.length === 0) {
+    cleanupTerminals();
+    return;
+  }
+
+  // Prevent quit to show dialog
+  event.preventDefault();
+
+  // Build message listing active processes
+  const processList = activeTerminals.map((t) => `  • ${t.processes.join(", ")}`).join("\n");
+
+  const { response } = await dialog.showMessageBox({
+    type: "warning",
+    buttons: ["Cancel", "Quit Anyway"],
+    defaultId: 0,
+    cancelId: 0,
+    title: "Terminals have running processes",
+    message: `${activeTerminals.length} terminal${activeTerminals.length > 1 ? "s have" : " has"} running processes:`,
+    detail: `${processList}\n\nQuitting will terminate these processes.`,
+  });
+
+  if (response === 1) {
+    // User chose "Quit Anyway"
+    forceQuit = true;
+    cleanupTerminals();
+    app.quit();
+  }
 });

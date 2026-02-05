@@ -181,6 +181,12 @@ interface PanelStoreState {
   nextTab: (workspaceId: string, panelId: string) => void;
   prevTab: (workspaceId: string, panelId: string) => void;
   getFocusedPanel: (workspaceId: string) => PanelState | null;
+
+  // Panel type switching (for empty panels)
+  changePanelType: (workspaceId: string, panelId: string, newType: PanelType) => void;
+
+  // Managed terminal (for AI agent control)
+  openManagedTerminal: (workspaceId: string, terminalId: string, cwd?: string) => void;
 }
 
 export const usePanelStore = create<PanelStoreState>()(
@@ -298,6 +304,25 @@ export const usePanelStore = create<PanelStoreState>()(
             console.log("[panel-store] Cannot close last chat panel");
             return;
           }
+        }
+
+        // Kill terminal PTY(s) when intentionally closing (not just HMR detach)
+        if (panel.type === "terminal") {
+          // Kill all tab terminals if tabbed
+          if (panel.tabs && panel.tabs.length > 0) {
+            for (const tab of panel.tabs) {
+              if (tab.contentId) {
+                console.log(`[panel-store] Killing terminal tab: ${tab.contentId}`);
+                window.api.terminal.kill(tab.contentId).catch(() => {});
+              }
+            }
+          }
+          // Also kill the panel-based terminal ID (non-tabbed fallback)
+          const terminalId = `term-${panelId}`;
+          console.log(`[panel-store] Killing terminal: ${terminalId}`);
+          window.api.terminal.kill(terminalId).catch(() => {
+            // Terminal may not exist (e.g., never connected)
+          });
         }
 
         let siblingPanelId: string | null = null;
@@ -444,27 +469,43 @@ export const usePanelStore = create<PanelStoreState>()(
         return [...layout.panels.values()].some((p) => p.type === type);
       },
 
-      // Open a thread in a specific pane (updates panel data/tabs with chatId)
+      // Open a thread in a specific pane (updates panel data with chatId)
       openThreadInPane: (workspaceId: string, panelId: string, chatId: string) => {
+        console.log("[panel-store] openThreadInPane called", { workspaceId, panelId, chatId });
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
-
-        // Only update chat panels
-        if (panel.type !== "chat") {
-          console.log("[panel-store] Can only set thread on chat panels");
+        console.log(
+          "[panel-store] openThreadInPane - layout exists:",
+          !!layout,
+          "panel exists:",
+          !!panel,
+        );
+        if (!panel) {
+          console.warn("[panel-store] openThreadInPane - panel not found!");
           return;
         }
 
-        // Check if this chat is already open in another pane
+        // Only update chat panels
+        if (panel.type !== "chat") {
+          console.log("[panel-store] Can only set thread on chat panels, got:", panel.type);
+          return;
+        }
+
+        // Check if this chat is already open in another pane (check both data.chatId and tab.contentId)
         for (const [pId, p] of layout.panels) {
           if (pId !== panelId && p.type === "chat") {
-            // Check both tabs and data for the chatId
-            const tabHasChat = p.tabs?.some((t) => t.contentId === chatId);
-            const dataHasChat = p.data?.chatId === chatId;
-            if (tabHasChat || dataHasChat) {
+            // Check data.chatId (legacy/non-tabbed panels)
+            if (p.data?.chatId === chatId) {
               console.log(
-                "[panel-store] Chat already open in another pane, focusing that pane instead",
+                "[panel-store] Chat already open in another pane (data.chatId), focusing that pane",
+              );
+              get().setFocusedPanelId(workspaceId, pId);
+              return;
+            }
+            // Check tab.contentId (tabbed panels)
+            if (p.tabs?.some((t) => t.contentId === chatId)) {
+              console.log(
+                "[panel-store] Chat already open in another pane (tab.contentId), focusing that pane",
               );
               get().setFocusedPanelId(workspaceId, pId);
               return;
@@ -472,25 +513,27 @@ export const usePanelStore = create<PanelStoreState>()(
           }
         }
 
-        const newPanels = new Map(layout.panels);
+        console.log("[panel-store] openThreadInPane - updating panel", {
+          panelId,
+          oldChatId: panel.data?.chatId,
+          newChatId: chatId,
+          hasTabsArray: !!panel.tabs,
+        });
 
-        // If panel has tabs, update the active tab's contentId
-        if (panel.tabs && panel.tabs.length > 0 && panel.activeTabId) {
-          const updatedTabs = panel.tabs.map((tab) =>
-            tab.id === panel.activeTabId ? { ...tab, contentId: chatId } : tab,
+        // For tabbed panels, also update the active tab's contentId
+        let updatedTabs = panel.tabs;
+        if (panel.tabs && panel.activeTabId) {
+          updatedTabs = panel.tabs.map((t) =>
+            t.id === panel.activeTabId ? { ...t, contentId: chatId } : t,
           );
-          newPanels.set(panelId, {
-            ...panel,
-            tabs: updatedTabs,
-            data: { ...panel.data, chatId }, // Also update data for consistency
-          });
-        } else {
-          // Legacy: update panel data
-          newPanels.set(panelId, {
-            ...panel,
-            data: { ...panel.data, chatId },
-          });
         }
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, {
+          ...panel,
+          tabs: updatedTabs,
+          data: { ...panel.data, chatId },
+        });
 
         get().setLayout(workspaceId, {
           ...layout,
@@ -499,6 +542,7 @@ export const usePanelStore = create<PanelStoreState>()(
 
         // Focus this panel
         get().setFocusedPanelId(workspaceId, panelId);
+        console.log("[panel-store] openThreadInPane - done");
       },
 
       // Split a pane and open a thread in the new pane (Cmd+Click behavior)
@@ -739,8 +783,17 @@ export const usePanelStore = create<PanelStoreState>()(
         const panel = layout.panels.get(panelId);
         if (!panel || !panel.tabs) return;
 
+        const tab = panel.tabs.find((t) => t.id === tabId);
         const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
         if (tabIndex === -1) return;
+
+        // Kill terminal PTY for this tab if it's a terminal
+        if (panel.type === "terminal" && tab?.contentId) {
+          console.log(`[panel-store] Killing terminal tab: ${tab.contentId}`);
+          window.api.terminal.kill(tab.contentId).catch(() => {
+            // Terminal may not exist
+          });
+        }
 
         // If this is the last tab, close the panel instead
         if (panel.tabs.length === 1) {
@@ -821,6 +874,109 @@ export const usePanelStore = create<PanelStoreState>()(
         const layout = get().layouts.get(workspaceId);
         if (!layout) return null;
         return layout.panels.get(focusedId) || null;
+      },
+
+      // Change a panel's type (for switching empty panels before content is assigned)
+      changePanelType: (workspaceId: string, panelId: string, newType: PanelType) => {
+        const layout = get().getLayout(workspaceId);
+        const panel = layout.panels.get(panelId);
+        if (!panel) return;
+
+        // Don't change if same type
+        if (panel.type === newType) return;
+
+        const newTabId = TABBED_PANEL_TYPES.includes(newType) ? generateTabId() : undefined;
+
+        const newPanelState: PanelState = {
+          id: panelId,
+          type: newType,
+          isUserOpened: panel.isUserOpened,
+          // Clear data when changing type, but set up tabs if needed
+          tabs: newTabId ? [{ id: newTabId }] : undefined,
+          activeTabId: newTabId,
+        };
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, newPanelState);
+
+        get().setLayout(workspaceId, {
+          ...layout,
+          panels: newPanels,
+        });
+      },
+
+      // Open a managed terminal panel (for AI agent control)
+      openManagedTerminal: (workspaceId: string, terminalId: string, cwd?: string) => {
+        const layout = get().getLayout(workspaceId);
+
+        const newPanelId = generatePanelId();
+        const newTabId = generateTabId();
+
+        const newPanelState: PanelState = {
+          id: newPanelId,
+          type: "terminal",
+          isUserOpened: false, // Opened by AI, not user
+          data: {
+            managed: true,
+            cwd,
+          },
+          tabs: [
+            {
+              id: newTabId,
+              contentId: terminalId,
+              data: { cwd, managed: true },
+            },
+          ],
+          activeTabId: newTabId,
+        };
+
+        // Find the focused panel to split (or first leaf if no focus)
+        const focusedId = get().getFocusedPanelId(workspaceId);
+        const targetPanelId = focusedId || findFirstLeaf(layout.root);
+
+        if (!targetPanelId) {
+          console.error("[panel-store] No panel to split for managed terminal");
+          return;
+        }
+
+        // Split horizontally (new panel on right)
+        const newLeaf: PanelLeaf = { type: "leaf", panelId: newPanelId };
+
+        const splitNode = (node: PanelNode): PanelNode => {
+          if (node.type === "leaf" && node.panelId === targetPanelId) {
+            const branch: PanelBranch = {
+              type: "branch",
+              direction: "horizontal",
+              sizes: [60, 40],
+              children: [node, newLeaf],
+            };
+            return branch;
+          }
+          if (node.type === "branch") {
+            return {
+              ...node,
+              children: [splitNode(node.children[0]), splitNode(node.children[1])] as [
+                PanelNode,
+                PanelNode,
+              ],
+            };
+          }
+          return node;
+        };
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(newPanelId, newPanelState);
+
+        get().setLayout(workspaceId, {
+          root: splitNode(layout.root),
+          panels: newPanels,
+        });
+
+        // Focus the new panel
+        get().setFocusedPanelId(workspaceId, newPanelId);
+        console.log(
+          `[panel-store] Opened managed terminal panel: panelId=${newPanelId}, terminalId=${terminalId}`,
+        );
       },
     }),
     {

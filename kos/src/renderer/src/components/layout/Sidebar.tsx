@@ -1,16 +1,18 @@
 import { GitBranch, Globe, ListTodo, Loader2, Plus, Settings, Terminal } from "lucide-react";
 import { useMemo, useCallback } from "react";
+import { toast } from "sonner";
 import type { Chat, Project, View, Workspace } from "../../types";
 import { loadMoreChats } from "../../hooks/use-session-sync";
 import { CHAT_GROUPS, groupChatsByRecency, type ChatGroup } from "../../lib/chat-grouping";
 import { notifications } from "../../lib/notifications";
+import { sessionKeysMatch } from "../../lib/session-keys";
 import { cn } from "../../lib/utils";
 import { useChatStore } from "../../stores/chat-store";
 import { useDashboardStore } from "../../stores/dashboard-store";
 import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useSidebarUIStore } from "../../stores/sidebar-ui-store";
-import { useWorkspaceStore } from "../../stores/workspace-store";
+import { useWorkspaceStore, HOME_WORKSPACE_ID } from "../../stores/workspace-store";
 import { ChatGroupSection } from "./ChatGroupSection";
 import { SessionSearch } from "./SessionSearch";
 
@@ -34,6 +36,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   const setActiveChat = useChatStore((s) => s.setActiveChat);
   const addChat = useChatStore((s) => s.addChat);
   const archiveChat = useChatStore((s) => s.archiveChat);
+  const unarchiveChat = useChatStore((s) => s.unarchiveChat);
   const assignChatToProject = useChatStore((s) => s.assignChatToProject);
 
   // Project state
@@ -148,6 +151,19 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     return group !== activeGroupKey;
   };
 
+  // Stable toggle handlers for each group (CHAT_GROUPS is fixed: Active, Older, Archived)
+  const toggleHandlers = useMemo(
+    () => ({
+      "dashboard-Active": () => toggleGroup("dashboard-Active"),
+      "dashboard-Older": () => toggleGroup("dashboard-Older"),
+      "dashboard-Archived": () => toggleGroup("dashboard-Archived"),
+      "sidebar-Active": () => toggleGroup("sidebar-Active"),
+      "sidebar-Older": () => toggleGroup("sidebar-Older"),
+      "sidebar-Archived": () => toggleGroup("sidebar-Archived"),
+    }),
+    [toggleGroup],
+  );
+
   // Counts for dashboard filter
   const totalCount = allChats.length;
   const unassignedCount = allChats.filter((c) => !c.projectId).length;
@@ -158,64 +174,77 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     }
   };
 
-  const handleSelectChat = (chat: Chat, options?: { splitPane?: boolean }) => {
-    if (isHome) {
-      // In home mode, update dashboard state AND the focused panel
-      setDashboardActiveChatId(chat.id);
+  const handleSelectChat = useCallback(
+    (chat: Chat, options?: { splitPane?: boolean }) => {
+      if (isHome) {
+        // In home mode, update dashboard state AND the focused panel
+        setDashboardActiveChatId(chat.id);
 
-      // Also update the focused chat panel's data.chatId so it renders the selected chat
-      const focusedPanelId = getFocusedChatPanelId("home");
-      if (focusedPanelId) {
-        if (options?.splitPane) {
-          splitPaneWithThread("home", focusedPanelId, chat.id);
-        } else {
-          openThreadInPane("home", focusedPanelId, chat.id);
+        // Also update the focused chat panel's data.chatId so it renders the selected chat
+        const focusedPanelId = getFocusedChatPanelId(HOME_WORKSPACE_ID);
+        if (focusedPanelId) {
+          if (options?.splitPane) {
+            splitPaneWithThread(HOME_WORKSPACE_ID, focusedPanelId, chat.id);
+          } else {
+            openThreadInPane(HOME_WORKSPACE_ID, focusedPanelId, chat.id);
+          }
+        }
+
+        onNavigate("home"); // Switch away from settings if open
+        return;
+      }
+
+      // Project mode: need workspaceId to open
+      const targetWorkspaceId = chat.workspaceId || workspaceId;
+      if (!targetWorkspaceId) {
+        notifications.error("Cannot open chat", "No workspace available. Select a project first.");
+        return;
+      }
+
+      // If chat has no workspaceId, assign it to current workspace
+      if (!chat.workspaceId && workspaceId) {
+        const updatedChat: Chat = {
+          ...chat,
+          workspaceId,
+          projectId: projectId ?? undefined,
+        };
+        const currentChatsMap = useChatStore.getState().chats;
+        const updated = new Map(currentChatsMap);
+        updated.set(chat.id, updatedChat);
+        useChatStore.setState({ chats: updated });
+      }
+
+      // Handle split pane vs normal open
+      if (options?.splitPane) {
+        // Cmd+Click: Open in new split pane
+        const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
+        if (focusedPanelId) {
+          splitPaneWithThread(targetWorkspaceId, focusedPanelId, chat.id);
+        }
+      } else {
+        // Normal click: Open in focused pane
+        const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
+        if (focusedPanelId) {
+          openThreadInPane(targetWorkspaceId, focusedPanelId, chat.id);
         }
       }
 
-      onNavigate("home"); // Switch away from settings if open
-      return;
-    }
-
-    // Project mode: need workspaceId to open
-    const targetWorkspaceId = chat.workspaceId || workspaceId;
-    if (!targetWorkspaceId) {
-      notifications.error("Cannot open chat", "No workspace available. Select a project first.");
-      return;
-    }
-
-    // If chat has no workspaceId, assign it to current workspace
-    if (!chat.workspaceId && workspaceId) {
-      const updatedChat: Chat = {
-        ...chat,
-        workspaceId,
-        projectId: projectId ?? undefined,
-      };
-      const chatsMap = useChatStore.getState().chats;
-      const updated = new Map(chatsMap);
-      updated.set(chat.id, updatedChat);
-      useChatStore.setState({ chats: updated });
-    }
-
-    // Handle split pane vs normal open
-    if (options?.splitPane) {
-      // Cmd+Click: Open in new split pane
-      const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
-      if (focusedPanelId) {
-        splitPaneWithThread(targetWorkspaceId, focusedPanelId, chat.id);
-      }
-    } else {
-      // Normal click: Open in focused pane
-      const focusedPanelId = getFocusedChatPanelId(targetWorkspaceId);
-      if (focusedPanelId) {
-        openThreadInPane(targetWorkspaceId, focusedPanelId, chat.id);
-      }
-    }
-
-    // Also update the workspace's active chat (for backwards compatibility)
-    setActiveChat(targetWorkspaceId, chat.id);
-    onNavigate("home");
-  };
+      // Also update the workspace's active chat (for backwards compatibility)
+      setActiveChat(targetWorkspaceId, chat.id);
+      onNavigate("home");
+    },
+    [
+      isHome,
+      workspaceId,
+      projectId,
+      onNavigate,
+      setDashboardActiveChatId,
+      getFocusedChatPanelId,
+      splitPaneWithThread,
+      openThreadInPane,
+      setActiveChat,
+    ],
+  );
 
   const handleNewChat = () => {
     // Sessions are created implicitly when the first message is sent.
@@ -235,36 +264,85 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
       createdAt: now,
     };
 
+    console.log("[handleNewChat] Creating new chat", {
+      chatId: newChat.id,
+      sessionKey,
+      isHome,
+      workspaceId,
+      projectId,
+    });
+
     addChat(newChat);
 
-    // Select the new chat
+    // Select the new chat and update the focused panel
     if (isHome) {
+      console.log("[handleNewChat] Home mode - setting dashboard active chat");
       setDashboardActiveChatId(newChat.id);
+      const focusedPanelId = getFocusedChatPanelId(HOME_WORKSPACE_ID);
+      console.log("[handleNewChat] Focused panel ID:", focusedPanelId);
+      if (focusedPanelId) {
+        console.log("[handleNewChat] Opening thread in pane", {
+          workspaceId: HOME_WORKSPACE_ID,
+          panelId: focusedPanelId,
+          chatId: newChat.id,
+        });
+        openThreadInPane(HOME_WORKSPACE_ID, focusedPanelId, newChat.id);
+      } else {
+        console.warn("[handleNewChat] No focused panel ID found!");
+      }
     } else if (workspaceId) {
+      console.log("[handleNewChat] Project mode - setting active chat");
       setActiveChat(workspaceId, newChat.id);
+      const focusedPanelId = getFocusedChatPanelId(workspaceId);
+      console.log("[handleNewChat] Focused panel ID:", focusedPanelId);
+      if (focusedPanelId) {
+        console.log("[handleNewChat] Opening thread in pane", {
+          workspaceId,
+          panelId: focusedPanelId,
+          chatId: newChat.id,
+        });
+        openThreadInPane(workspaceId, focusedPanelId, newChat.id);
+      } else {
+        console.warn("[handleNewChat] No focused panel ID found!");
+      }
       onNavigate("home");
     }
   };
 
-  const handleArchiveChat = (chatId: string) => {
-    archiveChat(chatId);
-  };
+  const handleArchiveChat = useCallback(
+    (chatId: string) => {
+      const chat = chatsMap.get(chatId);
+      const chatTitle = chat?.title || "Chat";
+      archiveChat(chatId);
+      toast("Chat archived", {
+        description: chatTitle,
+        action: {
+          label: "Undo",
+          onClick: () => unarchiveChat(chatId),
+        },
+      });
+    },
+    [chatsMap, archiveChat, unarchiveChat],
+  );
 
-  const handleCopySessionId = (sessionKey: string) => {
+  const handleCopySessionId = useCallback((sessionKey: string) => {
     navigator.clipboard.writeText(sessionKey).catch(() => {
       notifications.error("Failed to copy session ID");
     });
-  };
+  }, []);
 
-  const handleAssignToProject = (chatId: string, targetProjectId: string | null) => {
-    assignChatToProject(chatId, targetProjectId);
-  };
+  const handleAssignToProject = useCallback(
+    (chatId: string, targetProjectId: string | null) => {
+      assignChatToProject(chatId, targetProjectId);
+    },
+    [assignChatToProject],
+  );
 
   // Handle session search result selection
   const handleSearchSelect = useCallback(
     (sessionKey: string) => {
       // Find the chat with this sessionKey
-      const chat = allChats.find((c) => c.sessionKey === sessionKey);
+      const chat = allChats.find((c) => sessionKeysMatch(c.sessionKey, sessionKey));
       if (chat) {
         handleSelectChat(chat);
       } else {
@@ -358,7 +436,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
                   group={group as ChatGroup}
                   chats={groupedChats[group as ChatGroup]}
                   isCollapsed={isGroupCollapsed(`dashboard-${group}`)}
-                  onToggle={() => toggleGroup(`dashboard-${group}`)}
+                  onToggle={toggleHandlers[`dashboard-${group}` as keyof typeof toggleHandlers]}
                   activeChatId={activeChatId}
                   onSelectChat={handleSelectChat}
                   onArchiveChat={handleArchiveChat}
@@ -379,7 +457,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
                   group={group as ChatGroup}
                   chats={groupedChats[group as ChatGroup]}
                   isCollapsed={isGroupCollapsed(`sidebar-${group}`)}
-                  onToggle={() => toggleGroup(`sidebar-${group}`)}
+                  onToggle={toggleHandlers[`sidebar-${group}` as keyof typeof toggleHandlers]}
                   activeChatId={activeChatId}
                   onSelectChat={handleSelectChat}
                   onArchiveChat={handleArchiveChat}

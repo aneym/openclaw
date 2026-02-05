@@ -6,12 +6,12 @@ interface KanbanCardBadgesProps {
   downstreamCount?: number;
 }
 
-// Filter for active blockers (not Done/Canceled)
+// Filter for active blockers (not completed/canceled)
 function getActiveBlockers(relations: LinearRelation[]): LinearRelation[] {
   return relations.filter((r) => {
     if (r.type !== "is_blocked_by") return false;
-    const stateName = r.relatedIssue.state.name.toLowerCase();
-    return !stateName.includes("done") && !stateName.includes("canceled");
+    const stateType = r.relatedIssue.state.type;
+    return stateType !== "completed" && stateType !== "canceled";
   });
 }
 
