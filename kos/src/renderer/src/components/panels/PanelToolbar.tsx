@@ -57,7 +57,7 @@ export const PanelToolbar = memo(function PanelToolbar({
 }: PanelToolbarProps) {
   // Get chat data for session actions
   const chatsMap = useChatStore((s) => s.chats);
-  const updatePanelData = usePanelStore((s) => s.updatePanelData);
+  const clearPanelChat = usePanelStore((s) => s.clearPanelChat);
   const splitPanel = usePanelStore((s) => s.splitPanel);
 
   // Use chatId from panel data if available, otherwise fall back to workspace's active chat
@@ -91,8 +91,8 @@ export const PanelToolbar = memo(function PanelToolbar({
   };
 
   const handleNewThread = () => {
-    // Clear the panel's chatId to show empty state (new thread picker)
-    updatePanelData(workspaceId, panelId, { chatId: undefined });
+    // Clear the panel's chatId + active tab contentId to show empty state
+    clearPanelChat(workspaceId, panelId);
   };
 
   const handleArchive = async () => {
