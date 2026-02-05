@@ -21,6 +21,27 @@ export interface LinearConfig {
   validatedAt: number;
 }
 
+// Theme types
+export interface ThemeDefinitionConfig {
+  id: string;
+  name: string;
+  source?: string;
+  isBuiltIn: boolean;
+  cssVars: {
+    theme?: Record<string, string>;
+    light: Record<string, string>;
+    dark: Record<string, string>;
+  };
+  installedAt: number;
+}
+
+export interface ThemesConfig {
+  version: 1;
+  themes: ThemeDefinitionConfig[];
+  activeThemeId: string;
+  mode: "light" | "dark" | "system";
+}
+
 // Project types
 export interface RepoConfig {
   id: string;
@@ -170,6 +191,8 @@ export interface ConfigAPI {
   getLinear: () => Promise<LinearConfig | null>;
   saveLinear: (config: LinearConfig) => Promise<void>;
   clearLinear: () => Promise<void>;
+  getThemes: () => Promise<ThemesConfig>;
+  saveThemes: (config: ThemesConfig) => Promise<void>;
 }
 
 // Project API

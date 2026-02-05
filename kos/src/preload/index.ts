@@ -51,6 +51,27 @@ interface LinearConfig {
   validatedAt: number;
 }
 
+// Theme types
+interface ThemeDefinitionPreload {
+  id: string;
+  name: string;
+  source?: string;
+  isBuiltIn: boolean;
+  cssVars: {
+    theme?: Record<string, string>;
+    light: Record<string, string>;
+    dark: Record<string, string>;
+  };
+  installedAt: number;
+}
+
+interface ThemesConfig {
+  version: 1;
+  themes: ThemeDefinitionPreload[];
+  activeThemeId: string;
+  mode: "light" | "dark" | "system";
+}
+
 // Project types
 interface RepoConfig {
   id: string;
@@ -210,6 +231,9 @@ const api = {
     saveLinear: (config: LinearConfig): Promise<void> =>
       ipcRenderer.invoke("config:saveLinear", config),
     clearLinear: (): Promise<void> => ipcRenderer.invoke("config:clearLinear"),
+    getThemes: (): Promise<ThemesConfig> => ipcRenderer.invoke("config:getThemes"),
+    saveThemes: (config: ThemesConfig): Promise<void> =>
+      ipcRenderer.invoke("config:saveThemes", config),
   },
 
   // Project APIs

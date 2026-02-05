@@ -22,7 +22,7 @@ import { useChatSession } from "../../hooks/use-chat-session";
 import { useSessionActions } from "../../hooks/use-session-actions";
 import { useChatStore } from "../../stores/chat-store";
 import { usePanelStore } from "../../stores/panel-store";
-import { PANEL_TYPE_LABELS } from "../../types/panel";
+import { PANEL_TYPE_LABELS, USER_PANEL_TYPES } from "../../types/panel";
 import { Button } from "../ui/button";
 import {
   DropdownMenu,
@@ -35,17 +35,6 @@ import {
 } from "../ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import { DraggableTitlebar } from "./DraggableTitlebar";
-
-/** Panel types available in the split menu (excludes 'empty' which isn't user-selectable) */
-const SPLITTABLE_PANEL_TYPES: PanelType[] = [
-  "chat",
-  "terminal",
-  "browser",
-  "tasks",
-  "preview",
-  "code",
-  "coding-session",
-];
 
 interface PanelToolbarProps {
   panelId: string;
@@ -183,7 +172,7 @@ export const PanelToolbar = memo(function PanelToolbar({
                 <span>Split Right</span>
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                {SPLITTABLE_PANEL_TYPES.map((type) => (
+                {USER_PANEL_TYPES.map((type) => (
                   <DropdownMenuItem
                     key={type}
                     onClick={() => handleSplitWithType("horizontal", type)}
@@ -201,7 +190,7 @@ export const PanelToolbar = memo(function PanelToolbar({
                 <span>Split Down</span>
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
-                {SPLITTABLE_PANEL_TYPES.map((type) => (
+                {USER_PANEL_TYPES.map((type) => (
                   <DropdownMenuItem
                     key={type}
                     onClick={() => handleSplitWithType("vertical", type)}
@@ -239,7 +228,7 @@ const PANEL_ICONS: Record<PanelType, LucideIcon> = {
 };
 
 /** Renders the appropriate icon for a panel type */
-function PanelTypeIcon({ type, className }: { type: PanelType; className?: string }) {
+export function PanelTypeIcon({ type, className }: { type: PanelType; className?: string }) {
   const Icon = PANEL_ICONS[type] || HelpCircle;
   return <Icon className={className} />;
 }

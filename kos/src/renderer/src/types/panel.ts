@@ -11,6 +11,13 @@ export type PanelType =
 /** Panel types that support tabs within the panel */
 export const TABBED_PANEL_TYPES: PanelType[] = ["chat", "terminal"];
 
+/**
+ * Panel types that users can create/switch to.
+ * Single source of truth — used by split menu, type switcher, and command palette.
+ * Only include types with working implementations.
+ */
+export const USER_PANEL_TYPES: PanelType[] = ["chat", "terminal", "browser", "tasks"];
+
 /** Tab within a panel (for chat and terminal panels) */
 export interface PanelTab {
   id: string;

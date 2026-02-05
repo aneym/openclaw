@@ -7,6 +7,7 @@ import { klog } from "./lib/klog";
 import { useGatewayStore } from "./stores/gateway-store";
 import { useActiveProfile, useActiveProfileId } from "./stores/profile-store";
 import { useProjectStore } from "./stores/project-store";
+import { useThemeStore } from "./stores/theme-store";
 import "./styles/globals.css";
 
 // Default gateway URL for local development
@@ -30,6 +31,11 @@ function App() {
 
   // Project state - for resetting on profile change
   const resetForProfile = useProjectStore((s) => s.resetForProfile);
+
+  // Initialize theme store from disk (file system persistence via IPC)
+  useEffect(() => {
+    useThemeStore.getState().initialize();
+  }, []);
 
   // Initialize theme system — applies CSS vars and dark/light class on <html>
   useTheme();
