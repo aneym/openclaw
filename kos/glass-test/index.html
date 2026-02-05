@@ -1,0 +1,287 @@
+<!doctype html>
+<html>
+  <head>
+    <style>
+      html,
+      body {
+        background: transparent !important;
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        color: white;
+        overflow: hidden;
+      }
+      .drag {
+        -webkit-app-region: drag;
+        height: 32px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        z-index: 100;
+      }
+      .container {
+        height: 100vh;
+        padding: 44px 20px 20px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        box-sizing: border-box;
+      }
+      h1 {
+        font-size: 18px;
+        font-weight: 700;
+        margin: 0;
+        opacity: 0.9;
+      }
+      .controls {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        -webkit-app-region: no-drag;
+      }
+      .controls label {
+        font-size: 12px;
+        font-weight: 600;
+        opacity: 0.6;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        margin-right: 4px;
+      }
+      .btn {
+        padding: 4px 10px;
+        font-size: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        -webkit-app-region: no-drag;
+      }
+      .btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .btn.active {
+        background: rgba(0, 122, 255, 0.6);
+        border-color: rgba(0, 122, 255, 0.8);
+      }
+
+      .grid {
+        flex: 1;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        grid-template-rows: repeat(3, 1fr);
+        gap: 12px;
+        overflow: auto;
+      }
+      .panel {
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        position: relative;
+        overflow: hidden;
+      }
+      .panel-title {
+        font-size: 13px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .panel-desc {
+        font-size: 11px;
+        opacity: 0.6;
+      }
+
+      /* Different transparency levels */
+      .t-none {
+        background: transparent;
+      }
+      .t-5 {
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .t-10 {
+        background: rgba(255, 255, 255, 0.1);
+      }
+      .t-15 {
+        background: rgba(255, 255, 255, 0.15);
+      }
+      .t-20 {
+        background: rgba(255, 255, 255, 0.2);
+      }
+      .t-30 {
+        background: rgba(255, 255, 255, 0.3);
+      }
+      .t-dark-5 {
+        background: rgba(0, 0, 0, 0.05);
+      }
+      .t-dark-10 {
+        background: rgba(0, 0, 0, 0.1);
+      }
+      .t-dark-20 {
+        background: rgba(0, 0, 0, 0.2);
+      }
+      .t-dark-30 {
+        background: rgba(0, 0, 0, 0.3);
+      }
+      .t-blur {
+        background: rgba(255, 255, 255, 0.08);
+        backdrop-filter: blur(20px);
+      }
+      .t-solid {
+        background: rgba(30, 30, 30, 0.85);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="drag"></div>
+    <div class="container">
+      <div>
+        <h1>Glass Variant Explorer</h1>
+      </div>
+
+      <div class="controls">
+        <label>Variant:</label>
+        <div id="variant-btns"></div>
+      </div>
+      <div class="controls">
+        <label>Scrim:</label>
+        <button class="btn" onclick="setScrim(0)">Off</button>
+        <button class="btn" onclick="setScrim(1)">On</button>
+        &nbsp;
+        <label>Subdued:</label>
+        <button class="btn" onclick="setSubdued(0)">Normal</button>
+        <button class="btn" onclick="setSubdued(1)">Subdued</button>
+      </div>
+
+      <div class="grid">
+        <div class="panel t-none">
+          <div>
+            <div class="panel-title">Pure Glass</div>
+            <div class="panel-desc">background: transparent</div>
+          </div>
+        </div>
+        <div class="panel t-5">
+          <div>
+            <div class="panel-title">White 5%</div>
+            <div class="panel-desc">rgba(255,255,255,0.05)</div>
+          </div>
+        </div>
+        <div class="panel t-10">
+          <div>
+            <div class="panel-title">White 10%</div>
+            <div class="panel-desc">rgba(255,255,255,0.10)</div>
+          </div>
+        </div>
+        <div class="panel t-15">
+          <div>
+            <div class="panel-title">White 15%</div>
+            <div class="panel-desc">rgba(255,255,255,0.15)</div>
+          </div>
+        </div>
+        <div class="panel t-20">
+          <div>
+            <div class="panel-title">White 20%</div>
+            <div class="panel-desc">rgba(255,255,255,0.20)</div>
+          </div>
+        </div>
+        <div class="panel t-30">
+          <div>
+            <div class="panel-title">White 30%</div>
+            <div class="panel-desc">rgba(255,255,255,0.30)</div>
+          </div>
+        </div>
+        <div class="panel t-dark-5">
+          <div>
+            <div class="panel-title">Dark 5%</div>
+            <div class="panel-desc">rgba(0,0,0,0.05)</div>
+          </div>
+        </div>
+        <div class="panel t-dark-10">
+          <div>
+            <div class="panel-title">Dark 10%</div>
+            <div class="panel-desc">rgba(0,0,0,0.10)</div>
+          </div>
+        </div>
+        <div class="panel t-dark-20">
+          <div>
+            <div class="panel-title">Dark 20%</div>
+            <div class="panel-desc">rgba(0,0,0,0.20)</div>
+          </div>
+        </div>
+        <div class="panel t-dark-30">
+          <div>
+            <div class="panel-title">Dark 30%</div>
+            <div class="panel-desc">rgba(0,0,0,0.30)</div>
+          </div>
+        </div>
+        <div class="panel t-blur">
+          <div>
+            <div class="panel-title">CSS Blur</div>
+            <div class="panel-desc">backdrop-filter: blur(20px)</div>
+          </div>
+        </div>
+        <div class="panel t-solid">
+          <div>
+            <div class="panel-title">Near-Solid</div>
+            <div class="panel-desc">rgba(30,30,30,0.85)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = require("electron");
+
+      const variants = {
+        regular: 0,
+        clear: 1,
+        dock: 2,
+        appIcons: 3,
+        widgets: 4,
+        text: 5,
+        avplayer: 6,
+        facetime: 7,
+        controlCenter: 8,
+        notificationCenter: 9,
+        monogram: 10,
+        bubbles: 11,
+        identity: 12,
+        focusBorder: 13,
+        focusPlatter: 14,
+        keyboard: 15,
+        sidebar: 16,
+        abuttedSidebar: 17,
+        inspector: 18,
+        control: 19,
+        loupe: 20,
+        slider: 21,
+        camera: 22,
+        cartouchePopover: 23,
+      };
+
+      const container = document.getElementById("variant-btns");
+      let activeBtn = null;
+
+      for (const [name, value] of Object.entries(variants)) {
+        const btn = document.createElement("button");
+        btn.className = "btn";
+        btn.textContent = name;
+        btn.onclick = () => {
+          if (activeBtn) activeBtn.classList.remove("active");
+          btn.classList.add("active");
+          activeBtn = btn;
+          ipcRenderer.send("set-variant", value);
+        };
+        container.appendChild(btn);
+      }
+
+      function setScrim(v) {
+        ipcRenderer.send("set-scrim", v);
+      }
+      function setSubdued(v) {
+        ipcRenderer.send("set-subdued", v);
+      }
+    </script>
+  </body>
+</html>

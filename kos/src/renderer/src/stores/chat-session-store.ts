@@ -53,6 +53,7 @@ export interface ChatSessionState {
   // Streaming (atomic group — all cleared together)
   runId: string | null;
   streamText: string;
+  streamReasoning: string;
   streamStartedAt: number | null;
   activeTools: ActiveTool[];
 
@@ -132,13 +133,17 @@ interface ChatEventPayload {
 interface AgentEventPayload {
   runId: string;
   sessionKey: string;
-  stream: "tool" | "text" | "reasoning" | null;
+  stream: "tool" | "assistant" | "reasoning" | "lifecycle" | "error" | null;
   data?: {
-    phase?: "start" | "end";
+    phase?: "start" | "end" | "result" | "update" | "error";
     toolCallId?: string;
+    // Gateway sends "name"; kOS convention is "toolName" — accept both
     toolName?: string;
+    name?: string;
     toolInput?: unknown;
+    args?: unknown;
     result?: unknown;
+    text?: string;
     error?: string;
   };
 }
@@ -146,10 +151,6 @@ interface AgentEventPayload {
 interface SessionHistoryResponse {
   messages: unknown[];
 }
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper Functions
@@ -234,6 +235,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     // Streaming
     runId: null,
     streamText: "",
+    streamReasoning: "",
     streamStartedAt: null,
     activeTools: [],
 
@@ -320,6 +322,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
             runId: payload.runId,
             streamStartedAt: Date.now(),
             streamText: "",
+            streamReasoning: "",
           });
         }
 
@@ -347,13 +350,19 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
             ? normalizeMessage(payload.message, state.chatId)
             : null;
 
+        // Cancel any pending tool throttle timer
+        if (state._toolThrottleTimer) clearTimeout(state._toolThrottleTimer);
+
         set((s) => ({
           runId: null,
           streamText: "",
+          streamReasoning: "",
           streamStartedAt: null,
           activeTools: [],
           pendingAbort: false,
           awaitingResponse: false,
+          _pendingToolUpdates: [],
+          _toolThrottleTimer: null,
           // Insert final message immediately to prevent flash
           messages: finalMsg ? dedupeAppend(s.messages, finalMsg) : s.messages,
           // Set error if present
@@ -374,9 +383,24 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         return;
       }
 
+      // Accumulate reasoning text from reasoning events
+      if (payload.stream === "reasoning" && payload.data?.text) {
+        const text = payload.data.text as string;
+        set((s) => {
+          if (!s.streamReasoning || text.length >= s.streamReasoning.length) {
+            return { streamReasoning: text };
+          }
+          return s;
+        });
+        return;
+      }
+
       // Track tool execution start/end with 80ms throttling
       if (payload.stream === "tool" && payload.data) {
-        const { phase, toolCallId, toolName, toolInput } = payload.data;
+        const { phase, toolCallId } = payload.data;
+        // Gateway sends "name" and "args"; accept both gateway and kOS field names
+        const toolName = (payload.data.toolName ?? payload.data.name) as string | undefined;
+        const toolInput = payload.data.toolInput ?? payload.data.args;
 
         if (phase === "start" && toolCallId && toolName) {
           klog.streaming("tool started", { toolCallId, toolName });
@@ -389,7 +413,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
             },
           ];
           set({ _pendingToolUpdates: pendingUpdates });
-        } else if (phase === "end" && toolCallId) {
+        } else if ((phase === "end" || phase === "result") && toolCallId) {
           klog.streaming("tool ended", { toolCallId });
           // Queue the remove operation
           const pendingUpdates = [
@@ -491,7 +515,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           return att;
         });
 
-        await _request("chat.send", {
+        const response = await _request<{ runId?: string }>("chat.send", {
           sessionKey,
           message: trimmed,
           deliver: false,
@@ -499,12 +523,20 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           ...(apiAttachments && apiAttachments.length > 0 && { attachments: apiAttachments }),
         });
 
-        klog.compose("send complete");
+        klog.compose("send complete", { responseRunId: response?.runId });
+
+        // Adopt runId from send response — enables abort button immediately
+        const respondedRunId = response?.runId ?? messageId;
+        set({ runId: respondedRunId, streamStartedAt: Date.now() });
       } catch (err) {
         klog.composeError("send failed", err);
-        set({ error: err instanceof Error ? err.message : "Send failed" });
+        set({
+          error: err instanceof Error ? err.message : "Send failed",
+          awaitingResponse: false,
+        });
       } finally {
         set({ sending: false });
+        // NOTE: awaitingResponse stays true — cleared on first delta by handleChatEvent
       }
     },
 
@@ -545,10 +577,10 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     },
 
     abort: async () => {
-      const { sessionKey, _request, runId } = get();
+      const { sessionKey, _request, runId, awaitingResponse } = get();
 
-      if (!runId) {
-        klog.compose("abort: no active run");
+      if (!runId && !awaitingResponse) {
+        klog.compose("abort: no active run and not awaiting response");
         return;
       }
 
@@ -562,9 +594,18 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
       klog.compose("abort", { sessionKey, runId });
 
       try {
-        await _request("chat.abort", { sessionKey, runId });
+        // Abort with runId if available, sessionKey-only otherwise (matches web-ui)
+        const params = runId ? { sessionKey, runId } : { sessionKey };
+        await _request("chat.abort", params);
         klog.compose("abort complete");
-        set({ pendingAbort: false });
+        set({
+          pendingAbort: false,
+          awaitingResponse: false,
+          runId: null,
+          streamText: "",
+          streamReasoning: "",
+          streamStartedAt: null,
+        });
       } catch (err) {
         klog.composeError("abort failed", err);
         // Mark for retry

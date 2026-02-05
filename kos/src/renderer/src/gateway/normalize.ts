@@ -3,7 +3,14 @@
  * Handles OpenAI format, Anthropic format, and OpenClaw internal format.
  */
 
-import type { ChatMessage, MessagePart } from "../types/message";
+import type {
+  ChatMessage,
+  MessagePart,
+  AudioPart,
+  VideoPart,
+  ImagePart,
+  FilePart,
+} from "../types/message";
 
 /**
  * Normalize a raw gateway message into our ChatMessage parts model.
@@ -18,7 +25,13 @@ export function normalizeMessage(raw: unknown, chatId: string): ChatMessage {
   if (!isToolResultMessage(m)) {
     const text = extractText(m);
     if (text?.trim()) {
-      parts.push({ type: "text", text });
+      const { cleanedText, mediaParts } = extractMediaFromText(text);
+      if (cleanedText) {
+        parts.push({ type: "text", text: cleanedText });
+      }
+      for (const mp of mediaParts) {
+        parts.push(mp);
+      }
     }
   }
 
@@ -45,6 +58,17 @@ export function normalizeMessage(raw: unknown, chatId: string): ChatMessage {
     const toolResult = extractToolResult(m);
     if (toolResult) {
       parts.push(toolResult);
+      // Also scan tool result text for MEDIA: tokens
+      const resultText =
+        toolResult.type === "tool-result" && typeof toolResult.result === "string"
+          ? toolResult.result
+          : null;
+      if (resultText) {
+        const { mediaParts } = extractMediaFromText(resultText);
+        for (const mp of mediaParts) {
+          parts.push(mp);
+        }
+      }
     }
   }
 
@@ -426,4 +450,101 @@ function extractAudio(m: Record<string, unknown>): Array<{ url: string; filename
   }
 
   return audio;
+}
+
+// --- MEDIA: token extraction from text ---
+
+const MEDIA_TOKEN_RE = /\bMEDIA:\s*`?([^\n`]+)`?/gi;
+
+const AUDIO_EXTS = new Set(["mp3", "wav", "ogg", "m4a", "aac", "flac", "opus", "webm"]);
+const VIDEO_EXTS = new Set(["mp4", "mov", "webm", "mkv", "avi"]);
+const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "ico"]);
+
+function getExtension(path: string): string {
+  const dot = path.lastIndexOf(".");
+  if (dot === -1) return "";
+  // Strip query/hash if present
+  return path
+    .slice(dot + 1)
+    .split(/[?#]/)[0]
+    .toLowerCase();
+}
+
+/**
+ * Convert an absolute path to a kos-media:// URL for Electron protocol handler.
+ * e.g. /var/folders/.../file.mp3 → kos-media://local/var/folders/.../file.mp3
+ */
+function toMediaUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  if (path.startsWith("kos-media://")) return path;
+  // Absolute path → kos-media://local/...
+  if (path.startsWith("/")) {
+    return "kos-media://local" + path;
+  }
+  return path;
+}
+
+function filenameFromPath(path: string): string {
+  const slash = path.lastIndexOf("/");
+  return slash === -1 ? path : path.slice(slash + 1);
+}
+
+/**
+ * Extract MEDIA: tokens from text, classify by extension, return cleaned text + media parts.
+ */
+function extractMediaFromText(text: string): {
+  cleanedText: string;
+  mediaParts: (AudioPart | VideoPart | ImagePart | FilePart)[];
+} {
+  const mediaParts: (AudioPart | VideoPart | ImagePart | FilePart)[] = [];
+  let lastIndex = 0;
+  const pieces: string[] = [];
+
+  for (const match of text.matchAll(MEDIA_TOKEN_RE)) {
+    const start = match.index ?? 0;
+    pieces.push(text.slice(lastIndex, start));
+
+    const raw = match[1]
+      .trim()
+      .replace(/^[`"']+/, "")
+      .replace(/[`"']+$/, "");
+    if (!raw) {
+      pieces.push(match[0]);
+      lastIndex = start + match[0].length;
+      continue;
+    }
+
+    // Reject traversal
+    if (raw.includes("..")) {
+      pieces.push(match[0]);
+      lastIndex = start + match[0].length;
+      continue;
+    }
+
+    const ext = getExtension(raw);
+    const url = toMediaUrl(raw);
+    const filename = filenameFromPath(raw);
+
+    if (AUDIO_EXTS.has(ext)) {
+      mediaParts.push({ type: "audio", url, filename });
+    } else if (VIDEO_EXTS.has(ext)) {
+      mediaParts.push({ type: "video", url, filename });
+    } else if (IMAGE_EXTS.has(ext)) {
+      mediaParts.push({ type: "image", url });
+    } else {
+      mediaParts.push({ type: "file", url, filename });
+    }
+
+    lastIndex = start + match[0].length;
+  }
+
+  pieces.push(text.slice(lastIndex));
+
+  const cleanedText = pieces
+    .join("")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
+
+  return { cleanedText, mediaParts };
 }

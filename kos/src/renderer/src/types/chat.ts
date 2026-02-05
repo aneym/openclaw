@@ -9,6 +9,7 @@ export interface Chat {
   linkedTaskId?: string; // optional task link
   channel?: string; // source channel (slack, telegram, discord, etc.)
   status: ChatStatus;
+  hasUnread?: boolean; // agent completed while user wasn't viewing this chat
   lastMessageAt: number;
   createdAt: number;
 }

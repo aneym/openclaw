@@ -70,6 +70,8 @@ interface ThemesConfig {
   themes: ThemeDefinitionPreload[];
   activeThemeId: string;
   mode: "light" | "dark" | "system";
+  liquidGlass?: boolean;
+  glass?: { chromeTint?: number; sidebarTint?: number; borderOpacity?: number };
 }
 
 // Project types
@@ -218,6 +220,9 @@ const api = {
     ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: (): Promise<{ canceled: boolean; filePaths: string[] }> =>
     ipcRenderer.invoke("dialog:openDirectory"),
+  setDockBadge: (count: number): void => {
+    ipcRenderer.invoke("app:set-dock-badge", count);
+  },
 
   // Logs API (for debugging and agent self-iteration)
   logs: {
@@ -373,6 +378,9 @@ const api = {
     resize: (id: string, cols: number, rows: number): Promise<void> =>
       ipcRenderer.invoke("terminal:resize", id, cols, rows),
     kill: (id: string): Promise<void> => ipcRenderer.invoke("terminal:kill", id),
+    // Clear terminal scrollback (memory + disk)
+    clearScrollback: (id: string): Promise<void> =>
+      ipcRenderer.invoke("terminal:clearScrollback", id),
     // Detach without killing (for HMR - keeps PTY alive)
     detach: (id: string): Promise<boolean> => ipcRenderer.invoke("terminal:detach", id),
     // Check if terminal still exists in main process

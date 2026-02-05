@@ -29,6 +29,11 @@ interface ChatState {
    */
   mergeChats: (chats: Chat[], isFullList: boolean) => void;
 
+  // Unread actions
+  markUnread: (chatId: string) => void;
+  markRead: (chatId: string) => void;
+  getUnreadCount: () => number;
+
   // Selectors
   getChat: (id: string) => Chat | undefined;
   getChatsForWorkspace: (workspaceId: string) => Chat[];
@@ -177,6 +182,34 @@ export const useChatStore = create<ChatState>()(
           set({ isLoadingMore: loading });
         },
 
+        markUnread: (chatId: string) => {
+          const { chats } = get();
+          const chat = chats.get(chatId);
+          if (chat && !chat.hasUnread) {
+            const updated = new Map(chats);
+            updated.set(chatId, { ...chat, hasUnread: true });
+            set({ chats: updated });
+          }
+        },
+
+        markRead: (chatId: string) => {
+          const { chats } = get();
+          const chat = chats.get(chatId);
+          if (chat && chat.hasUnread) {
+            const updated = new Map(chats);
+            updated.set(chatId, { ...chat, hasUnread: false });
+            set({ chats: updated });
+          }
+        },
+
+        getUnreadCount: () => {
+          let count = 0;
+          for (const chat of get().chats.values()) {
+            if (chat.hasUnread) count++;
+          }
+          return count;
+        },
+
         mergeChats: (newChats: Chat[], isFullList: boolean) => {
           const { chats } = get();
           const updated = new Map(chats);
@@ -188,12 +221,13 @@ export const useChatStore = create<ChatState>()(
               sessionKeysMatch(c.sessionKey, chat.sessionKey),
             );
             if (existing) {
-              // Update existing chat
+              // Update existing chat (preserve hasUnread — gateway doesn't know about it)
               updated.set(existing.id, {
                 ...existing,
                 title: chat.title || existing.title,
                 lastMessageAt: Math.max(chat.lastMessageAt, existing.lastMessageAt),
                 status: chat.status,
+                hasUnread: existing.hasUnread,
               });
             } else {
               // Add new chat

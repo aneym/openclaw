@@ -78,7 +78,10 @@ ${mainLogs}`;
   };
 
   return (
-    <div className="flex items-center h-10 border-b border-border bg-muted/30 px-2 gap-1 [-webkit-app-region:drag]">
+    <div
+      className="flex items-center h-10 border-b border-border/50 px-2 gap-1 [-webkit-app-region:drag]"
+      style={{ background: "var(--glass-chrome-bg)" }}
+    >
       <div className="flex items-center gap-1 [-webkit-app-region:no-drag]">
         {/* Home tab */}
         <button

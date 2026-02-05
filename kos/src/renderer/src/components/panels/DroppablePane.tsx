@@ -46,7 +46,9 @@ export function DroppablePane({ panelId, children, className }: DroppablePanePro
       </div>
 
       {/* Animated drop zone overlays */}
-      <AnimatePresence>{showDropZone && <DropZoneOverlay zone={dropZone} />}</AnimatePresence>
+      <AnimatePresence>
+        {showDropZone && <DropZoneOverlay zone={dropZone} dragType={activeDragData?.type} />}
+      </AnimatePresence>
     </div>
   );
 }
@@ -58,13 +60,14 @@ const springConfig = { type: "spring", stiffness: 400, damping: 25 } as const;
  * VS Code-style drop zone overlay
  *
  * For edge zones: thin 2px insertion line at the actual insertion edge + 50% split preview
- * For center zone: dashed border with "Replace" label
+ * For center zone: dashed border with "Swap" (pane) or "Replace" (thread) label
  */
-function DropZoneOverlay({ zone }: { zone: DropZone }) {
+function DropZoneOverlay({ zone, dragType }: { zone: DropZone; dragType?: "pane" | "thread" }) {
   if (!zone) return null;
 
-  // Center zone has different treatment - more visible for replace action
+  // Center zone has different treatment - more visible for replace/swap action
   if (zone === "center") {
+    const centerLabel = dragType === "pane" ? "Swap" : "Replace";
     return (
       <motion.div
         key="center"
@@ -75,7 +78,7 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
         className="absolute inset-2 pointer-events-none border-2 border-dashed border-primary rounded-md bg-primary/10"
       >
         <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-medium text-primary-foreground bg-primary px-2.5 py-1 rounded shadow-md">
-          Replace
+          {centerLabel}
         </span>
       </motion.div>
     );

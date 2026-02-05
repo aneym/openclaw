@@ -60,7 +60,16 @@ export function InstallThemeDialog() {
         <DialogHeader>
           <DialogTitle>Install Theme</DialogTitle>
           <DialogDescription>
-            Paste a tweakcn.com theme URL, a shadcn add command, or raw JSON to install a new theme.
+            Paste a{" "}
+            <a
+              href="https://tweakcn.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-primary"
+            >
+              tweakcn.com
+            </a>{" "}
+            theme URL, a shadcn add command, or raw JSON to install a new theme.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 pt-2">

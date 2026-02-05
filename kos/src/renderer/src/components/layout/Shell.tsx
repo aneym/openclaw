@@ -7,6 +7,7 @@ import {
 } from "react-resizable-panels";
 import type { Project, View } from "../../types";
 import { useKeyboardShortcuts } from "../../hooks/use-keyboard-shortcuts";
+import { useMarkRead } from "../../hooks/use-mark-read";
 import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
 import { useDashboardStore } from "../../stores/dashboard-store";
@@ -17,6 +18,7 @@ import { HOME_WORKSPACE_ID, useWorkspaceStore } from "../../stores/workspace-sto
 import { PanelContainer } from "../panels/PanelContainer";
 import { ProjectCreateDialog, ProjectSettingsDialog } from "../project";
 import { Settings } from "../settings/Settings";
+import { TriageInbox } from "../triage/TriageInbox";
 import { CommandPalette } from "./CommandPalette";
 import { ProfileSwitcherDialog } from "./ProfileSwitcherDialog";
 import { HOME_PROJECT_ID, ProjectTabs } from "./ProjectTabs";
@@ -85,6 +87,8 @@ export function Shell() {
   const closeTab = usePanelStore((s) => s.closeTab);
   const nextTab = usePanelStore((s) => s.nextTab);
   const prevTab = usePanelStore((s) => s.prevTab);
+  const getFocusedChatPanelId = usePanelStore((s) => s.getFocusedChatPanelId);
+  const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
 
   // Derived values
   const projects = useMemo(
@@ -113,6 +117,7 @@ export function Shell() {
 
   // Dashboard state for home mode
   const dashboardActiveChatId = useDashboardStore((s) => s.activeChatId);
+  const setDashboardActiveChatId = useDashboardStore((s) => s.setActiveChatId);
 
   // Home tab detection (shows all chats)
   const isHome = activeProjectId === HOME_PROJECT_ID;
@@ -178,6 +183,13 @@ export function Shell() {
         shiftKey: false,
         handler: toggleSidebar,
         description: "Toggle sidebar",
+      },
+      {
+        key: "i",
+        metaKey: true,
+        shiftKey: true,
+        handler: () => setView("triage"),
+        description: "Open triage inbox",
       },
       {
         key: "w",
@@ -331,11 +343,16 @@ export function Shell() {
         shiftKey: false,
         handler: () => {
           const wsId = getWsId();
+          console.log(`[shortcuts] ⌘${i}: wsId=${wsId}`);
           if (!wsId) return;
           const leafIds = getAllLeafIds(wsId);
+          console.log(`[shortcuts] ⌘${i}: leafIds=`, leafIds, `target index=${i - 1}`);
           const targetId = leafIds[i - 1];
           if (targetId) {
+            console.log(`[shortcuts] ⌘${i}: focusing panel ${targetId}`);
             setFocusedPanelId(wsId, targetId);
+          } else {
+            console.log(`[shortcuts] ⌘${i}: no panel at index ${i - 1}`);
           }
         },
         description: `Focus panel ${i}`,
@@ -389,6 +406,11 @@ export function Shell() {
 
   useKeyboardShortcuts(shortcuts);
 
+  // Auto-clear unread state when focused panel shows a chat
+  // Run for both home workspace and active project workspace
+  useMarkRead(HOME_WORKSPACE_ID);
+  useMarkRead(isHome ? undefined : activeWorkspace?.id);
+
   return (
     <div className="h-screen flex flex-col">
       {/* macOS titlebar drag region */}
@@ -430,7 +452,18 @@ export function Shell() {
         <Panel id="main" order={2} minSize={50}>
           <main className="h-full bg-background overflow-hidden flex flex-col">
             <div className="flex-1 overflow-hidden">
-              {view === "settings" ? (
+              {view === "triage" ? (
+                <TriageInbox
+                  onOpenChat={(chatId) => {
+                    setDashboardActiveChatId(chatId);
+                    const focusedPanelId = getFocusedChatPanelId(HOME_WORKSPACE_ID);
+                    if (focusedPanelId) {
+                      openThreadInPane(HOME_WORKSPACE_ID, focusedPanelId, chatId);
+                    }
+                    setView("home");
+                  }}
+                />
+              ) : view === "settings" ? (
                 <Settings />
               ) : isHome ? (
                 // Home mode: always show PanelContainer (handles chat display + other panels)

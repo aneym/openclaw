@@ -45,7 +45,7 @@ export function ToolCallGroup({ messages, forceExpanded = false }: ToolCallGroup
   // For small groups, just show chips inline
   if (!shouldCollapse) {
     return (
-      <div className="flex flex-wrap gap-1.5">
+      <div className="flex flex-wrap gap-1.5 min-w-0">
         {toolParts.map((part, idx) => (
           <ToolCallChip
             key={part.type === "tool-call" || part.type === "tool-result" ? part.toolCallId : idx}
@@ -88,7 +88,7 @@ export function ToolCallGroup({ messages, forceExpanded = false }: ToolCallGroup
             initial="initial"
             animate="animate"
             exit="initial"
-            className="flex flex-wrap gap-1.5 mt-2"
+            className="flex flex-wrap gap-1.5 mt-2 min-w-0"
           >
             {toolParts.map((part, idx) => (
               <motion.div

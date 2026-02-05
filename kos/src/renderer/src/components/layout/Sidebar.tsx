@@ -1,4 +1,4 @@
-import { GitBranch, Globe, ListTodo, Loader2, Plus, Settings, Terminal } from "lucide-react";
+import { GitBranch, Globe, Inbox, ListTodo, Loader2, Plus, Settings, Terminal } from "lucide-react";
 import { useMemo, useCallback } from "react";
 import { toast } from "sonner";
 import type { Chat, Project, View, Workspace } from "../../types";
@@ -163,6 +163,15 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     }),
     [toggleGroup],
   );
+
+  // Unread count for triage badge
+  const unreadCount = useMemo(() => {
+    let count = 0;
+    for (const chat of chatsMap.values()) {
+      if (chat.hasUnread) count++;
+    }
+    return count;
+  }, [chatsMap]);
 
   // Counts for dashboard filter
   const totalCount = allChats.length;
@@ -357,7 +366,10 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   );
 
   return (
-    <div className="h-full border-r border-border bg-muted/30 flex flex-col">
+    <div
+      className="h-full border-r border-border/50 flex flex-col"
+      style={{ background: "var(--glass-sidebar-bg)" }}
+    >
       {/* Session search */}
       <div className="shrink-0 border-b border-border px-3 py-2">
         <SessionSearch onSelectSession={handleSearchSelect} />
@@ -498,6 +510,24 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
 
       {/* Bottom nav */}
       <div className="shrink-0 border-t border-border px-2 py-2 space-y-0.5">
+        <button
+          onClick={() => onNavigate("triage")}
+          className={cn(
+            "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
+            "flex items-center gap-2",
+            currentView === "triage"
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+          )}
+        >
+          <Inbox className="h-4 w-4 shrink-0" />
+          <span>Triage</span>
+          {unreadCount > 0 && (
+            <span className="ml-auto text-xs bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+              {unreadCount}
+            </span>
+          )}
+        </button>
         <button
           onClick={() => {
             if (!workspaceId) return;

@@ -51,6 +51,8 @@ export interface ThemesConfig {
   themes: ThemeDefinition[];
   activeThemeId: string;
   mode: "light" | "dark" | "system";
+  liquidGlass?: boolean;
+  glass?: { chromeTint?: number; sidebarTint?: number; borderOpacity?: number };
 }
 
 const DEFAULT_THEMES_CONFIG: ThemesConfig = {

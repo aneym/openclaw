@@ -1,17 +1,25 @@
-import { Eye, Link2, Palette, Plug, Users } from "lucide-react";
+import { Bell, Eye, Link2, Palette, Plug, Users } from "lucide-react";
 import { useState } from "react";
 import { ThemeShowcase } from "../ThemeShowcase";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { ConnectionSettings } from "./ConnectionSettings";
 import { GitHubSettings } from "./GitHubSettings";
 import { LinearSettings } from "./LinearSettings";
+import { NotificationSettings } from "./NotificationSettings";
 import { ProfileSettings } from "./ProfileSettings";
 
-type SettingsSection = "profiles" | "appearance" | "preview" | "connection" | "integrations";
+type SettingsSection =
+  | "profiles"
+  | "appearance"
+  | "notifications"
+  | "preview"
+  | "connection"
+  | "integrations";
 
 const sections = [
   { id: "profiles" as const, label: "Profiles", icon: Users },
   { id: "appearance" as const, label: "Appearance", icon: Palette },
+  { id: "notifications" as const, label: "Notifications", icon: Bell },
   { id: "integrations" as const, label: "Integrations", icon: Link2 },
   { id: "connection" as const, label: "Connection", icon: Plug },
   { id: "preview" as const, label: "Preview", icon: Eye },
@@ -55,6 +63,12 @@ export function Settings() {
           <div className="overflow-y-auto h-full p-8 max-w-2xl">
             <h2 className="text-2xl font-bold mb-6">Appearance</h2>
             <AppearanceSettings />
+          </div>
+        )}
+        {activeSection === "notifications" && (
+          <div className="overflow-y-auto h-full p-8 max-w-2xl">
+            <h2 className="text-2xl font-bold mb-6">Notifications</h2>
+            <NotificationSettings />
           </div>
         )}
         {activeSection === "integrations" && (

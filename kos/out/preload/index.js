@@ -12,6 +12,9 @@ const api = {
   initialThemeConfig,
   getGatewayConfig: () => electron.ipcRenderer.invoke("get-gateway-config"),
   openDirectoryDialog: () => electron.ipcRenderer.invoke("dialog:openDirectory"),
+  setDockBadge: (count) => {
+    electron.ipcRenderer.invoke("app:set-dock-badge", count);
+  },
   // Logs API (for debugging and agent self-iteration)
   logs: {
     getMainLogs: () => electron.ipcRenderer.invoke("logs:getMainLogs"),
@@ -121,6 +124,8 @@ const api = {
     write: (id, data) => electron.ipcRenderer.invoke("terminal:write", id, data),
     resize: (id, cols, rows) => electron.ipcRenderer.invoke("terminal:resize", id, cols, rows),
     kill: (id) => electron.ipcRenderer.invoke("terminal:kill", id),
+    // Clear terminal scrollback (memory + disk)
+    clearScrollback: (id) => electron.ipcRenderer.invoke("terminal:clearScrollback", id),
     // Detach without killing (for HMR - keeps PTY alive)
     detach: (id) => electron.ipcRenderer.invoke("terminal:detach", id),
     // Check if terminal still exists in main process

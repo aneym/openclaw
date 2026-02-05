@@ -419,25 +419,31 @@ function DragOverlayContent({
     );
   }
 
-  // Pane drag overlay - show panel type icon and label
+  // Pane drag overlay - miniaturized panel preview
   const type = panelType || "chat";
   const Icon = PANEL_TYPE_ICONS[type];
   const label = PANEL_TYPE_LABELS[type];
 
+  const title = label;
+
   return (
     <motion.div
-      initial={{ scale: 0.95, opacity: 0 }}
-      animate={{ scale: 1, opacity: 1 }}
-      exit={{ scale: 0.95, opacity: 0 }}
+      initial={{ scale: 0.92, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1, rotate: 2 }}
+      exit={{ scale: 0.92, opacity: 0 }}
       transition={{ type: "spring", stiffness: 500, damping: 30 }}
-      className="flex items-center gap-2 px-2.5 py-1.5 bg-background/95 backdrop-blur-sm border border-border rounded-md shadow-xl"
+      className="w-[180px] h-[120px] rounded-lg border border-border bg-background/90 backdrop-blur-sm overflow-hidden"
       style={{
-        boxShadow:
-          "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.05)",
+        boxShadow: "0 25px 50px -12px rgb(0 0 0 / 0.25), 0 0 0 1px rgb(0 0 0 / 0.05)",
       }}
     >
-      <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
-      <span className="text-xs font-medium">{label}</span>
+      {/* Mini tab bar */}
+      <div className="h-6 flex items-center gap-1.5 px-2 border-b border-border bg-muted/50">
+        <Icon className="h-3 w-3 text-foreground/70 shrink-0" />
+        <span className="text-[10px] font-medium text-foreground/70 truncate">{title}</span>
+      </div>
+      {/* Content placeholder */}
+      <div className="flex-1 bg-muted/20" style={{ height: "calc(100% - 24px)" }} />
     </motion.div>
   );
 }

@@ -80,14 +80,6 @@ export function PanelContent({
       if (isTabbed && tabs && tabs.length > 0) {
         const chatId = (data?.chatId as string | undefined) ?? activeTab?.contentId;
 
-        console.log("[PanelContent] tabbed chat panel render", {
-          panelId,
-          workspaceId,
-          chatId,
-          activeTabId: activeTab?.id,
-          data,
-        });
-
         if (!chatId) {
           // Tab has no contentId - show empty state with session picker
           return (
@@ -99,14 +91,6 @@ export function PanelContent({
 
       // For non-tabbed (legacy) panels, fall back to activeChatId
       const chatId = (data?.chatId as string | undefined) ?? activeChatId;
-
-      console.log("[PanelContent] non-tabbed chat panel render", {
-        panelId,
-        workspaceId,
-        chatId,
-        activeChatId,
-        data,
-      });
 
       if (!chatId) {
         return (
@@ -163,12 +147,26 @@ export function PanelContent({
           );
         }
 
-        return <TerminalPanel terminalId={terminalId} cwd={terminalCwd} managed={tabManaged} />;
+        return (
+          <TerminalPanel
+            terminalId={terminalId}
+            cwd={terminalCwd}
+            managed={tabManaged}
+            isFocused={isFocused}
+          />
+        );
       } else {
         // Legacy non-tabbed terminal - just start immediately
         const terminalId = (data?.terminalId as string | undefined) ?? `term-${panelId}`;
         const terminalCwd = data?.cwd as string | undefined;
-        return <TerminalPanel terminalId={terminalId} cwd={terminalCwd} managed={isManaged} />;
+        return (
+          <TerminalPanel
+            terminalId={terminalId}
+            cwd={terminalCwd}
+            managed={isManaged}
+            isFocused={isFocused}
+          />
+        );
       }
     }
 

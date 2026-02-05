@@ -1,17 +1,32 @@
 import { useMemo, memo } from "react";
-import type { ChatMessage, MessagePart, ToolCallPart, ToolResultPart } from "@/types/message";
+import type { ActiveTool } from "@/stores/chat-session-store";
+import type {
+  ChatMessage,
+  MessagePart,
+  ToolCallPart,
+  ToolResultPart,
+  AudioPart,
+  VideoPart,
+  FilePart,
+} from "@/types/message";
 import { cn } from "@/lib/utils";
+import { AudioAttachment } from "./AudioAttachment";
+import { ExecutingTools } from "./ExecutingTools";
+import { FileAttachment } from "./FileAttachment";
 import { ImageAttachment } from "./ImageAttachment";
 import { ReasoningBlock } from "./ReasoningBlock";
 import { StreamingIndicator } from "./StreamingIndicator";
 import { TextPart } from "./TextPart";
 import { ToolCallGroup } from "./ToolCallGroup";
+import { VideoAttachment } from "./VideoAttachment";
 
 interface MessageGroupProps {
   messages: ChatMessage[];
   role: "user" | "assistant" | "system" | "tool";
   isStreaming?: boolean;
   streamText?: string;
+  streamReasoning?: string;
+  activeTools?: ActiveTool[];
   showTimestamp?: boolean;
 }
 
@@ -57,7 +72,7 @@ function GroupFooter({
   return (
     <div
       className={cn(
-        "text-xs text-muted-foreground mt-1 px-1 opacity-0 group-hover:opacity-100 transition-opacity",
+        "text-xs text-muted-foreground px-1 opacity-0 group-hover:opacity-100 transition-opacity",
         role === "user" && "text-right",
       )}
     >
@@ -68,13 +83,15 @@ function GroupFooter({
 
 /**
  * Extract parts by type from all messages in the group.
- * Returns: { toolParts, reasoningParts, textParts, imageParts }
  */
 function extractPartsByType(messages: ChatMessage[]) {
   const toolParts: (ToolCallPart | ToolResultPart)[] = [];
   const reasoningParts: Array<{ reasoning: string; durationMs?: number }> = [];
   const textParts: Array<{ text: string; isLast: boolean }> = [];
   const imageParts: Array<{ url: string; alt?: string }> = [];
+  const audioParts: AudioPart[] = [];
+  const videoParts: VideoPart[] = [];
+  const fileParts: FilePart[] = [];
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
@@ -89,11 +106,17 @@ function extractPartsByType(messages: ChatMessage[]) {
         textParts.push({ text: part.text, isLast: isLastMessage });
       } else if (part.type === "image") {
         imageParts.push({ url: part.url, alt: part.alt });
+      } else if (part.type === "audio") {
+        audioParts.push(part);
+      } else if (part.type === "video") {
+        videoParts.push(part);
+      } else if (part.type === "file") {
+        fileParts.push(part);
       }
     }
   }
 
-  return { toolParts, reasoningParts, textParts, imageParts };
+  return { toolParts, reasoningParts, textParts, imageParts, audioParts, videoParts, fileParts };
 }
 
 /**
@@ -110,12 +133,12 @@ export const MessageGroup = memo(function MessageGroup({
   role,
   isStreaming,
   streamText,
+  streamReasoning,
+  activeTools,
   showTimestamp = true,
 }: MessageGroupProps) {
-  const { toolParts, reasoningParts, textParts, imageParts } = useMemo(
-    () => extractPartsByType(messages),
-    [messages],
-  );
+  const { toolParts, reasoningParts, textParts, imageParts, audioParts, videoParts, fileParts } =
+    useMemo(() => extractPartsByType(messages), [messages]);
 
   // Build tool-only messages for ToolCallGroup (it expects ChatMessage[])
   const toolMessages = useMemo(() => {
@@ -136,18 +159,21 @@ export const MessageGroup = memo(function MessageGroup({
   const hasTextContent = textParts.length > 0 || (isStreaming && streamText);
 
   return (
-    <div className={cn("flex flex-col group", role === "user" ? "items-end" : "items-start")}>
-      {/* 1. Tool calls and reasoning grouped tightly */}
-      {(toolMessages.length > 0 || reasoningParts.length > 0) && (
-        <div className="flex flex-col">
+    <div className={cn("flex flex-col gap-4 group", role === "user" ? "items-end" : "items-start")}>
+      {/* 1. Tool calls, executing tools, and reasoning grouped tightly */}
+      {(toolMessages.length > 0 ||
+        reasoningParts.length > 0 ||
+        (isStreaming && streamReasoning) ||
+        (isStreaming && activeTools && activeTools.length > 0)) && (
+        <div className="flex flex-col gap-1.5 max-w-[85%] min-w-0">
           {toolMessages.length > 0 && <ToolCallGroup messages={toolMessages} />}
-          {reasoningParts.map((rp, idx) => (
-            <ReasoningBlock
-              key={`reasoning-${idx}`}
-              reasoning={rp.reasoning}
-              durationMs={rp.durationMs}
-            />
-          ))}
+          {isStreaming && activeTools && activeTools.length > 0 && (
+            <ExecutingTools tools={activeTools} />
+          )}
+          {reasoningParts.length > 0 && <ReasoningBlock entries={reasoningParts} />}
+          {isStreaming && streamReasoning && reasoningParts.length === 0 && (
+            <ReasoningBlock entries={[{ reasoning: streamReasoning }]} />
+          )}
         </div>
       )}
 
@@ -156,7 +182,6 @@ export const MessageGroup = memo(function MessageGroup({
         <div
           className={cn(
             "max-w-[85%]",
-            (toolMessages.length > 0 || reasoningParts.length > 0) && "mt-1",
             role === "user"
               ? "rounded-lg px-3 py-2 bg-muted text-foreground self-end"
               : "text-foreground self-start",
@@ -179,7 +204,22 @@ export const MessageGroup = memo(function MessageGroup({
         <ImageAttachment key={`img-${idx}`} part={{ type: "image", ...img }} />
       ))}
 
-      {/* 4. Timestamp pinned at bottom of entire turn */}
+      {/* 4. Audio */}
+      {audioParts.map((aud, idx) => (
+        <AudioAttachment key={`aud-${idx}`} part={aud} />
+      ))}
+
+      {/* 5. Video */}
+      {videoParts.map((vid, idx) => (
+        <VideoAttachment key={`vid-${idx}`} part={vid} />
+      ))}
+
+      {/* 6. Files */}
+      {fileParts.map((file, idx) => (
+        <FileAttachment key={`file-${idx}`} part={file} />
+      ))}
+
+      {/* 7. Timestamp pinned at bottom of entire turn */}
       {showTimestamp && <GroupFooter role={role} timestamp={messages[0].createdAt} />}
     </div>
   );

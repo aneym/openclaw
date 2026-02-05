@@ -210,8 +210,40 @@
   border-color: var(--color-border);
 }
 
+/* Liquid Glass: CSS custom properties for glass-aware chrome backgrounds.
+   When .liquid-glass is on <html>, chrome areas go transparent so native
+   NSGlassEffectView shows through. Without it, they use opaque fallbacks. */
+:root {
+  --glass-chrome-bg: var(--muted);
+  --glass-sidebar-bg: var(--muted);
+  --glass-chrome-opacity: 1;
+  --glass-border-opacity: 1;
+}
+
+html.liquid-glass {
+  --glass-chrome-tint: 0.06;
+  --glass-sidebar-tint: 0.08;
+  --glass-border-opacity: 0.5;
+  --glass-chrome-bg: rgba(128, 128, 128, var(--glass-chrome-tint));
+  --glass-sidebar-bg: rgba(128, 128, 128, var(--glass-sidebar-tint));
+  --glass-chrome-opacity: 0;
+}
+
+.dark.liquid-glass {
+  --glass-chrome-bg: rgba(0, 0, 0, calc(var(--glass-chrome-tint) * 2));
+  --glass-sidebar-bg: rgba(0, 0, 0, calc(var(--glass-sidebar-tint) * 2));
+}
+
+html {
+  /* Near-invisible bg prevents Electron click-through on transparent windows */
+  background: rgba(0, 0, 0, 0.005) !important;
+}
+
 body {
-  background-color: var(--color-background);
+  background: transparent !important;
+}
+
+body {
   color: var(--color-foreground);
   font-feature-settings:
     "rlig" 1,

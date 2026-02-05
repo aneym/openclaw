@@ -129,12 +129,12 @@ export function ToolCallChip({
     hasContent && isResult ? formatResult(part.result) : { content: "", isJson: false };
 
   return (
-    <div className="tool-call-chip">
+    <div className="tool-call-chip min-w-0 max-w-full">
       <button
         onClick={handleClick}
         className={cn(
           "inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors",
-          "border border-border/50",
+          "border border-border/50 max-w-full",
           isExecuting
             ? "bg-primary/10 text-primary border-primary/30 animate-pulse"
             : isError
@@ -160,28 +160,28 @@ export function ToolCallChip({
         title={`Tool: ${part.toolName}${isExecuting ? " (executing)" : ""}`}
       >
         {isExecuting ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
         ) : (
-          <ToolIcon name={part.toolName} className="w-3.5 h-3.5" />
+          <ToolIcon name={part.toolName} className="w-3.5 h-3.5 shrink-0" />
         )}
-        <span className="font-mono">{part.toolName}</span>
+        <span className="font-mono truncate">{part.toolName}</span>
         {details && (
           <>
-            <span className="text-muted-foreground/50">·</span>
+            <span className="text-muted-foreground/50 shrink-0">·</span>
             <span className="truncate max-w-[200px]">{details}</span>
           </>
         )}
         {hasContent && (
           <ChevronRight
-            className={cn("w-3 h-3 transition-transform ml-0.5", open && "rotate-90")}
+            className={cn("w-3 h-3 shrink-0 transition-transform ml-0.5", open && "rotate-90")}
           />
         )}
       </button>
       {open && hasContent && content && (
-        <div className="mt-1.5 rounded-md border border-border/50 bg-muted/30 overflow-hidden">
+        <div className="mt-1.5 rounded-md border border-border/50 bg-muted/30 overflow-hidden max-w-full">
           <pre
             className={cn(
-              "text-xs p-2 overflow-x-auto max-h-[300px] overflow-y-auto",
+              "text-xs p-2 max-h-[300px] overflow-auto",
               isJson ? "text-muted-foreground" : "text-foreground whitespace-pre-wrap break-all",
             )}
           >

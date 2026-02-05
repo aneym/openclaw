@@ -43,6 +43,7 @@ interface UseChatSessionReturn {
   // Streaming state
   runId: string | null;
   streamText: string;
+  streamReasoning: string;
   streamStartedAt: number | null;
   activeTools: ActiveTool[];
   awaitingResponse: boolean;
@@ -70,6 +71,7 @@ const emptyState: Pick<
   | "error"
   | "runId"
   | "streamText"
+  | "streamReasoning"
   | "streamStartedAt"
   | "activeTools"
   | "awaitingResponse"
@@ -81,6 +83,7 @@ const emptyState: Pick<
   error: null,
   runId: null,
   streamText: "",
+  streamReasoning: "",
   streamStartedAt: null,
   activeTools: [],
   awaitingResponse: false,
@@ -103,6 +106,7 @@ const selectLoading = (s: ChatSessionState) => s.loading;
 const selectError = (s: ChatSessionState) => s.error;
 const selectRunId = (s: ChatSessionState) => s.runId;
 const selectStreamText = (s: ChatSessionState) => s.streamText;
+const selectStreamReasoning = (s: ChatSessionState) => s.streamReasoning;
 const selectStreamStartedAt = (s: ChatSessionState) => s.streamStartedAt;
 const selectActiveTools = (s: ChatSessionState) => s.activeTools;
 const selectAwaitingResponse = (s: ChatSessionState) => s.awaitingResponse;
@@ -222,6 +226,11 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
   const error = useStoreSelector(store, selectError, emptyState.error);
   const runId = useStoreSelector(store, selectRunId, emptyState.runId);
   const streamText = useStoreSelector(store, selectStreamText, emptyState.streamText);
+  const streamReasoning = useStoreSelector(
+    store,
+    selectStreamReasoning,
+    emptyState.streamReasoning,
+  );
   const streamStartedAt = useStoreSelector(
     store,
     selectStreamStartedAt,
@@ -258,6 +267,7 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
     error,
     runId,
     streamText,
+    streamReasoning,
     streamStartedAt,
     activeTools,
     awaitingResponse,

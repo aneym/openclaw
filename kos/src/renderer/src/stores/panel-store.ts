@@ -676,16 +676,10 @@ export const usePanelStore = create<PanelStoreState>()(
         const panelB = layout.panels.get(panelIdB);
         if (!panelA || !panelB) return;
 
-        // Swap the data (which includes chatId for chat panels)
+        // Swap full panel state (type, tabs, data, etc.) — only id stays (tied to tree position)
         const newPanels = new Map(layout.panels);
-        newPanels.set(panelIdA, {
-          ...panelA,
-          data: panelB.data,
-        });
-        newPanels.set(panelIdB, {
-          ...panelB,
-          data: panelA.data,
-        });
+        newPanels.set(panelIdA, { ...panelB, id: panelIdA });
+        newPanels.set(panelIdB, { ...panelA, id: panelIdB });
 
         get().setLayout(workspaceId, {
           ...layout,

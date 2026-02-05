@@ -1,3 +1,4 @@
+import { useDraggable } from "@dnd-kit/core";
 import {
   X,
   Plus,
@@ -16,6 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { memo, useMemo, useCallback } from "react";
+import type { PaneDragData } from "../../lib/panel-dnd";
 import type { Chat, PanelType, PanelTab } from "../../types";
 import { useChatSession } from "../../hooks/use-chat-session";
 import { useSessionActions } from "../../hooks/use-session-actions";
@@ -25,7 +27,6 @@ import { usePanelStore } from "../../stores/panel-store";
 import { TABBED_PANEL_TYPES } from "../../types";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { DraggableTitlebar } from "./DraggableTitlebar";
 
 interface PanelTabBarProps {
   panelId: string;
@@ -82,6 +83,21 @@ export const PanelTabBar = memo(function PanelTabBar({
     chatId ?? "",
   );
 
+  // Drag handle on the panel icon (works for all panels, tabbed or not)
+  const dragData: PaneDragData = useMemo(
+    () => ({ type: "pane", panelId, workspaceId }),
+    [panelId, workspaceId],
+  );
+  const {
+    attributes,
+    listeners,
+    setNodeRef: setDragRef,
+    isDragging,
+  } = useDraggable({
+    id: `pane-${panelId}`,
+    data: dragData,
+  });
+
   const isChatPanel = panelType === "chat";
   const actionsDisabled = isStreaming || isLoading || !connected || !sessionKey;
 
@@ -121,52 +137,77 @@ export const PanelTabBar = memo(function PanelTabBar({
 
   return (
     <div className="h-8 flex items-center border-b border-border bg-background/50 overflow-hidden">
-      {/* Panel icon */}
-      <div className="flex items-center shrink-0 pl-2 pr-1">
-        <PanelTypeIcon type={panelType} className="h-4 w-4 text-foreground/70" />
-      </div>
-
-      {/* Tabs area - either real tabs or single draggable title */}
       {isTabbed && tabs && tabs.length > 0 ? (
-        <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none">
-          {tabs.map((tab, index) => (
-            <TabButton
-              key={tab.id}
-              tab={tab}
-              index={index}
-              isActive={tab.id === activeTabId}
-              label={getTabLabel(tab, index)}
-              canClose={tabs.length > 1}
-              onSelect={() => handleSelectTab(tab.id)}
-              onClose={(e) => handleCloseTab(tab.id, e)}
-            />
-          ))}
-          {/* Add tab button */}
+        <>
+          {/* Tabbed: icon is the drag handle */}
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6 shrink-0 ml-1"
-                onClick={handleAddTab}
+              <div
+                ref={setDragRef}
+                {...listeners}
+                {...attributes}
+                className={cn(
+                  "flex items-center shrink-0 p-1 ml-1 rounded cursor-grab hover:bg-accent/50",
+                  isDragging && "cursor-grabbing",
+                )}
+                title="Drag to rearrange"
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span className="sr-only">New tab</span>
-              </Button>
+                <PanelTypeIcon type={panelType} className="h-4 w-4 text-foreground/70" />
+              </div>
             </TooltipTrigger>
-            <TooltipContent side="bottom">New tab (Cmd+T)</TooltipContent>
+            <TooltipContent side="bottom">Drag to rearrange</TooltipContent>
           </Tooltip>
-        </div>
+
+          {/* Tabs */}
+          <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none">
+            {tabs.map((tab, index) => (
+              <TabButton
+                key={tab.id}
+                tab={tab}
+                index={index}
+                isActive={tab.id === activeTabId}
+                label={getTabLabel(tab, index)}
+                canClose={tabs.length > 1}
+                onSelect={() => handleSelectTab(tab.id)}
+                onClose={(e) => handleCloseTab(tab.id, e)}
+              />
+            ))}
+            {/* Add tab button */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6 shrink-0 ml-1"
+                  onClick={handleAddTab}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span className="sr-only">New tab</span>
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">New tab (Cmd+T)</TooltipContent>
+            </Tooltip>
+          </div>
+        </>
       ) : (
-        <DraggableTitlebar
-          panelId={panelId}
-          workspaceId={workspaceId}
-          className="flex-1 min-w-0 h-full"
+        /* Non-tabbed: entire icon+title row is draggable */
+        <div
+          ref={setDragRef}
+          {...listeners}
+          {...attributes}
+          className={cn(
+            "flex items-center flex-1 min-w-0 h-full cursor-grab",
+            isDragging && "cursor-grabbing",
+          )}
+          title="Drag to rearrange"
         >
-          <div className="flex items-center text-sm text-foreground/70 font-medium px-1 min-w-0 w-full overflow-hidden">
+          <div className="flex items-center shrink-0 pl-2 pr-1">
+            <PanelTypeIcon type={panelType} className="h-4 w-4 text-foreground/70" />
+          </div>
+          <div className="flex items-center text-sm text-foreground/70 font-medium px-1 min-w-0 overflow-hidden">
             <span className="truncate">{getPanelTitle(panelType, chat?.title)}</span>
           </div>
-        </DraggableTitlebar>
+        </div>
       )}
 
       {/* Actions area */}
@@ -247,12 +288,20 @@ interface TabButtonProps {
 }
 
 const TabButton = memo(function TabButton({
+  tab,
   isActive,
   label,
   canClose,
   onSelect,
   onClose,
 }: TabButtonProps) {
+  const chatsMap = useChatStore((s) => s.chats);
+  const hasUnread = useMemo(() => {
+    if (!tab.contentId) return false;
+    const tabChat = chatsMap.get(tab.contentId) as Chat | undefined;
+    return tabChat?.hasUnread === true;
+  }, [chatsMap, tab.contentId]);
+
   return (
     <button
       type="button"
@@ -266,6 +315,9 @@ const TabButton = memo(function TabButton({
       )}
     >
       <span className="truncate">{label}</span>
+      {hasUnread && (
+        <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-label="Unread" />
+      )}
       {canClose && (
         <span
           role="button"

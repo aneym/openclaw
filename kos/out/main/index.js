@@ -31,6 +31,7 @@ var __toESM = (mod, isNodeMode, target) => (
 );
 const utils = require("@electron-toolkit/utils");
 const electron = require("electron");
+const liquidGlass = require("electron-liquid-glass");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
@@ -1255,6 +1256,15 @@ function killTerminal(id, preserveScrollback = true) {
     terminals.delete(id);
   }
 }
+function clearTerminalScrollback(id) {
+  const entry = terminals.get(id);
+  if (entry) {
+    entry.scrollback = [];
+    entry.scrollbackBytes = 0;
+    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    deleteScrollback(id);
+  }
+}
 function getTerminalInfo(id) {
   const entry = terminals.get(id);
   if (!entry) return null;
@@ -1442,6 +1452,9 @@ function registerTerminalIpc() {
   });
   electron.ipcMain.handle("terminal:info", (_, id) => {
     return getTerminalInfo(id);
+  });
+  electron.ipcMain.handle("terminal:clearScrollback", (_, id) => {
+    clearTerminalScrollback(id);
   });
   electron.ipcMain.handle("terminal:createManaged", async (event, cwd) => {
     const win = electron.BrowserWindow.fromWebContents(event.sender);
@@ -1634,6 +1647,18 @@ if (utils.is.dev) {
 }
 const CDP_PORT = 9222;
 electron.app.commandLine.appendSwitch("remote-debugging-port", String(CDP_PORT));
+electron.protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "kos-media",
+    privileges: {
+      stream: true,
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
+]);
 electron.ipcMain.handle("get-gateway-config", () => {
   const prodPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
   const devPath = path.join(os.homedir(), ".openclaw-dev", "openclaw.json");
@@ -1663,6 +1688,11 @@ electron.ipcMain.handle("get-gateway-config", () => {
     return { url: `ws://localhost:${port}`, token, source: prodPath };
   } catch {
     return { url: "ws://localhost:18789", source: "default" };
+  }
+});
+electron.ipcMain.handle("app:set-dock-badge", (_, count) => {
+  if (process.platform === "darwin" && electron.app.dock) {
+    electron.app.dock.setBadge(count > 0 ? String(count) : "");
   }
 });
 electron.ipcMain.handle("dialog:openDirectory", async () => {
@@ -1842,12 +1872,9 @@ function createWindow() {
     x: saved?.x,
     y: saved?.y,
     show: false,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    ...(process.platform === "darwin"
-      ? {
-          trafficLightPosition: { x: 12, y: 12 },
-        }
-      : {}),
+    transparent: true,
+    frame: process.platform !== "darwin",
+    ...(process.platform !== "darwin" ? { titleBarStyle: "default" } : {}),
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
@@ -1857,24 +1884,55 @@ function createWindow() {
   });
   trackWindowState(mainWindow2);
   initBrowserPanel(mainWindow2);
-  if (saved?.isMaximized) {
+  if (saved?.isMaximized && process.platform !== "darwin") {
     mainWindow2.maximize();
   }
   mainWindow2.on("ready-to-show", () => {
     mainWindow2.show();
   });
+  if (process.platform === "darwin") {
+    mainWindow2.setWindowButtonVisibility(true);
+    mainWindow2.setWindowButtonPosition({ x: 12, y: 12 });
+    console.log("[liquid-glass] supported:", liquidGlass.isGlassSupported());
+    mainWindow2.webContents.once("did-finish-load", () => {
+      const glassId = liquidGlass.addView(mainWindow2.getNativeWindowHandle());
+      console.log("[liquid-glass] addView returned:", glassId);
+    });
+  }
   mainWindow2.webContents.setWindowOpenHandler((details) => {
     electron.shell.openExternal(details.url);
     return { action: "deny" };
   });
+  mainWindow2.webContents.on("console-message", (event, _level, message) => {
+    if (message.includes("Autofill.")) {
+      event.preventDefault();
+    }
+  });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow2.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    mainWindow2.webContents.openDevTools();
+    mainWindow2.webContents.openDevTools({ mode: "detach" });
   } else {
     mainWindow2.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 }
 electron.app.whenReady().then(() => {
+  electron.protocol.handle("kos-media", async (request) => {
+    const url = new URL(request.url);
+    const filePath = decodeURIComponent(url.pathname);
+    if (filePath.includes("..")) {
+      return new Response("Forbidden", { status: 403 });
+    }
+    try {
+      const { statSync } = await import("fs");
+      const stat = statSync(filePath);
+      if (stat.isDirectory()) {
+        return new Response("Not a file", { status: 400 });
+      }
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+    return electron.net.fetch("file://" + filePath);
+  });
   cleanupOldScrollback();
   registerAllIpc();
   createMenu();

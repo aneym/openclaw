@@ -2,13 +2,29 @@ import { create } from "zustand";
 import type { ThemeDefinition } from "../types";
 import { builtInThemes } from "../lib/built-in-themes";
 
+export interface GlassSettings {
+  chromeTint: number; // 0–100, default 6 (light) / 12 (dark)
+  sidebarTint: number; // 0–100, default 8 (light) / 15 (dark)
+  borderOpacity: number; // 0–100, default 50
+}
+
+const DEFAULT_GLASS: GlassSettings = {
+  chromeTint: 6,
+  sidebarTint: 8,
+  borderOpacity: 50,
+};
+
 interface ThemeState {
   themes: ThemeDefinition[];
   activeThemeId: string;
   mode: "light" | "dark" | "system";
+  liquidGlass: boolean;
+  glass: GlassSettings;
 
   setActiveTheme: (id: string) => void;
   setMode: (mode: "light" | "dark" | "system") => void;
+  setLiquidGlass: (enabled: boolean) => void;
+  setGlass: (patch: Partial<GlassSettings>) => void;
   installTheme: (theme: ThemeDefinition) => void;
   removeTheme: (id: string) => void;
   getActiveTheme: () => ThemeDefinition | undefined;
@@ -22,6 +38,8 @@ function persistToFile(state: ThemeState): void {
     themes: userThemes,
     activeThemeId: state.activeThemeId,
     mode: state.mode,
+    liquidGlass: state.liquidGlass,
+    glass: state.glass,
   });
 }
 
@@ -29,10 +47,19 @@ function persistToFile(state: ThemeState): void {
 function getInitialState() {
   const config = window.api?.initialThemeConfig;
   if (!config) {
-    return { themes: builtInThemes, activeThemeId: "twitter", mode: "dark" as const };
+    return {
+      themes: builtInThemes,
+      activeThemeId: "twitter",
+      mode: "dark" as const,
+      liquidGlass: true,
+      glass: DEFAULT_GLASS,
+    };
   }
 
-  const userThemes = (config.themes ?? []).filter((t) => !t.isBuiltIn) as ThemeDefinition[];
+  const builtInIds = new Set(builtInThemes.map((t) => t.id));
+  const userThemes = (config.themes ?? []).filter(
+    (t) => !t.isBuiltIn && !builtInIds.has(t.id),
+  ) as ThemeDefinition[];
   const merged = [...builtInThemes, ...userThemes];
   const activeExists = merged.some((t) => t.id === config.activeThemeId);
 
@@ -40,6 +67,8 @@ function getInitialState() {
     themes: merged,
     activeThemeId: activeExists ? config.activeThemeId : "twitter",
     mode: config.mode ?? ("dark" as const),
+    liquidGlass: config.liquidGlass ?? true,
+    glass: { ...DEFAULT_GLASS, ...config.glass },
   };
 }
 
@@ -49,6 +78,18 @@ export const useThemeStore = create<ThemeState>()((set, get) => ({
   themes: initial.themes,
   activeThemeId: initial.activeThemeId,
   mode: initial.mode,
+  liquidGlass: initial.liquidGlass,
+  glass: initial.glass,
+
+  setLiquidGlass: (enabled: boolean) => {
+    set({ liquidGlass: enabled });
+    persistToFile(get());
+  },
+
+  setGlass: (patch: Partial<GlassSettings>) => {
+    set((state) => ({ glass: { ...state.glass, ...patch } }));
+    persistToFile(get());
+  },
 
   setActiveTheme: (id: string) => {
     const theme = get().themes.find((t) => t.id === id);

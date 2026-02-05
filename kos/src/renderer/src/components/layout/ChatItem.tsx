@@ -99,6 +99,9 @@ export const ChatItem = memo(function ChatItem({
           </div>
         )}
       </div>
+      {chat.hasUnread && (
+        <span className="h-2 w-2 rounded-full bg-primary shrink-0" aria-label="Unread" />
+      )}
       <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
         {chat.status !== "archived" && (
           <button

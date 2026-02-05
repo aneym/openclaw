@@ -12,6 +12,7 @@ interface MessageListProps {
   messages: ChatMessage[];
   isStreaming?: boolean;
   streamText?: string;
+  streamReasoning?: string;
   activeTools?: ActiveTool[];
   awaitingResponse?: boolean;
   className?: string;
@@ -58,6 +59,7 @@ export function MessageList({
   messages,
   isStreaming,
   streamText,
+  streamReasoning,
   activeTools = [],
   awaitingResponse = false,
   className,
@@ -149,15 +151,7 @@ export function MessageList({
         scrollThrottleRef.current = null;
       }, 120);
     });
-
-    // Cleanup on unmount
-    return () => {
-      if (scrollThrottleRef.current) {
-        cancelAnimationFrame(scrollThrottleRef.current);
-        scrollThrottleRef.current = null;
-      }
-    };
-  }, [isStreaming, isAtBottom]); // NO streamText dependency - throttle handles updates
+  }, [isStreaming, isAtBottom, streamText]); // streamText triggers re-evaluation; throttle ref rate-limits
 
   // Scroll to bottom handler
   const scrollToBottom = useCallback(() => {
@@ -199,16 +193,17 @@ export function MessageList({
                   role={group.role}
                   isStreaming={shouldShowStreaming}
                   streamText={shouldShowStreaming ? streamText : undefined}
+                  streamReasoning={shouldShowStreaming ? streamReasoning : undefined}
+                  activeTools={shouldShowStreaming ? activeTools : undefined}
                   showTimestamp={isEndOfTurn}
                 />
               );
             })}
 
-            {/* Show "Thinking..." when awaiting response but no streaming yet */}
-            {awaitingResponse && !isStreaming && !streamText && (
-              <div className="flex items-start gap-2 py-2">
-                <StreamingIndicator />
-                <span className="text-muted-foreground text-sm">Thinking...</span>
+            {/* Show dots when awaiting response and no stream text yet */}
+            {awaitingResponse && !streamText && !isStreaming && (
+              <div className="py-2">
+                <StreamingIndicator className="opacity-60" />
               </div>
             )}
 

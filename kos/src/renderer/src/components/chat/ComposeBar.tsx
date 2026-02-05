@@ -12,6 +12,7 @@ interface ComposeBarProps {
   sessionKey: string;
   chatId: string;
   isStreaming: boolean;
+  awaitingResponse: boolean;
   autoFocus?: boolean;
   queue: QueuedMessage[];
   onSend: (text: string, attachments?: unknown[]) => Promise<void>;
@@ -24,6 +25,7 @@ export function ComposeBar({
   sessionKey,
   chatId,
   isStreaming,
+  awaitingResponse,
   autoFocus = false,
   queue,
   onSend,
@@ -170,7 +172,7 @@ export function ComposeBar({
   };
 
   const handleAbort = async () => {
-    if (!isStreaming) return;
+    if (!isStreaming && !awaitingResponse) return;
 
     klog.compose("handleAbort called", { sessionKey, connected });
     await onAbort();
@@ -261,7 +263,7 @@ export function ComposeBar({
                 "min-h-[40px] max-h-[200px]",
               )}
             />
-            {isStreaming ? (
+            {isStreaming || awaitingResponse ? (
               <button
                 onClick={() => handleAbort()}
                 className={cn(

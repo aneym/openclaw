@@ -117,14 +117,16 @@ export function CommandPalette({
   const handleNewChat = useCallback(() => {
     if (!activeWorkspaceId) return;
     closeAndRun(() => {
+      const now = Date.now();
+      const uuid = crypto.randomUUID();
       const newChat = {
-        id: `chat-${Date.now()}`,
+        id: `chat-${now}`,
         workspaceId: activeWorkspaceId,
-        sessionKey: `sess-${Date.now()}`,
+        sessionKey: `kos:thread:${uuid}`,
         title: "New Chat",
         status: "active" as const,
-        lastMessageAt: Date.now(),
-        createdAt: Date.now(),
+        lastMessageAt: now,
+        createdAt: now,
       };
       addChat(newChat);
     });

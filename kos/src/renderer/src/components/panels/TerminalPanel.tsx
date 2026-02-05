@@ -8,6 +8,7 @@ interface TerminalPanelProps {
   terminalId?: string;
   cwd?: string;
   managed?: boolean; // True if controlled by AI agent
+  isFocused?: boolean;
 }
 
 // Get computed CSS color and convert to hex for xterm
@@ -71,7 +72,12 @@ function buildTheme() {
   };
 }
 
-export function TerminalPanel({ terminalId: stableId, cwd, managed }: TerminalPanelProps) {
+export function TerminalPanel({
+  terminalId: stableId,
+  cwd,
+  managed,
+  isFocused,
+}: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -126,6 +132,22 @@ export function TerminalPanel({ terminalId: stableId, cwd, managed }: TerminalPa
         terminalIdRef.current = result.id;
         setIsConnected(true);
         console.log(`[TerminalPanel] ✅ Connected: id=${result.id}, pid=${result.pid}`);
+
+        // Intercept Cmd+K to clear terminal (like iTerm2/VS Code)
+        capturedTerminal.attachCustomKeyEventHandler((e) => {
+          if (e.key === "k" && e.metaKey && !e.shiftKey && e.type === "keydown") {
+            e.preventDefault();
+            e.stopPropagation();
+            // Clear screen + scrollback + cursor home via PTY escape sequences
+            if (terminalIdRef.current) {
+              window.api.terminal.write(terminalIdRef.current, "\x1b[2J\x1b[3J\x1b[H");
+              window.api.terminal.clearScrollback(terminalIdRef.current);
+            }
+            capturedTerminal.clear();
+            return false;
+          }
+          return true;
+        });
 
         // Auto-focus the terminal (e.g., when split creates a new terminal pane)
         capturedTerminal.focus();
@@ -184,6 +206,14 @@ export function TerminalPanel({ terminalId: stableId, cwd, managed }: TerminalPa
       fitAddonRef.current = null;
     };
   }, [initTerminal]);
+
+  // Focus xterm when panel receives focus via keyboard shortcut
+  useEffect(() => {
+    if (isFocused && terminalRef.current) {
+      console.log(`[TerminalPanel] 🎯 Focusing terminal: ${stableId}`);
+      terminalRef.current.focus();
+    }
+  }, [isFocused, stableId]);
 
   // Handle resize with debouncing to prevent rapid PTY resize calls during drag
   useEffect(() => {

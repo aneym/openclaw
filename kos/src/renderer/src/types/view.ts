@@ -1,1 +1,1 @@
-export type View = "home" | "settings";
+export type View = "home" | "settings" | "triage";

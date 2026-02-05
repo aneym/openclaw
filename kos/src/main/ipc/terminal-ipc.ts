@@ -9,6 +9,7 @@ import {
   hasTerminal,
   getTerminalInfo,
   killAllTerminals,
+  clearTerminalScrollback,
   createManagedTerminal,
   execInManagedTerminal,
   readManagedTerminalOutput,
@@ -76,6 +77,11 @@ export function registerTerminalIpc(): void {
   // Get terminal info
   ipcMain.handle("terminal:info", (_, id: string) => {
     return getTerminalInfo(id);
+  });
+
+  // Clear terminal scrollback (memory + disk)
+  ipcMain.handle("terminal:clearScrollback", (_, id: string) => {
+    clearTerminalScrollback(id);
   });
 
   // ============================================================================

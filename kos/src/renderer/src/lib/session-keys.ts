@@ -42,3 +42,13 @@ export function sessionKeysMatch(
   const bRest = bParsed ? bParsed.rest : bTrim;
   return aRest === bRest;
 }
+
+/**
+ * Build a canonical session key with the `agent:{agentId}:{rest}` prefix.
+ * If the key already has the prefix it is returned as-is.
+ */
+export function buildSessionKey(agentId: string, rest: string): string {
+  // Already prefixed — return as-is
+  if (rest.startsWith("agent:")) return rest;
+  return `agent:${agentId}:${rest}`;
+}

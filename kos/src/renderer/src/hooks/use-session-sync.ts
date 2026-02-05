@@ -1,9 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, ChatStatus } from "../types";
 import { klog } from "../lib/klog";
+import { playNotificationSound } from "../lib/notification-sounds";
 import { sessionKeysMatch } from "../lib/session-keys";
+import { isChatVisible } from "../lib/unread";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
+import { useNotificationStore } from "../stores/notification-store";
+import { HOME_WORKSPACE_ID } from "../stores/workspace-store";
 
 // Tiered loading configuration
 const INITIAL_LOAD_LIMIT = 50;
@@ -267,6 +271,7 @@ export function useSessionSync() {
   const addChat = useChatStore((s) => s.addChat);
   const updateChat = useChatStore((s) => s.updateChat);
   const archiveChat = useChatStore((s) => s.archiveChat);
+  const markUnread = useChatStore((s) => s.markUnread);
   const chats = useChatStore((s) => s.chats);
   const setHasMore = useChatStore((s) => s.setHasMore);
   const setLoadingMore = useChatStore((s) => s.setLoadingMore);
@@ -403,6 +408,24 @@ export function useSessionSync() {
             updateChat(chat.id, { status: "idle", lastMessageAt: Date.now() });
           }
 
+          // Mark as unread if the chat isn't currently visible to the user.
+          // Check all workspaces where this chat might be displayed.
+          if (chat) {
+            const wsId = chat.workspaceId || HOME_WORKSPACE_ID;
+            const visibleInHome = isChatVisible(chat.id, HOME_WORKSPACE_ID);
+            const visibleInWorkspace = wsId !== HOME_WORKSPACE_ID && isChatVisible(chat.id, wsId);
+            if (!visibleInHome && !visibleInWorkspace) {
+              markUnread(chat.id);
+
+              // Play notification sound and update dock badge
+              playNotificationSound();
+              if (useNotificationStore.getState().dockBadgeEnabled) {
+                const unreadCount = useChatStore.getState().getUnreadCount();
+                window.api?.setDockBadge?.(unreadCount);
+              }
+            }
+          }
+
           // Refresh sessions to pick up any changes (matching web UI pattern)
           if (state === "final") {
             // Immediate refresh
@@ -436,7 +459,7 @@ export function useSessionSync() {
       }
       pendingRefreshTimers.current.clear();
     };
-  }, [subscribe, updateChat, refreshSessions]);
+  }, [subscribe, updateChat, markUnread, refreshSessions]);
 
   // Initial load: fetch recent sessions only (7 days, up to 50)
   useEffect(() => {

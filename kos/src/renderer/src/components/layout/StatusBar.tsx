@@ -130,7 +130,10 @@ export function StatusBar() {
   const statusText = connected ? "Connected" : error ? "Disconnected" : "Connecting...";
 
   return (
-    <div className="h-6 border-t border-border bg-muted/50 px-3 flex items-center justify-between text-xs text-muted-foreground">
+    <div
+      className="h-6 border-t border-border/50 px-3 flex items-center justify-between text-xs text-muted-foreground"
+      style={{ background: "var(--glass-chrome-bg)" }}
+    >
       {/* Left: Connection status */}
       <div className="flex items-center gap-3">
         <div className="flex items-center gap-2">

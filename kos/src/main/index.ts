@@ -1,5 +1,6 @@
 import { electronApp, optimizer, is } from "@electron-toolkit/utils";
-import { app, shell, BrowserWindow, ipcMain, dialog, Menu } from "electron";
+import { app, shell, BrowserWindow, ipcMain, dialog, Menu, protocol, net } from "electron";
+import liquidGlass from "electron-liquid-glass";
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -32,6 +33,20 @@ if (is.dev) {
 // Enable remote debugging for CDP access (Playwright, Puppeteer, etc.)
 const CDP_PORT = 9222;
 app.commandLine.appendSwitch("remote-debugging-port", String(CDP_PORT));
+
+// Register kos-media:// protocol for serving local media files to the renderer
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "kos-media",
+    privileges: {
+      stream: true,
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      bypassCSP: true,
+    },
+  },
+]);
 
 // Read OpenClaw gateway config - checks both prod and dev locations
 ipcMain.handle("get-gateway-config", () => {
@@ -73,6 +88,13 @@ ipcMain.handle("get-gateway-config", () => {
     return { url: `ws://localhost:${port}`, token, source: prodPath };
   } catch {
     return { url: "ws://localhost:18789", source: "default" };
+  }
+});
+
+// Dock badge (macOS)
+ipcMain.handle("app:set-dock-badge", (_, count: number) => {
+  if (process.platform === "darwin" && app.dock) {
+    app.dock.setBadge(count > 0 ? String(count) : "");
   }
 });
 
@@ -298,12 +320,9 @@ function createWindow(): void {
     x: saved?.x,
     y: saved?.y,
     show: false,
-    titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "default",
-    ...(process.platform === "darwin"
-      ? {
-          trafficLightPosition: { x: 12, y: 12 },
-        }
-      : {}),
+    transparent: true,
+    frame: process.platform !== "darwin",
+    ...(process.platform !== "darwin" ? { titleBarStyle: "default" as const } : {}),
     ...(process.platform === "linux" ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
@@ -318,14 +337,26 @@ function createWindow(): void {
   // Initialize browser panel IPC handlers
   initBrowserPanel(mainWindow);
 
-  // Restore maximized state if needed
-  if (saved?.isMaximized) {
+  // NOTE: maximize() breaks transparent frameless windows on macOS
+  // Skip maximize restore when transparency is enabled
+  if (saved?.isMaximized && process.platform !== "darwin") {
     mainWindow.maximize();
   }
 
   mainWindow.on("ready-to-show", () => {
     mainWindow.show();
   });
+
+  // Apply macOS liquid glass effect behind the web content
+  if (process.platform === "darwin") {
+    mainWindow.setWindowButtonVisibility(true);
+    mainWindow.setWindowButtonPosition({ x: 12, y: 12 });
+    console.log("[liquid-glass] supported:", liquidGlass.isGlassSupported());
+    mainWindow.webContents.once("did-finish-load", () => {
+      const glassId = liquidGlass.addView(mainWindow.getNativeWindowHandle());
+      console.log("[liquid-glass] addView returned:", glassId);
+    });
+  }
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url);
@@ -342,8 +373,8 @@ function createWindow(): void {
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
-    // Open DevTools in development
-    mainWindow.webContents.openDevTools();
+    // Open DevTools detached — docked DevTools break window transparency
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
@@ -352,6 +383,32 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(() => {
+  // Handle kos-media:// requests — serve local files to the renderer
+  protocol.handle("kos-media", async (request) => {
+    // URL format: kos-media://local/var/folders/.../file.mp3 → /var/folders/.../file.mp3
+    // hostname is "local" (placeholder), pathname is the full absolute path
+    const url = new URL(request.url);
+    const filePath = decodeURIComponent(url.pathname);
+
+    // Security: reject traversal attempts and validate the path
+    if (filePath.includes("..")) {
+      return new Response("Forbidden", { status: 403 });
+    }
+
+    try {
+      const { statSync } = await import("fs");
+      const stat = statSync(filePath);
+      if (stat.isDirectory()) {
+        return new Response("Not a file", { status: 400 });
+      }
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+
+    // Delegate to Electron's net module which handles MIME types
+    return net.fetch("file://" + filePath);
+  });
+
   // Clean up old terminal scrollback files (older than 7 days)
   cleanupOldScrollback();
 

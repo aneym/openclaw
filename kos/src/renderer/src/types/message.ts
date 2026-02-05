@@ -13,7 +13,9 @@ export type MessagePart =
   | ToolResultPart
   | ReasoningPart
   | ImagePart
-  | AudioPart;
+  | AudioPart
+  | VideoPart
+  | FilePart;
 
 export interface TextPart {
   type: "text";
@@ -54,4 +56,17 @@ export interface AudioPart {
   type: "audio";
   url: string;
   filename?: string;
+}
+
+export interface VideoPart {
+  type: "video";
+  url: string;
+  filename?: string;
+}
+
+export interface FilePart {
+  type: "file";
+  url: string;
+  filename: string;
+  mimeType?: string;
 }

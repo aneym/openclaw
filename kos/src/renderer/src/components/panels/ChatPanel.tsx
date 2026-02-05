@@ -38,6 +38,7 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
     error,
     isStreaming,
     streamText,
+    streamReasoning,
     activeTools,
     awaitingResponse,
     queue,
@@ -84,6 +85,7 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
         messages={messages}
         isStreaming={isStreaming}
         streamText={streamText}
+        streamReasoning={streamReasoning}
         activeTools={activeTools}
         awaitingResponse={awaitingResponse}
       />
@@ -93,6 +95,7 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
         sessionKey={sessionKey}
         chatId={chatId}
         isStreaming={isStreaming}
+        awaitingResponse={awaitingResponse}
         autoFocus={autoFocus}
         queue={queue}
         onSend={sendMessage}

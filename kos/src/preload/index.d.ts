@@ -40,6 +40,8 @@ export interface ThemesConfig {
   themes: ThemeDefinitionConfig[];
   activeThemeId: string;
   mode: "light" | "dark" | "system";
+  liquidGlass?: boolean;
+  glass?: { chromeTint?: number; sidebarTint?: number; borderOpacity?: number };
 }
 
 // Project types
@@ -283,6 +285,8 @@ export interface TerminalAPI {
   write: (id: string, data: string) => Promise<void>;
   resize: (id: string, cols: number, rows: number) => Promise<void>;
   kill: (id: string) => Promise<void>;
+  // Clear terminal scrollback (memory + disk)
+  clearScrollback: (id: string) => Promise<void>;
   // Detach without killing (for HMR - keeps PTY alive)
   detach: (id: string) => Promise<boolean>;
   // Check if terminal still exists in main process
@@ -372,6 +376,7 @@ declare global {
       initialThemeConfig: ThemesConfig | null;
       getGatewayConfig: () => Promise<{ url: string; token?: string; source?: string }>;
       openDirectoryDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
+      setDockBadge: (count: number) => void;
       config: ConfigAPI;
       projects: ProjectsAPI;
       git: GitAPI;
