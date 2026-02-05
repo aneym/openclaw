@@ -89,6 +89,7 @@ export function createTerminalTool(): AnyAgentTool {
       "- spawn: Create a new visible terminal window (returns terminalId)",
       "- exec: Run a command in a terminal (requires terminalId, command)",
       "- read: Read recent output from terminal scrollback (requires terminalId)",
+      "- copy: Copy terminal output to user's clipboard (requires terminalId)",
       "- close: Close a terminal (requires terminalId)",
       "- list: List all active managed terminals",
       "",
@@ -96,6 +97,7 @@ export function createTerminalTool(): AnyAgentTool {
       "The user can intervene (e.g., Ctrl+C) but a badge shows AI control.",
       "Use spawn to create a terminal, then exec to run commands.",
       "Check output with read if exec doesn't return expected results.",
+      "Use copy to put output in clipboard for the user to paste elsewhere.",
     ].join("\n"),
     parameters: TerminalToolSchema,
     execute: async (_toolCallId, args) => {
@@ -147,6 +149,12 @@ export function createTerminalTool(): AnyAgentTool {
             terminalId,
             force,
           });
+          return jsonResult(result);
+        }
+
+        case "copy": {
+          const terminalId = readStringParam(params, "terminalId", { required: true });
+          const result = await invokeTerminalCommand(nodeTarget.nodeId, "copy", { terminalId });
           return jsonResult(result);
         }
 

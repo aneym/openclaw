@@ -1,12 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import { stringEnum } from "../schema/typebox.js";
 
-const TERMINAL_TOOL_ACTIONS = ["spawn", "exec", "read", "close", "list"] as const;
+const TERMINAL_TOOL_ACTIONS = ["spawn", "exec", "read", "copy", "close", "list"] as const;
 
 export const TerminalToolSchema = Type.Object({
   action: stringEnum(TERMINAL_TOOL_ACTIONS, {
     description:
-      "spawn: Create a new visible terminal. exec: Run a command. read: Read recent output. close: Close terminal. list: List active terminals.",
+      "spawn: Create a new visible terminal. exec: Run a command. read: Read recent output. copy: Copy output to user's clipboard. close: Close terminal. list: List active terminals.",
   }),
   terminalId: Type.Optional(
     Type.String({

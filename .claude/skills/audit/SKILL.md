@@ -2,7 +2,7 @@
 name: audit
 description: Audit code against project standards
 argument-hint: <file-or-description>
-allowed-tools: Read, Glob, Grep, Bash(pnpm lint:*), Skill, Task
+allowed-tools: Read, Glob, Grep, Bash(pnpm lint:*), Skill, Task, EnterPlanMode, ExitPlanMode, Write, Edit
 ---
 
 ## Context
@@ -162,8 +162,45 @@ Beyond style/pattern checks, ask:
 - Summary of checks that passed
 ```
 
-### Step 7: Offer Fixes
+### Step 7: Write Fix Plan and Enter Plan Mode
 
-For auto-fixable issues, offer to run the appropriate lint fix command.
+If there are Critical or Soundness issues found:
+
+1. **Enter plan mode** using `EnterPlanMode`
+2. **Write a fix plan** to the plan file with this structure:
+
+```markdown
+# Audit Fix Plan
+
+## Issues Found
+
+### Critical
+
+- [File:Line] — Brief description
+
+### Soundness
+
+- [File:Line] — Brief description
+
+## Fix Plan
+
+### Fix 1: [Title]
+
+**File:** `path/to/file.ts`
+**Lines:** X-Y
+**Change:** Describe the exact code change (before → after)
+
+### Fix 2: [Title]
+
+...
+
+## Auto-Fixable
+
+- Run `pnpm lint --fix` (if applicable)
+```
+
+3. **Exit plan mode** using `ExitPlanMode` — this prompts the user to approve before any code changes are made
+
+If there are **no Critical or Soundness issues** (only Warnings or Passing), skip plan mode and just present the audit report. No fixes needed.
 
 $ARGUMENTS
