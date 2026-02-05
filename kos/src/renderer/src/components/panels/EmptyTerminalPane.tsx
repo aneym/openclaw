@@ -21,8 +21,7 @@ interface EmptyTerminalPaneProps {
 }
 
 export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTerminalPaneProps) {
-  const layoutsMap = usePanelStore((s) => s.layouts);
-  const setLayout = usePanelStore((s) => s.setLayout);
+  const startTerminalTab = usePanelStore((s) => s.startTerminalTab);
 
   // Get workspace and project for default cwd
   const workspacesMap = useWorkspaceStore((s) => s.workspaces);
@@ -38,30 +37,9 @@ export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTer
   const [selectedCwd, setSelectedCwd] = useState(defaultCwd);
 
   const handleStartTerminal = useCallback(() => {
-    // Generate a terminal ID and assign it to the tab's contentId
-    const terminalId = `term-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const layout = layoutsMap.get(workspaceId);
-    if (!layout) return;
-
-    const panel = layout.panels.get(panelId);
-    if (!panel || !panel.tabs) return;
-
-    // Update the tab's contentId to trigger terminal creation
-    const newTabs = panel.tabs.map((t) =>
-      t.id === tabId ? { ...t, contentId: terminalId, data: { cwd: selectedCwd } } : t,
-    );
-
-    const newPanels = new Map(layout.panels);
-    newPanels.set(panelId, {
-      ...panel,
-      tabs: newTabs,
-    });
-
-    setLayout(workspaceId, {
-      ...layout,
-      panels: newPanels,
-    });
-  }, [workspaceId, panelId, tabId, selectedCwd, layoutsMap, setLayout]);
+    if (!tabId) return;
+    startTerminalTab(workspaceId, panelId, tabId, selectedCwd);
+  }, [workspaceId, panelId, tabId, selectedCwd, startTerminalTab]);
 
   const handleSelectDirectory = useCallback(async () => {
     try {
