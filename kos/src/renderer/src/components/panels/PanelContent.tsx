@@ -53,8 +53,17 @@ export function PanelContent({
     if (!layout) return new Set<string>();
     const ids = new Set<string>();
     for (const [pId, panel] of layout.panels) {
-      if (panel.type === "chat" && panel.data?.chatId && pId !== panelId) {
-        ids.add(panel.data.chatId as string);
+      if (panel.type === "chat" && pId !== panelId) {
+        // Collect data.chatId (legacy/non-tabbed)
+        if (panel.data?.chatId) {
+          ids.add(panel.data.chatId as string);
+        }
+        // Collect tab contentIds (tabbed panels)
+        if (panel.tabs) {
+          for (const tab of panel.tabs) {
+            if (tab.contentId) ids.add(tab.contentId);
+          }
+        }
       }
     }
     return ids;
