@@ -5,7 +5,7 @@ import {
   resolveTelegramCustomCommands,
 } from "./telegram-custom-commands.js";
 import { ToolPolicySchema } from "./zod-schema.agent-runtime.js";
-import { ChannelHeartbeatVisibilitySchema, ChannelModelSchema } from "./zod-schema.channels.js";
+import { ChannelHeartbeatVisibilitySchema } from "./zod-schema.channels.js";
 import {
   BlockStreamingChunkSchema,
   BlockStreamingCoalesceSchema,
@@ -37,6 +37,7 @@ const TelegramCapabilitiesSchema = z.union([
 export const TelegramTopicSchema = z
   .object({
     requireMention: z.boolean().optional(),
+    groupPolicy: GroupPolicySchema.optional(),
     skills: z.array(z.string()).optional(),
     enabled: z.boolean().optional(),
     allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
@@ -47,6 +48,7 @@ export const TelegramTopicSchema = z
 export const TelegramGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
+    groupPolicy: GroupPolicySchema.optional(),
     tools: ToolPolicySchema,
     toolsBySender: ToolPolicyBySenderSchema,
     skills: z.array(z.string()).optional(),
@@ -137,6 +139,7 @@ export const TelegramAccountSchemaBase = z
     reactionLevel: z.enum(["off", "ack", "minimal", "extensive"]).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
     linkPreview: z.boolean().optional(),
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
@@ -153,7 +156,6 @@ export const TelegramAccountSchema = TelegramAccountSchemaBase.superRefine((valu
 });
 
 export const TelegramConfigSchema = TelegramAccountSchemaBase.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), TelegramAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -234,6 +236,7 @@ export const DiscordGuildChannelSchema = z
     enabled: z.boolean().optional(),
     users: z.array(z.union([z.string(), z.number()])).optional(),
     systemPrompt: z.string().optional(),
+    includeThreadStarter: z.boolean().optional(),
     autoThread: z.boolean().optional(),
   })
   .strict();
@@ -322,11 +325,11 @@ export const DiscordAccountSchema = z
       })
       .strict()
       .optional(),
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
 export const DiscordConfigSchema = DiscordAccountSchema.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), DiscordAccountSchema.optional()).optional(),
 });
 
@@ -393,11 +396,11 @@ export const GoogleChatAccountSchema = z
       .optional(),
     dm: GoogleChatDmSchema.optional(),
     typingIndicator: z.enum(["none", "message", "reaction"]).optional(),
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
 export const GoogleChatConfigSchema = GoogleChatAccountSchema.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), GoogleChatAccountSchema.optional()).optional(),
   defaultAccount: z.string().optional(),
 });
@@ -410,7 +413,6 @@ export const SlackDmSchema = z
     groupEnabled: z.boolean().optional(),
     groupChannels: z.array(z.union([z.string(), z.number()])).optional(),
     replyToMode: ReplyToModeSchema.optional(),
-    model: z.string().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -435,7 +437,6 @@ export const SlackChannelSchema = z
     users: z.array(z.union([z.string(), z.number()])).optional(),
     skills: z.array(z.string()).optional(),
     systemPrompt: z.string().optional(),
-    collapseReplies: z.enum(["off", "last"]).optional(),
   })
   .strict();
 
@@ -510,12 +511,11 @@ export const SlackAccountSchema = z
     dm: SlackDmSchema.optional(),
     channels: z.record(z.string(), SlackChannelSchema.optional()).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
-    collapseReplies: z.enum(["off", "last"]).optional(),
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
 export const SlackConfigSchema = SlackAccountSchema.extend({
-  model: ChannelModelSchema,
   mode: z.enum(["socket", "http"]).optional().default("socket"),
   signingSecret: z.string().optional(),
   webhookPath: z.string().optional().default("/slack/events"),
@@ -595,6 +595,7 @@ export const SignalAccountSchemaBase = z
       .optional(),
     reactionLevel: z.enum(["off", "ack", "minimal", "extensive"]).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
@@ -609,7 +610,6 @@ export const SignalAccountSchema = SignalAccountSchemaBase.superRefine((value, c
 });
 
 export const SignalConfigSchema = SignalAccountSchemaBase.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), SignalAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -660,6 +660,7 @@ export const IMessageAccountSchemaBase = z
       )
       .optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
@@ -675,7 +676,6 @@ export const IMessageAccountSchema = IMessageAccountSchemaBase.superRefine((valu
 });
 
 export const IMessageConfigSchema = IMessageAccountSchemaBase.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), IMessageAccountSchema.optional()).optional(),
 }).superRefine((value, ctx) => {
   requireOpenAllowFrom({
@@ -740,6 +740,7 @@ export const BlueBubblesAccountSchemaBase = z
     blockStreamingCoalesce: BlockStreamingCoalesceSchema.optional(),
     groups: z.record(z.string(), BlueBubblesGroupConfigSchema.optional()).optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    responsePrefix: z.string().optional(),
   })
   .strict();
 
@@ -754,7 +755,6 @@ export const BlueBubblesAccountSchema = BlueBubblesAccountSchemaBase.superRefine
 });
 
 export const BlueBubblesConfigSchema = BlueBubblesAccountSchemaBase.extend({
-  model: ChannelModelSchema,
   accounts: z.record(z.string(), BlueBubblesAccountSchema.optional()).optional(),
   actions: BlueBubblesActionSchema,
 }).superRefine((value, ctx) => {
@@ -789,7 +789,6 @@ export const MSTeamsTeamSchema = z
 
 export const MSTeamsConfigSchema = z
   .object({
-    model: ChannelModelSchema,
     enabled: z.boolean().optional(),
     capabilities: z.array(z.string()).optional(),
     markdown: MarkdownConfigSchema,
@@ -824,6 +823,7 @@ export const MSTeamsConfigSchema = z
     /** SharePoint site ID for file uploads in group chats/channels (e.g., "contoso.sharepoint.com,guid1,guid2") */
     sharePointSiteId: z.string().optional(),
     heartbeat: ChannelHeartbeatVisibilitySchema,
+    responsePrefix: z.string().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

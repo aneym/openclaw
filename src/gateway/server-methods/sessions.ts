@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import type { GatewayRequestHandlers } from "./types.js";
+import { resolveDefaultAgentId } from "../../agents/agent-scope.js";
 import { abortEmbeddedPiRun, waitForEmbeddedPiRunEnd } from "../../agents/pi-embedded.js";
 import { stopSubagentsForRequester } from "../../auto-reply/reply/abort.js";
 import { clearSessionQueues } from "../../auto-reply/reply/queue.js";
@@ -12,6 +13,7 @@ import {
   type SessionEntry,
   updateSessionStore,
 } from "../../config/sessions.js";
+import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
 import {
   ErrorCodes,
   errorShape,
@@ -33,6 +35,7 @@ import {
   loadSessionEntry,
   readSessionPreviewItemsFromTranscript,
   resolveGatewaySessionStoreTarget,
+  resolveSessionModelRef,
   resolveSessionTranscriptCandidates,
   type SessionsPatchResult,
   type SessionsPreviewEntry,
@@ -196,11 +199,18 @@ export const sessionsHandlers: GatewayRequestHandlers = {
       respond(false, undefined, applied.error);
       return;
     }
+    const parsed = parseAgentSessionKey(target.canonicalKey ?? key);
+    const agentId = normalizeAgentId(parsed?.agentId ?? resolveDefaultAgentId(cfg));
+    const resolved = resolveSessionModelRef(cfg, applied.entry, agentId);
     const result: SessionsPatchResult = {
       ok: true,
       path: storePath,
       key: target.canonicalKey,
       entry: applied.entry,
+      resolved: {
+        modelProvider: resolved.provider,
+        model: resolved.model,
+      },
     };
     respond(true, result, undefined);
   },

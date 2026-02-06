@@ -1,4 +1,5 @@
 import AjvPkg, { type ErrorObject } from "ajv";
+import type { SessionsPatchResult } from "../session-utils.types.js";
 import {
   type AgentEvent,
   AgentEventSchema,
@@ -43,8 +44,6 @@ import {
   type ChatInjectParams,
   ChatInjectParamsSchema,
   ChatSendParamsSchema,
-  type ChatStatusParams,
-  ChatStatusParamsSchema,
   type ConfigApplyParams,
   ConfigApplyParamsSchema,
   type ConfigGetParams,
@@ -99,10 +98,6 @@ import {
   ExecApprovalRequestParamsSchema,
   type ExecApprovalResolveParams,
   ExecApprovalResolveParamsSchema,
-  type ToolApprovalRequestParams,
-  ToolApprovalRequestParamsSchema,
-  type ToolApprovalResolveParams,
-  ToolApprovalResolveParamsSchema,
   ErrorCodes,
   type ErrorShape,
   ErrorShapeSchema,
@@ -166,10 +161,8 @@ import {
   SessionsResetParamsSchema,
   type SessionsResolveParams,
   SessionsResolveParamsSchema,
-  type SessionsSearchParams,
-  type SessionsSearchResult,
-  SessionsSearchParamsSchema,
-  SessionsSearchResultSchema,
+  type SessionsUsageParams,
+  SessionsUsageParamsSchema,
   type ShutdownEvent,
   ShutdownEventSchema,
   type SkillsBinsParams,
@@ -280,9 +273,8 @@ export const validateSessionsDeleteParams = ajv.compile<SessionsDeleteParams>(
 export const validateSessionsCompactParams = ajv.compile<SessionsCompactParams>(
   SessionsCompactParamsSchema,
 );
-export const validateSessionsSearchParams = ajv.compile<SessionsSearchParams>(
-  SessionsSearchParamsSchema,
-);
+export const validateSessionsUsageParams =
+  ajv.compile<SessionsUsageParams>(SessionsUsageParamsSchema);
 export const validateConfigGetParams = ajv.compile<ConfigGetParams>(ConfigGetParamsSchema);
 export const validateConfigSetParams = ajv.compile<ConfigSetParams>(ConfigSetParamsSchema);
 export const validateConfigApplyParams = ajv.compile<ConfigApplyParams>(ConfigApplyParamsSchema);
@@ -345,18 +337,11 @@ export const validateExecApprovalsNodeGetParams = ajv.compile<ExecApprovalsNodeG
 export const validateExecApprovalsNodeSetParams = ajv.compile<ExecApprovalsNodeSetParams>(
   ExecApprovalsNodeSetParamsSchema,
 );
-export const validateToolApprovalRequestParams = ajv.compile<ToolApprovalRequestParams>(
-  ToolApprovalRequestParamsSchema,
-);
-export const validateToolApprovalResolveParams = ajv.compile<ToolApprovalResolveParams>(
-  ToolApprovalResolveParamsSchema,
-);
 export const validateLogsTailParams = ajv.compile<LogsTailParams>(LogsTailParamsSchema);
 export const validateChatHistoryParams = ajv.compile(ChatHistoryParamsSchema);
 export const validateChatSendParams = ajv.compile(ChatSendParamsSchema);
 export const validateChatAbortParams = ajv.compile<ChatAbortParams>(ChatAbortParamsSchema);
 export const validateChatInjectParams = ajv.compile<ChatInjectParams>(ChatInjectParamsSchema);
-export const validateChatStatusParams = ajv.compile<ChatStatusParams>(ChatStatusParamsSchema);
 export const validateChatEvent = ajv.compile(ChatEventSchema);
 export const validateUpdateRunParams = ajv.compile<UpdateRunParams>(UpdateRunParamsSchema);
 export const validateWebLoginStartParams =
@@ -431,8 +416,7 @@ export {
   SessionsResetParamsSchema,
   SessionsDeleteParamsSchema,
   SessionsCompactParamsSchema,
-  SessionsSearchParamsSchema,
-  SessionsSearchResultSchema,
+  SessionsUsageParamsSchema,
   ConfigGetParamsSchema,
   ConfigSetParamsSchema,
   ConfigApplyParamsSchema,
@@ -479,7 +463,6 @@ export {
   ChatHistoryParamsSchema,
   ChatSendParamsSchema,
   ChatInjectParamsSchema,
-  ChatStatusParamsSchema,
   UpdateRunParamsSchema,
   TickEventSchema,
   ShutdownEventSchema,
@@ -559,11 +542,11 @@ export type {
   SessionsPreviewParams,
   SessionsResolveParams,
   SessionsPatchParams,
+  SessionsPatchResult,
   SessionsResetParams,
   SessionsDeleteParams,
   SessionsCompactParams,
-  SessionsSearchParams,
-  SessionsSearchResult,
+  SessionsUsageParams,
   CronJob,
   CronListParams,
   CronStatusParams,
@@ -576,12 +559,9 @@ export type {
   ExecApprovalsGetParams,
   ExecApprovalsSetParams,
   ExecApprovalsSnapshot,
-  ToolApprovalRequestParams,
-  ToolApprovalResolveParams,
   LogsTailParams,
   LogsTailResult,
   PollParams,
   UpdateRunParams,
   ChatInjectParams,
-  ChatStatusParams,
 };

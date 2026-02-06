@@ -9,18 +9,22 @@ import {
 import { createServer as createHttpsServer } from "node:https";
 import type { CanvasHostHandler } from "../canvas-host/server.js";
 import type { createSubsystemLogger } from "../logging/subsystem.js";
+import type { GatewayWsClient } from "./server/ws-types.js";
 import { resolveAgentAvatar } from "../agents/identity-avatar.js";
-import { handleA2uiHttpRequest } from "../canvas-host/a2ui.js";
+import {
+  A2UI_PATH,
+  CANVAS_HOST_PATH,
+  CANVAS_WS_PATH,
+  handleA2uiHttpRequest,
+} from "../canvas-host/a2ui.js";
 import { loadConfig } from "../config/config.js";
 import { handleSlackHttpRequest } from "../slack/http/index.js";
-import { handleCodingSessionsRequest } from "./coding-sessions-http.js";
+import { authorizeGatewayConnect, isLocalDirectRequest, type ResolvedGatewayAuth } from "./auth.js";
 import {
   handleControlUiAvatarRequest,
   handleControlUiHttpRequest,
-  handleWebUiHttpRequest,
   type ControlUiRootState,
 } from "./control-ui.js";
-import { handleFileHttpRequest } from "./file-http.js";
 import { applyHookMappings } from "./hooks-mapping.js";
 import {
   extractHookToken,
@@ -34,11 +38,11 @@ import {
   resolveHookChannel,
   resolveHookDeliver,
 } from "./hooks.js";
-import { handleMediaHttpRequest } from "./media-http.js";
+import { sendUnauthorized } from "./http-common.js";
+import { getBearerToken, getHeader } from "./http-utils.js";
+import { resolveGatewayClientIp } from "./net.js";
 import { handleOpenAiHttpRequest } from "./openai-http.js";
 import { handleOpenResponsesHttpRequest } from "./openresponses-http.js";
-import { handleTerminalHttpRequest } from "./terminal-http.js";
-import { handleTitleHttpRequest } from "./title-http.js";
 import { handleToolsInvokeHttpRequest } from "./tools-invoke-http.js";
 
 type SubsystemLogger = ReturnType<typeof createSubsystemLogger>;
@@ -66,6 +70,61 @@ function sendJson(res: ServerResponse, status: number, body: unknown) {
   res.end(JSON.stringify(body));
 }
 
+function isCanvasPath(pathname: string): boolean {
+  return (
+    pathname === A2UI_PATH ||
+    pathname.startsWith(`${A2UI_PATH}/`) ||
+    pathname === CANVAS_HOST_PATH ||
+    pathname.startsWith(`${CANVAS_HOST_PATH}/`) ||
+    pathname === CANVAS_WS_PATH
+  );
+}
+
+function hasAuthorizedWsClientForIp(clients: Set<GatewayWsClient>, clientIp: string): boolean {
+  for (const client of clients) {
+    if (client.clientIp && client.clientIp === clientIp) {
+      return true;
+    }
+  }
+  return false;
+}
+
+async function authorizeCanvasRequest(params: {
+  req: IncomingMessage;
+  auth: ResolvedGatewayAuth;
+  trustedProxies: string[];
+  clients: Set<GatewayWsClient>;
+}): Promise<boolean> {
+  const { req, auth, trustedProxies, clients } = params;
+  if (isLocalDirectRequest(req, trustedProxies)) {
+    return true;
+  }
+
+  const token = getBearerToken(req);
+  if (token) {
+    const authResult = await authorizeGatewayConnect({
+      auth: { ...auth, allowTailscale: false },
+      connectAuth: { token, password: token },
+      req,
+      trustedProxies,
+    });
+    if (authResult.ok) {
+      return true;
+    }
+  }
+
+  const clientIp = resolveGatewayClientIp({
+    remoteAddr: req.socket?.remoteAddress ?? "",
+    forwardedFor: getHeader(req, "x-forwarded-for"),
+    realIp: getHeader(req, "x-real-ip"),
+    trustedProxies,
+  });
+  if (!clientIp) {
+    return false;
+  }
+  return hasAuthorizedWsClientForIp(clients, clientIp);
+}
+
 export type HooksRequestHandler = (req: IncomingMessage, res: ServerResponse) => Promise<boolean>;
 
 export function createHooksRequestHandler(
@@ -88,19 +147,21 @@ export function createHooksRequestHandler(
       return false;
     }
 
-    const { token, fromQuery } = extractHookToken(req, url);
+    if (url.searchParams.has("token")) {
+      res.statusCode = 400;
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      res.end(
+        "Hook token must be provided via Authorization: Bearer <token> or X-OpenClaw-Token header (query parameters are not allowed).",
+      );
+      return true;
+    }
+
+    const token = extractHookToken(req);
     if (!token || token !== hooksConfig.token) {
       res.statusCode = 401;
       res.setHeader("Content-Type", "text/plain; charset=utf-8");
       res.end("Unauthorized");
       return true;
-    }
-    if (fromQuery) {
-      logHooks.warn(
-        "Hook token provided via query parameter is deprecated for security reasons. " +
-          "Tokens in URLs appear in logs, browser history, and referrer headers. " +
-          "Use Authorization: Bearer <token> or X-OpenClaw-Token header instead.",
-      );
     }
 
     if (req.method !== "POST") {
@@ -153,16 +214,12 @@ export function createHooksRequestHandler(
 
     if (hooksConfig.mappings.length > 0) {
       try {
-        const mapped = await applyHookMappings(
-          hooksConfig.mappings,
-          {
-            payload: payload as Record<string, unknown>,
-            headers,
-            url,
-            path: subPath,
-          },
-          logHooks,
-        );
+        const mapped = await applyHookMappings(hooksConfig.mappings, {
+          payload: payload as Record<string, unknown>,
+          headers,
+          url,
+          path: subPath,
+        });
         if (mapped) {
           if (!mapped.ok) {
             sendJson(res, 400, { ok: false, error: mapped.error });
@@ -218,6 +275,7 @@ export function createHooksRequestHandler(
 
 export function createGatewayHttpServer(opts: {
   canvasHost: CanvasHostHandler | null;
+  clients: Set<GatewayWsClient>;
   controlUiEnabled: boolean;
   controlUiBasePath: string;
   controlUiRoot?: ControlUiRootState;
@@ -226,11 +284,12 @@ export function createGatewayHttpServer(opts: {
   openResponsesConfig?: import("../config/types.gateway.js").GatewayHttpResponsesConfig;
   handleHooksRequest: HooksRequestHandler;
   handlePluginRequest?: HooksRequestHandler;
-  resolvedAuth: import("./auth.js").ResolvedGatewayAuth;
+  resolvedAuth: ResolvedGatewayAuth;
   tlsOptions?: TlsOptions;
 }): HttpServer {
   const {
     canvasHost,
+    clients,
     controlUiEnabled,
     controlUiBasePath,
     controlUiRoot,
@@ -262,31 +321,7 @@ export function createGatewayHttpServer(opts: {
         return;
       }
       if (
-        await handleTerminalHttpRequest(req, res, {
-          auth: resolvedAuth,
-          trustedProxies,
-        })
-      ) {
-        return;
-      }
-      if (
         await handleToolsInvokeHttpRequest(req, res, {
-          auth: resolvedAuth,
-          trustedProxies,
-        })
-      ) {
-        return;
-      }
-      if (
-        await handleMediaHttpRequest(req, res, {
-          auth: resolvedAuth,
-          trustedProxies,
-        })
-      ) {
-        return;
-      }
-      if (
-        await handleFileHttpRequest(req, res, {
           auth: resolvedAuth,
           trustedProxies,
         })
@@ -310,15 +345,6 @@ export function createGatewayHttpServer(opts: {
           return;
         }
       }
-      // Coding sessions API
-      if (
-        handleCodingSessionsRequest(req, res, new URL(req.url ?? "/", "http://localhost").pathname)
-      )
-        return;
-      // Lightweight title generation — always available (no session creation)
-      if (await handleTitleHttpRequest(req, res, { auth: resolvedAuth, trustedProxies })) {
-        return;
-      }
       if (openAiChatCompletionsEnabled) {
         if (
           await handleOpenAiHttpRequest(req, res, {
@@ -330,16 +356,25 @@ export function createGatewayHttpServer(opts: {
         }
       }
       if (canvasHost) {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        if (isCanvasPath(url.pathname)) {
+          const ok = await authorizeCanvasRequest({
+            req,
+            auth: resolvedAuth,
+            trustedProxies,
+            clients,
+          });
+          if (!ok) {
+            sendUnauthorized(res);
+            return;
+          }
+        }
         if (await handleA2uiHttpRequest(req, res)) {
           return;
         }
         if (await canvasHost.handleHttpRequest(req, res)) {
           return;
         }
-      }
-      // Web UI (React chat) at /app/ — check before control UI since it's more specific.
-      if (handleWebUiHttpRequest(req, res)) {
-        return;
       }
       if (controlUiEnabled) {
         if (
@@ -377,59 +412,39 @@ export function createGatewayHttpServer(opts: {
 export function attachGatewayUpgradeHandler(opts: {
   httpServer: HttpServer;
   wss: WebSocketServer;
-  terminalWss: WebSocketServer;
   canvasHost: CanvasHostHandler | null;
-  resolvedAuth: import("./auth.js").ResolvedGatewayAuth;
+  clients: Set<GatewayWsClient>;
+  resolvedAuth: ResolvedGatewayAuth;
 }) {
-  const { httpServer, wss, terminalWss, canvasHost, resolvedAuth } = opts;
+  const { httpServer, wss, canvasHost, clients, resolvedAuth } = opts;
   httpServer.on("upgrade", (req, socket, head) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
-
-    // Terminal WebSocket: /ws/terminal?id=xxx
-    if (url.pathname === "/ws/terminal") {
-      const token = url.searchParams.get("token") ?? url.searchParams.get("password") ?? undefined;
-      void (async () => {
-        const { authorizeGatewayConnect } = await import("./auth.js");
-        const { loadConfig } = await import("../config/config.js");
-        const cfg = loadConfig();
-        const authResult = await authorizeGatewayConnect({
-          auth: resolvedAuth,
-          connectAuth: token ? { token, password: token } : null,
-          req,
-          trustedProxies: cfg.gateway?.trustedProxies,
-        });
-        if (!authResult.ok) {
-          socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
-          socket.destroy();
-          return;
-        }
-        terminalWss.handleUpgrade(req, socket, head, async (ws) => {
-          const { createTerminalSession, attachWebSocket, getTerminalSession } =
-            await import("./terminal-pty.js");
-          let terminalId = url.searchParams.get("id") ?? undefined;
-
-          if (!terminalId) {
-            const result = await createTerminalSession();
-            terminalId = result.id;
-          }
-
-          if (!getTerminalSession(terminalId)) {
-            ws.close(1008, "Terminal session not found");
+    void (async () => {
+      if (canvasHost) {
+        const url = new URL(req.url ?? "/", "http://localhost");
+        if (url.pathname === CANVAS_WS_PATH) {
+          const configSnapshot = loadConfig();
+          const trustedProxies = configSnapshot.gateway?.trustedProxies ?? [];
+          const ok = await authorizeCanvasRequest({
+            req,
+            auth: resolvedAuth,
+            trustedProxies,
+            clients,
+          });
+          if (!ok) {
+            socket.write("HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n");
+            socket.destroy();
             return;
           }
-
-          ws.send(JSON.stringify({ type: "connected", id: terminalId }));
-          attachWebSocket(terminalId, ws);
-        });
-      })();
-      return;
-    }
-
-    if (canvasHost?.handleUpgrade(req, socket, head)) {
-      return;
-    }
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wss.emit("connection", ws, req);
+        }
+        if (canvasHost.handleUpgrade(req, socket, head)) {
+          return;
+        }
+      }
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit("connection", ws, req);
+      });
+    })().catch(() => {
+      socket.destroy();
     });
   });
 }

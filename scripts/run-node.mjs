@@ -7,12 +7,8 @@ import process from "node:process";
 const args = process.argv.slice(2);
 const env = { ...process.env };
 const cwd = process.cwd();
-const compilerOverride = env.OPENCLAW_TS_COMPILER ?? env.CLAWDBOT_TS_COMPILER;
-const compiler = compilerOverride === "tsc" ? "tsc" : "tsgo";
-// --incremental must be a CLI flag because tsconfig.json has noEmit: true
-// which prevents the config-level incremental from taking effect.
-const devOverrides = ["--incremental", "--declaration", "false"];
-const projectArgs = ["--project", "tsconfig.json"];
+const compiler = "tsdown";
+const compilerArgs = ["exec", compiler, "--no-clean"];
 
 const distRoot = path.join(cwd, "dist");
 const distEntry = path.join(distRoot, "/entry.js");
@@ -136,22 +132,13 @@ const writeBuildStamp = () => {
   }
 };
 
-// Suppress ExperimentalWarning respawn overhead in entry.ts.
-const EXPERIMENTAL_WARNING_FLAG = "--disable-warning=ExperimentalWarning";
-const nodeOptions = env.NODE_OPTIONS ?? "";
-if (!nodeOptions.includes(EXPERIMENTAL_WARNING_FLAG) && !nodeOptions.includes("--no-warnings")) {
-  env.NODE_OPTIONS = `${nodeOptions} ${EXPERIMENTAL_WARNING_FLAG}`.trim();
-}
-env.OPENCLAW_NODE_OPTIONS_READY = "1";
-
 if (!shouldBuild()) {
   runNode();
 } else {
   logRunner("Building TypeScript (dist is stale).");
-  const pnpmArgs = ["exec", compiler, ...projectArgs, "--noEmit", "false", ...devOverrides];
   const buildCmd = process.platform === "win32" ? "cmd.exe" : "pnpm";
   const buildArgs =
-    process.platform === "win32" ? ["/d", "/s", "/c", "pnpm", ...pnpmArgs] : pnpmArgs;
+    process.platform === "win32" ? ["/d", "/s", "/c", "pnpm", ...compilerArgs] : compilerArgs;
   const build = spawn(buildCmd, buildArgs, {
     cwd,
     env,

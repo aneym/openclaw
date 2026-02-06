@@ -51,7 +51,6 @@ export const SessionsPatchParamsSchema = Type.Object(
   {
     key: NonEmptyString,
     label: Type.Optional(Type.Union([SessionLabelString, Type.Null()])),
-    icon: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     thinkingLevel: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     verboseLevel: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     reasoningLevel: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
@@ -78,7 +77,6 @@ export const SessionsPatchParamsSchema = Type.Object(
     groupActivation: Type.Optional(
       Type.Union([Type.Literal("mention"), Type.Literal("always"), Type.Null()]),
     ),
-    archived: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
   },
   { additionalProperties: false },
 );
@@ -104,24 +102,18 @@ export const SessionsCompactParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const SessionsSearchParamsSchema = Type.Object(
+export const SessionsUsageParamsSchema = Type.Object(
   {
-    query: NonEmptyString,
-    limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
-    minScore: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-    agentId: Type.Optional(NonEmptyString),
-    includeArchived: Type.Optional(Type.Boolean()),
+    /** Specific session key to analyze; if omitted returns all sessions. */
+    key: Type.Optional(NonEmptyString),
+    /** Start date for range filter (YYYY-MM-DD). */
+    startDate: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
+    /** End date for range filter (YYYY-MM-DD). */
+    endDate: Type.Optional(Type.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" })),
+    /** Maximum sessions to return (default 50). */
+    limit: Type.Optional(Type.Integer({ minimum: 1 })),
+    /** Include context weight breakdown (systemPromptReport). */
+    includeContextWeight: Type.Optional(Type.Boolean()),
   },
   { additionalProperties: false },
 );
-
-export const SessionsSearchResultSchema = Type.Object({
-  sessionKey: Type.String(),
-  sessionId: Type.String(),
-  score: Type.Number(),
-  matchCount: Type.Integer(),
-  snippet: Type.String(),
-  snippetRole: Type.Union([Type.Literal("user"), Type.Literal("assistant")]),
-  updatedAt: Type.Union([Type.Integer(), Type.Null()]),
-  derivedTitle: Type.Optional(Type.String()),
-});

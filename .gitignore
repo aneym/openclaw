@@ -62,12 +62,8 @@ apps/ios/*.dSYM.zip
 apps/ios/*.mobileprovision
 .env
 
-# TypeScript incremental build cache
-*.tsbuildinfo
-
 # Local untracked files
 .local/
-.vscode/
 IDENTITY.md
 USER.md
 .tgz
@@ -75,9 +71,9 @@ USER.md
 # local tooling
 .serena/
 
-# Local caches
-.serena/
-
-# Reference repos (local only, for inspiration)
+# Agent credentials and memory (NEVER COMMIT)
+memory/
+.agent/*.json
+!.agent/workflows/
 ai-chatbot/
 webclaw/

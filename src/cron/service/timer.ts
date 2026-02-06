@@ -1,28 +1,14 @@
 import type { HeartbeatRunResult } from "../../infra/heartbeat-wake.js";
 import type { CronJob } from "../types.js";
 import type { CronEvent, CronServiceState } from "./state.js";
-import { classifyFailoverReason } from "../../agents/pi-embedded-helpers.js";
-import { computeJobNextRunAtMs, nextWakeAtMs, resolveJobPayloadTextForMain } from "./jobs.js";
+import {
+  computeJobNextRunAtMs,
+  nextWakeAtMs,
+  recomputeNextRuns,
+  resolveJobPayloadTextForMain,
+} from "./jobs.js";
 import { locked } from "./locked.js";
 import { ensureLoaded, persist } from "./store.js";
-
-/** Exponential backoff configuration for cron job retries on rate limits. */
-const BACKOFF_CONFIG = {
-  initialMs: 5000,
-  maxMs: 300_000,
-  factor: 2,
-  jitter: 0.1,
-} as const;
-
-/** Error reasons that should trigger exponential backoff. */
-const BACKOFF_REASONS = new Set(["rate_limit", "overloaded"]);
-
-function computeBackoffDelay(consecutiveFailures: number): number {
-  const { initialMs, maxMs, factor, jitter } = BACKOFF_CONFIG;
-  const base = initialMs * factor ** Math.max(consecutiveFailures - 1, 0);
-  const jitterAmount = base * jitter * (Math.random() * 2 - 1);
-  return Math.min(maxMs, Math.round(base + jitterAmount));
-}
 
 const MAX_TIMEOUT_MS = 2 ** 31 - 1;
 
@@ -46,23 +32,39 @@ export function armTimer(state: CronServiceState) {
       state.deps.log.error({ err: String(err) }, "cron: timer tick failed");
     });
   }, clampedDelay);
-  state.timer.unref?.();
 }
 
 export async function onTimer(state: CronServiceState) {
   if (state.running) {
+    // A previous tick is still executing.  Re-arm the timer so the
+    // scheduler doesn't stall when this early return skips the finally
+    // block that normally re-arms.
+    armTimer(state);
     return;
   }
   state.running = true;
   try {
     await locked(state, async () => {
-      await ensureLoaded(state, { forceReload: true });
+      // Reload persisted due-times without recomputing so runDueJobs sees
+      // the original nextRunAtMs values.  Recomputing first would advance
+      // every/cron slots past the current tick when the timer fires late (#9788).
+      await ensureLoaded(state, { forceReload: true, skipRecompute: true });
+      await runDueJobs(state);
+      // After running due jobs, recompute *and* run any newly-due jobs.
+      // This covers a subtle race: if ensureLoaded (with skipRecompute)
+      // loaded persisted nextRunAtMs values that were already in the past
+      // but didn't match the timer's expected due time (e.g. after an
+      // external edit to jobs.json or a config.patch), runDueJobs above
+      // would miss them.  Recomputing and running again ensures nothing
+      // slips through.
+      recomputeNextRuns(state);
       await runDueJobs(state);
       await persist(state);
-      armTimer(state);
     });
   } finally {
     state.running = false;
+    // Always re-arm so transient errors (e.g. ENOSPC) don't kill the scheduler.
+    armTimer(state);
   }
 }
 
@@ -99,47 +101,13 @@ export async function executeJob(
 
   let deleted = false;
 
-  const finish = async (
-    status: "ok" | "error" | "skipped",
-    err?: string,
-    summary?: string,
-    outputText?: string,
-  ) => {
+  const finish = async (status: "ok" | "error" | "skipped", err?: string, summary?: string) => {
     const endedAt = state.deps.nowMs();
     job.state.runningAtMs = undefined;
     job.state.lastRunAtMs = startedAt;
     job.state.lastStatus = status;
     job.state.lastDurationMs = Math.max(0, endedAt - startedAt);
     job.state.lastError = err;
-
-    // Track consecutive failures and apply exponential backoff on rate limits/overloaded
-    if (status === "error" && err) {
-      const reason = classifyFailoverReason(err);
-      job.state.lastFailureReason = reason ?? undefined;
-      if (reason && BACKOFF_REASONS.has(reason)) {
-        const failures = (job.state.consecutiveFailures ?? 0) + 1;
-        job.state.consecutiveFailures = failures;
-        const backoffMs = computeBackoffDelay(failures);
-        const nextScheduledAt = computeJobNextRunAtMs(job, endedAt);
-        const backoffUntil = endedAt + backoffMs;
-        // Use the later of scheduled time or backoff
-        job.state.nextRunAtMs = Math.max(nextScheduledAt ?? endedAt, backoffUntil);
-        state.deps.log.info(
-          { jobId: job.id, failures, backoffMs, nextRunAtMs: job.state.nextRunAtMs },
-          "cron: applying exponential backoff for rate limit/overloaded error",
-        );
-      } else {
-        // Other errors don't reset consecutive failures (they accumulate)
-        job.state.consecutiveFailures = (job.state.consecutiveFailures ?? 0) + 1;
-        job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
-      }
-    } else if (status === "ok") {
-      // Reset consecutive failures on success
-      if (job.state.consecutiveFailures) {
-        job.state.consecutiveFailures = 0;
-        job.state.lastFailureReason = undefined;
-      }
-    }
 
     const shouldDelete =
       job.schedule.kind === "at" && status === "ok" && job.deleteAfterRun === true;
@@ -150,10 +118,7 @@ export async function executeJob(
         job.enabled = false;
         job.state.nextRunAtMs = undefined;
       } else if (job.enabled) {
-        // nextRunAtMs already computed above for error cases; compute for non-error cases
-        if (status !== "error") {
-          job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
-        }
+        job.state.nextRunAtMs = computeJobNextRunAtMs(job, endedAt);
       } else {
         job.state.nextRunAtMs = undefined;
       }
@@ -168,38 +133,12 @@ export async function executeJob(
       runAtMs: startedAt,
       durationMs: job.state.lastDurationMs,
       nextRunAtMs: job.state.nextRunAtMs,
-      consecutiveFailures: job.state.consecutiveFailures,
     });
 
     if (shouldDelete && state.store) {
       state.store.jobs = state.store.jobs.filter((j) => j.id !== job.id);
       deleted = true;
       emit(state, { jobId: job.id, action: "removed" });
-    }
-
-    if (job.sessionTarget === "isolated") {
-      const prefix = job.isolation?.postToMainPrefix?.trim() || "Cron";
-      const mode = job.isolation?.postToMainMode ?? "summary";
-
-      let body = (summary ?? err ?? status).trim();
-      if (mode === "full") {
-        // Prefer full agent output if available; fall back to summary.
-        const maxCharsRaw = job.isolation?.postToMainMaxChars;
-        const maxChars = Number.isFinite(maxCharsRaw) ? Math.max(0, maxCharsRaw as number) : 8000;
-        const fullText = (outputText ?? "").trim();
-        if (fullText) {
-          body = fullText.length > maxChars ? `${fullText.slice(0, maxChars)}…` : fullText;
-        }
-      }
-
-      const statusPrefix = status === "ok" ? prefix : `${prefix} (${status})`;
-      state.deps.enqueueSystemEvent(`${statusPrefix}: ${body}`, {
-        agentId: job.agentId,
-        sessionKey: job.sessionKey,
-      });
-      if (job.wakeMode === "now") {
-        state.deps.requestHeartbeatNow({ reason: `cron:${job.id}:post` });
-      }
     }
   };
 
@@ -216,7 +155,7 @@ export async function executeJob(
         );
         return;
       }
-      state.deps.enqueueSystemEvent(text, { agentId: job.agentId, sessionKey: job.sessionKey });
+      state.deps.enqueueSystemEvent(text, { agentId: job.agentId });
       if (job.wakeMode === "now" && state.deps.runHeartbeatOnce) {
         const reason = `cron:${job.id}`;
         const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
@@ -292,9 +231,8 @@ export async function executeJob(
     await finish("error", String(err));
   } finally {
     job.updatedAtMs = nowMs;
-    // nextRunAtMs is already set in finish() with backoff applied for rate limit errors.
-    // Only recompute here for forced runs or when nextRunAtMs wasn't set.
-    if (!opts.forced && job.enabled && !deleted && job.state.nextRunAtMs === undefined) {
+    if (!opts.forced && job.enabled && !deleted) {
+      // Keep nextRunAtMs in sync in case the schedule advanced during a long run.
       job.state.nextRunAtMs = computeJobNextRunAtMs(job, state.deps.nowMs());
     }
   }
@@ -302,16 +240,13 @@ export async function executeJob(
 
 export function wake(
   state: CronServiceState,
-  opts: { mode: "now" | "next-heartbeat"; text: string; sessionKey?: string },
+  opts: { mode: "now" | "next-heartbeat"; text: string },
 ) {
   const text = opts.text.trim();
   if (!text) {
     return { ok: false } as const;
   }
-  state.deps.enqueueSystemEvent(
-    text,
-    opts.sessionKey ? { sessionKey: opts.sessionKey } : undefined,
-  );
+  state.deps.enqueueSystemEvent(text);
   if (opts.mode === "now") {
     state.deps.requestHeartbeatNow({ reason: "wake" });
   }

@@ -309,6 +309,8 @@ export type PresenceEntry = {
   platform?: string | null;
   deviceFamily?: string | null;
   modelIdentifier?: string | null;
+  roles?: string[] | null;
+  scopes?: string[] | null;
   mode?: string | null;
   lastInputSeconds?: number | null;
   reason?: string | null;
@@ -340,18 +342,50 @@ export type AgentsListResult = {
   agents: GatewayAgentRow[];
 };
 
+export type AgentIdentityResult = {
+  agentId: string;
+  name: string;
+  avatar: string;
+  emoji?: string;
+};
+
+export type AgentFileEntry = {
+  name: string;
+  path: string;
+  missing: boolean;
+  size?: number;
+  updatedAtMs?: number;
+  content?: string;
+};
+
+export type AgentsFilesListResult = {
+  agentId: string;
+  workspace: string;
+  files: AgentFileEntry[];
+};
+
+export type AgentsFilesGetResult = {
+  agentId: string;
+  workspace: string;
+  file: AgentFileEntry;
+};
+
+export type AgentsFilesSetResult = {
+  ok: true;
+  agentId: string;
+  workspace: string;
+  file: AgentFileEntry;
+};
+
 export type GatewaySessionRow = {
   key: string;
   kind: "direct" | "group" | "global" | "unknown";
   label?: string;
-  icon?: string;
   displayName?: string;
   surface?: string;
-  channel?: string;
   subject?: string;
   room?: string;
   space?: string;
-  origin?: { surface?: string; provider?: string; label?: string };
   updatedAt: number | null;
   sessionId?: string;
   systemSent?: boolean;
@@ -366,8 +400,6 @@ export type GatewaySessionRow = {
   model?: string;
   modelProvider?: string;
   contextTokens?: number;
-  derivedTitle?: string;
-  archivedAt?: number;
 };
 
 export type SessionsListResult = {
@@ -390,6 +422,223 @@ export type SessionsPatchResult = {
     reasoningLevel?: string;
     elevatedLevel?: string;
   };
+};
+
+export type SessionsUsageEntry = {
+  key: string;
+  label?: string;
+  sessionId?: string;
+  updatedAt?: number;
+  agentId?: string;
+  channel?: string;
+  chatType?: string;
+  origin?: {
+    label?: string;
+    provider?: string;
+    surface?: string;
+    chatType?: string;
+    from?: string;
+    to?: string;
+    accountId?: string;
+    threadId?: string | number;
+  };
+  modelOverride?: string;
+  providerOverride?: string;
+  modelProvider?: string;
+  model?: string;
+  usage: {
+    input: number;
+    output: number;
+    cacheRead: number;
+    cacheWrite: number;
+    totalTokens: number;
+    totalCost: number;
+    inputCost?: number;
+    outputCost?: number;
+    cacheReadCost?: number;
+    cacheWriteCost?: number;
+    missingCostEntries: number;
+    firstActivity?: number;
+    lastActivity?: number;
+    durationMs?: number;
+    activityDates?: string[]; // YYYY-MM-DD dates when session had activity
+    dailyBreakdown?: Array<{ date: string; tokens: number; cost: number }>;
+    dailyMessageCounts?: Array<{
+      date: string;
+      total: number;
+      user: number;
+      assistant: number;
+      toolCalls: number;
+      toolResults: number;
+      errors: number;
+    }>;
+    dailyLatency?: Array<{
+      date: string;
+      count: number;
+      avgMs: number;
+      p95Ms: number;
+      minMs: number;
+      maxMs: number;
+    }>;
+    dailyModelUsage?: Array<{
+      date: string;
+      provider?: string;
+      model?: string;
+      tokens: number;
+      cost: number;
+      count: number;
+    }>;
+    messageCounts?: {
+      total: number;
+      user: number;
+      assistant: number;
+      toolCalls: number;
+      toolResults: number;
+      errors: number;
+    };
+    toolUsage?: {
+      totalCalls: number;
+      uniqueTools: number;
+      tools: Array<{ name: string; count: number }>;
+    };
+    modelUsage?: Array<{
+      provider?: string;
+      model?: string;
+      count: number;
+      totals: SessionsUsageTotals;
+    }>;
+    latency?: {
+      count: number;
+      avgMs: number;
+      p95Ms: number;
+      minMs: number;
+      maxMs: number;
+    };
+  } | null;
+  contextWeight?: {
+    systemPrompt: { chars: number; projectContextChars: number; nonProjectContextChars: number };
+    skills: { promptChars: number; entries: Array<{ name: string; blockChars: number }> };
+    tools: {
+      listChars: number;
+      schemaChars: number;
+      entries: Array<{ name: string; summaryChars: number; schemaChars: number }>;
+    };
+    injectedWorkspaceFiles: Array<{
+      name: string;
+      path: string;
+      rawChars: number;
+      injectedChars: number;
+      truncated: boolean;
+    }>;
+  } | null;
+};
+
+export type SessionsUsageTotals = {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  totalCost: number;
+  inputCost: number;
+  outputCost: number;
+  cacheReadCost: number;
+  cacheWriteCost: number;
+  missingCostEntries: number;
+};
+
+export type SessionsUsageResult = {
+  updatedAt: number;
+  startDate: string;
+  endDate: string;
+  sessions: SessionsUsageEntry[];
+  totals: SessionsUsageTotals;
+  aggregates: {
+    messages: {
+      total: number;
+      user: number;
+      assistant: number;
+      toolCalls: number;
+      toolResults: number;
+      errors: number;
+    };
+    tools: {
+      totalCalls: number;
+      uniqueTools: number;
+      tools: Array<{ name: string; count: number }>;
+    };
+    byModel: Array<{
+      provider?: string;
+      model?: string;
+      count: number;
+      totals: SessionsUsageTotals;
+    }>;
+    byProvider: Array<{
+      provider?: string;
+      model?: string;
+      count: number;
+      totals: SessionsUsageTotals;
+    }>;
+    byAgent: Array<{ agentId: string; totals: SessionsUsageTotals }>;
+    byChannel: Array<{ channel: string; totals: SessionsUsageTotals }>;
+    latency?: {
+      count: number;
+      avgMs: number;
+      p95Ms: number;
+      minMs: number;
+      maxMs: number;
+    };
+    dailyLatency?: Array<{
+      date: string;
+      count: number;
+      avgMs: number;
+      p95Ms: number;
+      minMs: number;
+      maxMs: number;
+    }>;
+    modelDaily?: Array<{
+      date: string;
+      provider?: string;
+      model?: string;
+      tokens: number;
+      cost: number;
+      count: number;
+    }>;
+    daily: Array<{
+      date: string;
+      tokens: number;
+      cost: number;
+      messages: number;
+      toolCalls: number;
+      errors: number;
+    }>;
+  };
+};
+
+export type CostUsageDailyEntry = SessionsUsageTotals & { date: string };
+
+export type CostUsageSummary = {
+  updatedAt: number;
+  days: number;
+  daily: CostUsageDailyEntry[];
+  totals: SessionsUsageTotals;
+};
+
+export type SessionUsageTimePoint = {
+  timestamp: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalTokens: number;
+  cost: number;
+  cumulativeTokens: number;
+  cumulativeCost: number;
+};
+
+export type SessionUsageTimeSeries = {
+  sessionId?: string;
+  points: SessionUsageTimePoint[];
 };
 
 export type CronSchedule =
@@ -474,10 +723,10 @@ export type SkillStatusEntry = {
   name: string;
   description: string;
   source: string;
-  bundled?: boolean;
   filePath: string;
   baseDir: string;
   skillKey: string;
+  bundled?: boolean;
   primaryEnv?: string;
   emoji?: string;
   homepage?: string;
@@ -520,58 +769,4 @@ export type LogEntry = {
   subsystem?: string | null;
   message?: string | null;
   meta?: Record<string, unknown> | null;
-};
-
-// ── Git ──
-
-export type GitFileStatus = {
-  path: string;
-  index: string;
-  working: string;
-};
-
-export type GitStatusResult = {
-  branch: string;
-  files: GitFileStatus[];
-  ahead: number;
-  behind: number;
-};
-
-export type GitLogEntry = {
-  hash: string;
-  hashShort: string;
-  author: string;
-  date: string;
-  message: string;
-};
-
-export type GitRepoEntry = {
-  path: string;
-  name: string;
-};
-
-// ── Sub-agent status ──
-
-export type SubagentRunInfo = {
-  runId: string;
-  childSessionKey: string;
-  requesterSessionKey: string;
-  task: string;
-  label?: string;
-  createdAt: number;
-  startedAt?: number;
-  endedAt?: number;
-  outcome?: { status: "ok" | "error"; error?: string };
-};
-
-export type SubagentEventPayload = {
-  phase: "start" | "end" | "error";
-  runId: string;
-  requesterSessionKey: string;
-  childSessionKey: string;
-  task: string;
-  label?: string;
-  startedAt?: number;
-  endedAt?: number;
-  outcome?: { status: "ok" | "error"; error?: string };
 };

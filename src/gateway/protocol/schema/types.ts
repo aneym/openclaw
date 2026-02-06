@@ -79,7 +79,6 @@ import type {
   ChatAbortParamsSchema,
   ChatEventSchema,
   ChatInjectParamsSchema,
-  ChatStatusParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
 } from "./logs-chat.js";
@@ -104,14 +103,9 @@ import type {
   SessionsPreviewParamsSchema,
   SessionsResetParamsSchema,
   SessionsResolveParamsSchema,
-  SessionsSearchParamsSchema,
-  SessionsSearchResultSchema,
+  SessionsUsageParamsSchema,
 } from "./sessions.js";
 import type { PresenceEntrySchema, SnapshotSchema, StateVersionSchema } from "./snapshot.js";
-import type {
-  ToolApprovalRequestParamsSchema,
-  ToolApprovalResolveParamsSchema,
-} from "./tool-approvals.js";
 import type {
   WizardCancelParamsSchema,
   WizardNextParamsSchema,
@@ -157,8 +151,7 @@ export type SessionsPatchParams = Static<typeof SessionsPatchParamsSchema>;
 export type SessionsResetParams = Static<typeof SessionsResetParamsSchema>;
 export type SessionsDeleteParams = Static<typeof SessionsDeleteParamsSchema>;
 export type SessionsCompactParams = Static<typeof SessionsCompactParamsSchema>;
-export type SessionsSearchParams = Static<typeof SessionsSearchParamsSchema>;
-export type SessionsSearchResult = Static<typeof SessionsSearchResultSchema>;
+export type SessionsUsageParams = Static<typeof SessionsUsageParamsSchema>;
 export type ConfigGetParams = Static<typeof ConfigGetParamsSchema>;
 export type ConfigSetParams = Static<typeof ConfigSetParamsSchema>;
 export type ConfigApplyParams = Static<typeof ConfigApplyParamsSchema>;
@@ -208,8 +201,6 @@ export type ExecApprovalsNodeSetParams = Static<typeof ExecApprovalsNodeSetParam
 export type ExecApprovalsSnapshot = Static<typeof ExecApprovalsSnapshotSchema>;
 export type ExecApprovalRequestParams = Static<typeof ExecApprovalRequestParamsSchema>;
 export type ExecApprovalResolveParams = Static<typeof ExecApprovalResolveParamsSchema>;
-export type ToolApprovalRequestParams = Static<typeof ToolApprovalRequestParamsSchema>;
-export type ToolApprovalResolveParams = Static<typeof ToolApprovalResolveParamsSchema>;
 export type DevicePairListParams = Static<typeof DevicePairListParamsSchema>;
 export type DevicePairApproveParams = Static<typeof DevicePairApproveParamsSchema>;
 export type DevicePairRejectParams = Static<typeof DevicePairRejectParamsSchema>;
@@ -217,7 +208,6 @@ export type DeviceTokenRotateParams = Static<typeof DeviceTokenRotateParamsSchem
 export type DeviceTokenRevokeParams = Static<typeof DeviceTokenRevokeParamsSchema>;
 export type ChatAbortParams = Static<typeof ChatAbortParamsSchema>;
 export type ChatInjectParams = Static<typeof ChatInjectParamsSchema>;
-export type ChatStatusParams = Static<typeof ChatStatusParamsSchema>;
 export type ChatEvent = Static<typeof ChatEventSchema>;
 export type UpdateRunParams = Static<typeof UpdateRunParamsSchema>;
 export type TickEvent = Static<typeof TickEventSchema>;

@@ -20,11 +20,5 @@
     "target": "es2023"
   },
   "include": ["src/**/*", "ui/**/*"],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "src/**/*.test.ts",
-    "src/**/*.test.tsx",
-    "src/**/test-helpers.ts"
-  ]
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
 }

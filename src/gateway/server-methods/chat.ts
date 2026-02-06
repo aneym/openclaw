@@ -5,15 +5,11 @@ import path from "node:path";
 import type { MsgContext } from "../../auto-reply/templating.js";
 import type { GatewayRequestContext, GatewayRequestHandlers } from "./types.js";
 import { resolveSessionAgentId } from "../../agents/agent-scope.js";
-import { resolveEffectiveMessagesConfig, resolveIdentityName } from "../../agents/identity.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
-import {
-  extractShortModelName,
-  type ResponsePrefixContext,
-} from "../../auto-reply/reply/response-prefix-template.js";
+import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -24,6 +20,7 @@ import {
 } from "../chat-abort.js";
 import { type ChatImageContent, parseMessageWithAttachments } from "../chat-attachments.js";
 import { stripEnvelopeFromMessages } from "../chat-sanitize.js";
+import { GATEWAY_CLIENT_CAPS, hasGatewayClientCap } from "../protocol/client-info.js";
 import {
   ErrorCodes,
   errorShape,
@@ -32,7 +29,6 @@ import {
   validateChatHistoryParams,
   validateChatInjectParams,
   validateChatSendParams,
-  validateChatStatusParams,
 } from "../protocol/index.js";
 import { getMaxChatHistoryMessagesBytes } from "../server-constants.js";
 import {
@@ -174,13 +170,7 @@ function broadcastChatError(params: {
   runId: string;
   sessionKey: string;
   errorMessage?: string;
-  sessionId?: string;
-  storePath?: string;
-  sessionFile?: string;
 }) {
-  console.log(
-    `[BROADCAST_CHAT_ERROR] Called for runId=${params.runId}, sessionKey=${params.sessionKey}, errorMessage=${params.errorMessage?.substring(0, 100)}`,
-  );
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
   const payload = {
     runId: params.runId,
@@ -189,32 +179,8 @@ function broadcastChatError(params: {
     state: "error" as const,
     errorMessage: params.errorMessage,
   };
-  console.log(`[BROADCAST_CHAT_ERROR] Broadcasting payload:`, JSON.stringify(payload));
   params.context.broadcast("chat", payload);
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
-  console.log(`[BROADCAST_CHAT_ERROR] Broadcast completed`);
-
-  // Append error message to transcript so it appears in chat history
-  if (params.errorMessage && params.sessionId) {
-    console.log(`[BROADCAST_CHAT_ERROR] Appending to transcript for sessionId=${params.sessionId}`);
-    const label = "System";
-    const result = appendAssistantTranscriptMessage({
-      message: params.errorMessage,
-      label,
-      sessionId: params.sessionId,
-      storePath: params.storePath,
-      sessionFile: params.sessionFile,
-      createIfMissing: true,
-    });
-    console.log(
-      `[BROADCAST_CHAT_ERROR] Transcript append result:`,
-      result.ok ? "success" : `failed: ${result.error}`,
-    );
-  } else {
-    console.log(
-      `[BROADCAST_CHAT_ERROR] Skipping transcript append: errorMessage=${!!params.errorMessage}, sessionId=${!!params.sessionId}`,
-    );
-  }
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
@@ -251,7 +217,8 @@ export const chatHandlers: GatewayRequestHandlers = {
       if (configured) {
         thinkingLevel = configured;
       } else {
-        const { provider, model } = resolveSessionModelRef(cfg, entry);
+        const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
+        const { provider, model } = resolveSessionModelRef(cfg, entry, sessionAgentId);
         const catalog = await context.loadGatewayModelCatalog();
         thinkingLevel = resolveThinkingDefault({
           cfg,
@@ -261,11 +228,13 @@ export const chatHandlers: GatewayRequestHandlers = {
         });
       }
     }
+    const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
     respond(true, {
       sessionKey,
       sessionId,
       messages: capped,
       thinkingLevel,
+      verboseLevel,
     });
   },
   "chat.abort": ({ params, respond, context }) => {
@@ -399,7 +368,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         return;
       }
     }
-    const { cfg, entry, storePath } = loadSessionEntry(p.sessionKey);
+    const { cfg, entry } = loadSessionEntry(p.sessionKey);
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -467,13 +436,6 @@ export const chatHandlers: GatewayRequestHandlers = {
         startedAtMs: now,
         expiresAtMs: resolveChatRunExpiresAtMs({ now, timeoutMs }),
       });
-
-      // Register the chat run so lifecycle events (including errors) are properly routed
-      context.addChatRun(clientRunId, {
-        sessionKey: p.sessionKey,
-        clientRunId,
-      });
-
       const ackPayload = {
         runId: clientRunId,
         status: "started" as const,
@@ -514,20 +476,18 @@ export const chatHandlers: GatewayRequestHandlers = {
         sessionKey: p.sessionKey,
         config: cfg,
       });
-      let prefixContext: ResponsePrefixContext = {
-        identityName: resolveIdentityName(cfg, agentId),
-      };
+      const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
+        cfg,
+        agentId,
+        channel: INTERNAL_MESSAGE_CHANNEL,
+      });
       const finalReplyParts: string[] = [];
       const dispatcher = createReplyDispatcher({
-        responsePrefix: resolveEffectiveMessagesConfig(cfg, agentId).responsePrefix,
-        responsePrefixContextProvider: () => prefixContext,
+        ...prefixOptions,
         onError: (err) => {
           context.logGateway.warn(`webchat dispatch failed: ${formatForLog(err)}`);
         },
         deliver: async (payload, info) => {
-          console.log(
-            `[CHAT.SEND] dispatcher.deliver called: kind=${info.kind}, text=${payload.text?.substring(0, 50)}`,
-          );
           if (info.kind !== "final") {
             return;
           }
@@ -540,9 +500,6 @@ export const chatHandlers: GatewayRequestHandlers = {
       });
 
       let agentRunStarted = false;
-      console.log(
-        `[MODEL-ROUTING] chat.send: sessionKey=${p.sessionKey} runId=${clientRunId} hasModelOverride=${Boolean(entry?.modelOverride)} override=${entry?.providerOverride ?? ""}/${entry?.modelOverride ?? ""}`,
-      );
       void dispatchInboundMessage({
         ctx,
         cfg,
@@ -552,24 +509,21 @@ export const chatHandlers: GatewayRequestHandlers = {
           abortSignal: abortController.signal,
           images: parsedImages.length > 0 ? parsedImages : undefined,
           disableBlockStreaming: true,
-          onAgentRunStart: () => {
+          onAgentRunStart: (runId) => {
             agentRunStarted = true;
-          },
-          onModelSelected: (ctx) => {
-            prefixContext.provider = ctx.provider;
-            prefixContext.model = extractShortModelName(ctx.model);
-            prefixContext.modelFull = `${ctx.provider}/${ctx.model}`;
-            prefixContext.thinkingLevel = ctx.thinkLevel ?? "off";
-            console.log(
-              `[MODEL-ROUTING] onModelSelected: ${ctx.provider}/${ctx.model} think=${ctx.thinkLevel ?? "off"} session=${p.sessionKey}`,
+            const connId = typeof client?.connId === "string" ? client.connId : undefined;
+            const wantsToolEvents = hasGatewayClientCap(
+              client?.connect?.caps,
+              GATEWAY_CLIENT_CAPS.TOOL_EVENTS,
             );
+            if (connId && wantsToolEvents) {
+              context.registerToolEventRecipient(runId, connId);
+            }
           },
+          onModelSelected,
         },
       })
         .then(() => {
-          console.log(
-            `[CHAT.SEND] .then() called: agentRunStarted=${agentRunStarted}, finalReplyParts.length=${finalReplyParts.length}`,
-          );
           if (!agentRunStarted) {
             const combinedReply = finalReplyParts
               .map((part) => part.trim())
@@ -619,7 +573,6 @@ export const chatHandlers: GatewayRequestHandlers = {
           });
         })
         .catch((err) => {
-          console.log(`[CHAT.SEND] Error caught for runId=${clientRunId}:`, String(err));
           const error = errorShape(ErrorCodes.UNAVAILABLE, String(err));
           context.dedupe.set(`chat:${clientRunId}`, {
             ts: Date.now(),
@@ -631,17 +584,12 @@ export const chatHandlers: GatewayRequestHandlers = {
             },
             error,
           });
-          console.log(`[CHAT.SEND] Calling broadcastChatError for runId=${clientRunId}`);
           broadcastChatError({
             context,
             runId: clientRunId,
             sessionKey: p.sessionKey,
             errorMessage: String(err),
-            sessionId: entry?.sessionId ?? clientRunId,
-            storePath,
-            sessionFile: entry?.sessionFile,
           });
-          console.log(`[CHAT.SEND] broadcastChatError completed for runId=${clientRunId}`);
         })
         .finally(() => {
           context.chatAbortControllers.delete(clientRunId);
@@ -748,28 +696,5 @@ export const chatHandlers: GatewayRequestHandlers = {
     context.nodeSendToSession(p.sessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId });
-  },
-  "chat.status": ({ params, respond, context }) => {
-    if (!validateChatStatusParams(params)) {
-      respond(
-        false,
-        undefined,
-        errorShape(
-          ErrorCodes.INVALID_REQUEST,
-          `invalid chat.status params: ${formatValidationErrors(validateChatStatusParams.errors)}`,
-        ),
-      );
-      return;
-    }
-    const { sessionKey } = params as { sessionKey: string };
-    // Find an active run for this session key
-    for (const [runId, entry] of context.chatAbortControllers) {
-      if (entry.sessionKey === sessionKey) {
-        const streamText = context.chatRunBuffers.get(runId) ?? null;
-        respond(true, { activeRun: { runId, streamText } });
-        return;
-      }
-    }
-    respond(true, { activeRun: null });
   },
 };
