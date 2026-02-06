@@ -1,5 +1,5 @@
 import type { OpenClawApp } from "./app.ts";
-import type { AgentsListResult } from "./types.ts";
+import type { SplitPaneLayout } from "./split-tree.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -8,9 +8,6 @@ import {
   stopDebugPolling,
 } from "./app-polling.ts";
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
-import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
-import { loadAgentSkills } from "./controllers/agent-skills.ts";
-import { loadAgents } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
@@ -30,13 +27,13 @@ import {
   tabFromPath,
   type Tab,
 } from "./navigation.ts";
+import { allLeaves, allLeafIds, reconcileTreeWithPanes, deserializeLayout } from "./split-tree.ts";
 import { saveSettings, type UiSettings } from "./storage.ts";
 import { startThemeTransition, type ThemeTransitionContext } from "./theme-transition.ts";
 import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
 
 type SettingsHost = {
   settings: UiSettings;
-  password?: string;
   theme: ThemeMode;
   themeResolved: ResolvedTheme;
   applySessionKey: string;
@@ -48,13 +45,34 @@ type SettingsHost = {
   eventLog: unknown[];
   eventLogBuffer: unknown[];
   basePath: string;
-  agentsList?: AgentsListResult | null;
-  agentsSelectedId?: string | null;
-  agentsPanel?: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
   themeMedia: MediaQueryList | null;
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
 };
+
+function isTopLevelWindow(): boolean {
+  try {
+    return window.top === window.self;
+  } catch {
+    return false;
+  }
+}
+
+function normalizeGatewayUrl(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return null;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== "ws:" && parsed.protocol !== "wss:") {
+      return null;
+    }
+    return trimmed;
+  } catch {
+    return null;
+  }
+}
 
 export function applySettings(host: SettingsHost, next: UiSettings) {
   const normalized = {
@@ -81,7 +99,11 @@ export function setLastActiveSessionKey(host: SettingsHost, next: string) {
   applySettings(host, { ...host.settings, lastActiveSessionKey: trimmed });
 }
 
-export function applySettingsFromUrl(host: SettingsHost) {
+export function applySettingsFromUrl(
+  host: SettingsHost & {
+    urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
+  },
+) {
   if (!window.location.search) {
     return;
   }
@@ -93,6 +115,10 @@ export function applySettingsFromUrl(host: SettingsHost) {
   let shouldCleanUrl = false;
 
   if (tokenRaw != null) {
+    const token = tokenRaw.trim();
+    if (token && token !== host.settings.token) {
+      applySettings(host, { ...host.settings, token });
+    }
     params.delete("token");
     shouldCleanUrl = true;
   }
@@ -119,13 +145,16 @@ export function applySettingsFromUrl(host: SettingsHost) {
   }
 
   if (gatewayUrlRaw != null) {
-    const gatewayUrl = gatewayUrlRaw.trim();
-    if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl) {
+    const gatewayUrl = normalizeGatewayUrl(gatewayUrlRaw);
+    if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl && isTopLevelWindow()) {
       host.pendingGatewayUrl = gatewayUrl;
     }
     params.delete("gatewayUrl");
     shouldCleanUrl = true;
   }
+
+  // Read pane keys from URL for later restoration in handleConnected
+  host.urlPanes = readPanesFromUrl();
 
   if (!shouldCleanUrl) {
     return;
@@ -189,28 +218,6 @@ export async function refreshActiveTab(host: SettingsHost) {
   if (host.tab === "skills") {
     await loadSkills(host as unknown as OpenClawApp);
   }
-  if (host.tab === "agents") {
-    await loadAgents(host as unknown as OpenClawApp);
-    await loadConfig(host as unknown as OpenClawApp);
-    const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
-    if (agentIds.length > 0) {
-      void loadAgentIdentities(host as unknown as OpenClawApp, agentIds);
-    }
-    const agentId =
-      host.agentsSelectedId ?? host.agentsList?.defaultId ?? host.agentsList?.agents?.[0]?.id;
-    if (agentId) {
-      void loadAgentIdentity(host as unknown as OpenClawApp, agentId);
-      if (host.agentsPanel === "skills") {
-        void loadAgentSkills(host as unknown as OpenClawApp, agentId);
-      }
-      if (host.agentsPanel === "channels") {
-        void loadChannels(host as unknown as OpenClawApp, false);
-      }
-      if (host.agentsPanel === "cron") {
-        void loadCron(host);
-      }
-    }
-  }
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as OpenClawApp);
     await loadDevices(host as unknown as OpenClawApp);
@@ -237,6 +244,10 @@ export async function refreshActiveTab(host: SettingsHost) {
     await loadLogs(host as unknown as OpenClawApp, { reset: true });
     scheduleLogsScroll(host as unknown as Parameters<typeof scheduleLogsScroll>[0], true);
   }
+  if (host.tab === "models") {
+    await (host as unknown as OpenClawApp).handleModelsConfigLoad();
+  }
+  // Git panel loads via side panel, not tab
 }
 
 export function inferBasePath() {
@@ -311,7 +322,14 @@ export function syncTabWithLocation(host: SettingsHost, replace: boolean) {
   syncUrlWithTab(host, resolved, replace);
 }
 
-export function onPopState(host: SettingsHost) {
+export function onPopState(
+  host: SettingsHost & {
+    splitLayout: SplitPaneLayout | null;
+    focusedPaneId: string | null;
+    syncPaneStatesFromLayout?: () => void;
+    restoreSplitLayout?: () => void;
+  },
+) {
   if (typeof window === "undefined") {
     return;
   }
@@ -329,6 +347,26 @@ export function onPopState(host: SettingsHost) {
       sessionKey: session,
       lastActiveSessionKey: session,
     });
+  }
+
+  // Restore split pane state from URL
+  const urlPanes = readPanesFromUrl();
+  if (urlPanes && urlPanes.paneKeys.length > 1) {
+    const layout = restoreSplitLayoutFromUrl(
+      urlPanes.paneKeys,
+      urlPanes.focusIndex,
+      host.settings.splitLayout,
+    );
+    if (layout) {
+      host.splitLayout = layout;
+      host.focusedPaneId = layout.focusedPaneId;
+      host.syncPaneStatesFromLayout?.();
+    }
+  } else if (!urlPanes && host.splitLayout) {
+    // No panes in URL → exit split mode
+    host.splitLayout = null;
+    host.focusedPaneId = null;
+    host.syncPaneStatesFromLayout?.();
   }
 
   setTabFromRoute(host, resolved);
@@ -392,6 +430,85 @@ export function syncUrlWithSessionKey(host: SettingsHost, sessionKey: string, re
   } else {
     window.history.pushState({}, "", url.toString());
   }
+}
+
+type PanesSyncHost = SettingsHost & {
+  splitLayout: SplitPaneLayout | null;
+  focusedPaneId: string | null;
+};
+
+export function syncUrlWithPanes(host: PanesSyncHost, replace: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const url = new URL(window.location.href);
+
+  if (host.splitLayout) {
+    const leaves = allLeaves(host.splitLayout.root);
+    const paneKeys = leaves.map((l) => l.threadId);
+    url.searchParams.set("panes", paneKeys.join(","));
+
+    const focusIdx = host.focusedPaneId ? leaves.findIndex((l) => l.id === host.focusedPaneId) : 0;
+    if (focusIdx > 0) {
+      url.searchParams.set("focus", String(focusIdx));
+    } else {
+      url.searchParams.delete("focus");
+    }
+
+    // Keep session= in sync with focused pane
+    const focusedKey = paneKeys[Math.max(0, focusIdx)];
+    if (focusedKey) {
+      url.searchParams.set("session", focusedKey);
+    }
+  } else {
+    url.searchParams.delete("panes");
+    url.searchParams.delete("focus");
+  }
+
+  if (replace) {
+    window.history.replaceState({}, "", url.toString());
+  } else {
+    window.history.pushState({}, "", url.toString());
+  }
+}
+
+/** Read panes from the current URL. Returns null if no panes param present. */
+export function readPanesFromUrl(): { paneKeys: string[]; focusIndex: number } | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const panesRaw = params.get("panes");
+  if (!panesRaw) {
+    return null;
+  }
+  const paneKeys = panesRaw
+    .split(",")
+    .map((k) => k.trim())
+    .filter(Boolean);
+  if (paneKeys.length === 0) {
+    return null;
+  }
+  const focusRaw = params.get("focus");
+  const focusIndex = focusRaw ? Math.max(0, parseInt(focusRaw, 10) || 0) : 0;
+  return { paneKeys, focusIndex };
+}
+
+/** Restore a split layout from URL pane keys, reconciling with localStorage tree structure. */
+export function restoreSplitLayoutFromUrl(
+  paneKeys: string[],
+  focusIndex: number,
+  existingLayoutJson: string | null,
+): SplitPaneLayout | null {
+  if (paneKeys.length <= 1) {
+    return null;
+  }
+  const existingLayout = existingLayoutJson ? deserializeLayout(existingLayoutJson) : null;
+  const root = reconcileTreeWithPanes(existingLayout?.root ?? null, paneKeys);
+  const leaves = allLeaves(root);
+  const clampedFocus = Math.min(focusIndex, leaves.length - 1);
+  const focusedPaneId = leaves[clampedFocus]?.id ?? allLeafIds(root)[0];
+  return { root, focusedPaneId };
 }
 
 export async function loadOverview(host: SettingsHost) {

@@ -635,6 +635,20 @@
   justify-content: flex-end;
 }
 
+/* Markdown-rendered images inside chat text */
+.chat-text img {
+  max-width: 100%;
+  max-height: 400px;
+  border-radius: 8px;
+  object-fit: contain;
+  margin: 8px 0;
+  cursor: pointer;
+}
+
+.chat-text img:hover {
+  opacity: 0.9;
+}
+
 /* Compose input row - horizontal layout */
 .chat-compose__row {
   display: flex;

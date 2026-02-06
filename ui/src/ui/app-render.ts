@@ -1,9 +1,9 @@
 import { html, nothing } from "lit";
 import type { AppViewState } from "./app-view-state.ts";
 import type { UsageState } from "./controllers/usage.ts";
-import { parseAgentSessionKey } from "../../../src/routing/session-key.js";
-import { refreshChatAvatar } from "./app-chat.ts";
-import { renderChatControls, renderTab, renderThemeToggle } from "./app-render.helpers.ts";
+import type { NavSessionEntry } from "./views/thread-list.ts";
+import { renderTab, renderThemeToggle } from "./app-render.helpers.ts";
+import { syncUrlWithSessionKey } from "./app-settings.ts";
 import { loadAgentFileContent, loadAgentFiles, saveAgentFile } from "./controllers/agent-files.ts";
 import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
 import { loadAgentSkills } from "./controllers/agent-skills.ts";
@@ -39,6 +39,15 @@ import {
   saveExecApprovals,
   updateExecApprovalsFormValue,
 } from "./controllers/exec-approvals.ts";
+import {
+  loadGitStatus,
+  loadGitLog,
+  loadGitDiff,
+  stageFiles,
+  unstageFiles,
+  commitChanges,
+  discardFiles,
+} from "./controllers/git.ts";
 import { loadLogs } from "./controllers/logs.ts";
 import { loadNodes } from "./controllers/nodes.ts";
 import { loadPresence } from "./controllers/presence.ts";
@@ -53,8 +62,35 @@ import {
 import { loadUsage, loadSessionTimeSeries, loadSessionLogs } from "./controllers/usage.ts";
 import { icons } from "./icons.ts";
 import { normalizeBasePath, TAB_GROUPS, subtitleForTab, titleForTab } from "./navigation.ts";
+import { allLeaves } from "./split-tree.ts";
+import "./components/resizable-divider";
+import { createThreadDescriptor, createThreadState } from "./thread-state.ts";
+import { saveThreadDescriptors } from "./thread-storage.ts";
+import { ConfigUiHints } from "./types.ts";
+import { renderAgents } from "./views/agents.ts";
+import { renderArtifactPanel } from "./views/artifact-panel.ts";
+import { renderChannels } from "./views/channels.ts";
+import { renderChat } from "./views/chat.ts";
+import { renderCodingPanel } from "./views/coding-panel.ts";
+import { renderConfig } from "./views/config.ts";
+import { renderCron } from "./views/cron.ts";
+import { renderDebug } from "./views/debug.ts";
+import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
+import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
+import { renderGit } from "./views/git.ts";
+import { renderInstances } from "./views/instances.ts";
+import { renderLogs } from "./views/logs.ts";
+import { renderModels } from "./views/models.ts";
+import { renderNodes } from "./views/nodes.ts";
+import { renderOverview } from "./views/overview.ts";
+import { renderSessions } from "./views/sessions.ts";
+import { renderSkills } from "./views/skills.ts";
+import { renderSplitPaneContainer } from "./views/split-pane-container.ts";
+import { renderNavThreadList } from "./views/thread-list.ts";
+import { renderToolApprovalPrompt } from "./views/tool-approval.ts";
+import { renderUsage } from "./views/usage.ts";
 
-// Module-scope debounce for usage date changes (avoids type-unsafe hacks on state object)
+// Module-scope debounce for usage date changes
 let usageDateDebounceTimeout: number | null = null;
 const debouncedLoadUsage = (state: UsageState) => {
   if (usageDateDebounceTimeout) {
@@ -62,54 +98,162 @@ const debouncedLoadUsage = (state: UsageState) => {
   }
   usageDateDebounceTimeout = window.setTimeout(() => void loadUsage(state), 400);
 };
-import { renderAgents } from "./views/agents.ts";
-import { renderChannels } from "./views/channels.ts";
-import { renderChat } from "./views/chat.ts";
-import { renderConfig } from "./views/config.ts";
-import { renderCron } from "./views/cron.ts";
-import { renderDebug } from "./views/debug.ts";
-import { renderExecApprovalPrompt } from "./views/exec-approval.ts";
-import { renderGatewayUrlConfirmation } from "./views/gateway-url-confirmation.ts";
-import { renderInstances } from "./views/instances.ts";
-import { renderLogs } from "./views/logs.ts";
-import { renderNodes } from "./views/nodes.ts";
-import { renderOverview } from "./views/overview.ts";
-import { renderSessions } from "./views/sessions.ts";
-import { renderSkills } from "./views/skills.ts";
-import { renderUsage } from "./views/usage.ts";
 
-const AVATAR_DATA_RE = /^data:/i;
-const AVATAR_HTTP_RE = /^https?:\/\//i;
+/**
+ * Resolve the assistant avatar URL from state.
+ * Falls back to the resolved agent's identity if available.
+ */
+function resolveAssistantAvatarUrl(state: AppViewState): string | null {
+  // If we have a resolved agent and it has an avatar URL, use that
+  const resolvedAgentId =
+    state.agentsSelectedId ??
+    state.agentsList?.defaultId ??
+    state.agentsList?.agents?.[0]?.id ??
+    null;
 
-function resolveAssistantAvatarUrl(state: AppViewState): string | undefined {
-  const list = state.agentsList?.agents ?? [];
-  const parsed = parseAgentSessionKey(state.sessionKey);
-  const agentId = parsed?.agentId ?? state.agentsList?.defaultId ?? "main";
-  const agent = list.find((entry) => entry.id === agentId);
-  const identity = agent?.identity;
-  const candidate = identity?.avatarUrl ?? identity?.avatar;
-  if (!candidate) {
-    return undefined;
+  if (resolvedAgentId) {
+    const identity = state.agentIdentityById?.[resolvedAgentId];
+    if (identity?.avatar) {
+      return identity.avatar;
+    }
   }
-  if (AVATAR_DATA_RE.test(candidate) || AVATAR_HTTP_RE.test(candidate)) {
-    return candidate;
+
+  return null;
+}
+
+/**
+ * Focus the chat composer textarea.
+ * Uses a short setTimeout to ensure Lit's async render cycle has flushed.
+ */
+function focusComposer() {
+  setTimeout(() => {
+    const el = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    if (el && !el.disabled) {
+      el.focus();
+    }
+  }, 50);
+}
+
+/**
+ * Create a fresh thread/session and navigate to it.
+ * Used by the sidebar "New session" button and the chat compose "New session" button.
+ */
+function startNewSession(state: AppViewState) {
+  const base = state.sessionKey.split(":thread:")[0];
+  const desc = createThreadDescriptor(base);
+  const thread = createThreadState(desc);
+  state.threads.set(desc.id, thread);
+  state.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+  saveThreadDescriptors(state.getThreadDescriptors());
+  state.threads = new Map(state.threads);
+
+  // In split mode, update the focused pane's leaf
+  if (state.splitLayout && state.focusedPaneId) {
+    state.setThreadInPane(state.focusedPaneId, desc.sessionKey);
   }
-  return identity?.avatarUrl;
+
+  state.sessionKey = desc.sessionKey;
+  state.chatMessage = "";
+  state.chatStream = null;
+  state.chatStreamStartedAt = null;
+  state.chatRunId = null;
+  state.chatMessages = [];
+  state.resetToolStream();
+  state.resetChatScroll();
+  state.applySettings({
+    ...state.settings,
+    sessionKey: desc.sessionKey,
+    lastActiveSessionKey: desc.sessionKey,
+  });
+  void state.loadAssistantIdentity();
+  syncUrlWithSessionKey(
+    state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+    desc.sessionKey,
+    true,
+  );
+  focusComposer();
+}
+
+/** Ensure the current session key is always present in the sessions list */
+/**
+ * Ensure that the active session key and all open pane keys
+ * are present in the sessions list (new threads may not have
+ * server-side entries yet).
+ */
+function ensureOpenSessions(
+  sessions: NavSessionEntry[],
+  currentKey: string,
+  openPaneKeys: Set<string>,
+): NavSessionEntry[] {
+  const existing = new Set(sessions.map((s) => s.key));
+  const missing: NavSessionEntry[] = [];
+  const allKeys = new Set([currentKey, ...openPaneKeys]);
+  for (const key of allKeys) {
+    if (!existing.has(key)) {
+      missing.push({ key, updatedAt: Date.now() });
+    }
+  }
+  if (missing.length === 0) {
+    return sessions;
+  }
+  return [...missing, ...sessions];
+}
+
+/** Return the set of session keys that currently have an active agent run. */
+function computeRunningSessions(state: AppViewState): Set<string> {
+  return state.runningSessions;
+}
+
+/** Return the count of active sub-agents per requester session key. */
+function computeSubagentCounts(state: AppViewState): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const [key, runs] of state.subagentRuns) {
+    const active = runs.filter((r) => !r.endedAt);
+    if (active.length > 0) {
+      counts.set(key, active.length);
+    }
+  }
+  return counts;
+}
+
+/** Return session keys currently visible in any split pane. */
+function computeOpenPaneKeys(state: AppViewState): Set<string> {
+  if (!state.splitLayout) {
+    return new Set();
+  }
+  return new Set(allLeaves(state.splitLayout.root).map((l) => l.threadId));
+}
+
+type DevFlag = "ui" | "gw";
+
+/** Detect active dev environments. Vite dev always implies a local dev gateway. */
+function getDevFlags(): DevFlag[] {
+  const flags: DevFlag[] = [];
+  if (import.meta.env.DEV) {
+    // Vite dev server — always talking to a local dev gateway
+    flags.push("ui", "gw");
+  } else if ((window as unknown as Record<string, unknown>).__OPENCLAW_DEV__) {
+    // Gateway-served build in dev mode (NODE_ENV !== 'production')
+    flags.push("gw");
+  }
+  return flags;
 }
 
 export function renderApp(state: AppViewState) {
   const presenceCount = state.presenceEntries.length;
   const sessionsCount = state.sessionsResult?.count ?? null;
   const cronNext = state.cronStatus?.nextWakeAtMs ?? null;
-  const chatDisabledReason = state.connected ? null : "Disconnected from gateway.";
   const isChat = state.tab === "chat";
   const chatFocus = isChat && (state.settings.chatFocusMode || state.onboarding);
+  const devFlags = getDevFlags();
+  const isDev = devFlags.length > 0;
   const showThinking = state.onboarding ? false : state.settings.chatShowThinking;
   const assistantAvatarUrl = resolveAssistantAvatarUrl(state);
   const chatAvatarUrl = state.chatAvatarUrl ?? assistantAvatarUrl ?? null;
+  const logoBase = normalizeBasePath(state.basePath);
+  const logoHref = logoBase ? `${logoBase}/favicon.svg` : "/favicon.svg";
   const configValue =
     state.configForm ?? (state.configSnapshot?.config as Record<string, unknown> | null);
-  const basePath = normalizeBasePath(state.basePath ?? "");
   const resolvedAgentId =
     state.agentsSelectedId ??
     state.agentsList?.defaultId ??
@@ -117,7 +261,7 @@ export function renderApp(state: AppViewState) {
     null;
 
   return html`
-    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}">
+    <div class="shell ${isChat ? "shell--chat" : ""} ${chatFocus ? "shell--chat-focus" : ""} ${state.settings.navCollapsed ? "shell--nav-collapsed" : ""} ${state.onboarding ? "shell--onboarding" : ""}" data-dev="${isDev ? "true" : nothing}" style="${state.settings.navWidth ? `--shell-nav-width: ${state.settings.navWidth}px` : ""}">
       <header class="topbar">
         <div class="topbar-left">
           <button
@@ -127,20 +271,34 @@ export function renderApp(state: AppViewState) {
                 ...state.settings,
                 navCollapsed: !state.settings.navCollapsed,
               })}
-            title="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
+            title="${state.settings.navCollapsed ? "Expand sidebar (⌘\\)" : "Collapse sidebar (⌘\\)"}"
             aria-label="${state.settings.navCollapsed ? "Expand sidebar" : "Collapse sidebar"}"
           >
             <span class="nav-collapse-toggle__icon">${icons.menu}</span>
           </button>
           <div class="brand">
             <div class="brand-logo">
-              <img src=${basePath ? `${basePath}/favicon.svg` : "/favicon.svg"} alt="OpenClaw" />
+              <img src="/favicon.svg" alt="kbot" />
             </div>
             <div class="brand-text">
-              <div class="brand-title">OPENCLAW</div>
+              <div class="brand-title">KBOT</div>
               <div class="brand-sub">Gateway Dashboard</div>
             </div>
           </div>
+          ${
+            devFlags.includes("ui")
+              ? html`
+                  <span class="dev-badge ui-dev">UI DEV</span>
+                `
+              : nothing
+          }
+          ${
+            devFlags.includes("gw")
+              ? html`
+                  <span class="dev-badge gw-dev">GW DEV</span>
+                `
+              : nothing
+          }
         </div>
         <div class="topbar-status">
           <div class="pill">
@@ -148,12 +306,52 @@ export function renderApp(state: AppViewState) {
             <span>Health</span>
             <span class="mono">${state.connected ? "OK" : "Offline"}</span>
           </div>
+          ${
+            isChat
+              ? html`
+            <button
+              class="pill ${state.gitPanelOpen ? "active" : ""}"
+              style="cursor:pointer;display:inline-flex;align-items:center;gap:4px;${state.gitPanelOpen ? "background:var(--accent,#007acc);color:#fff;" : ""}"
+              @click=${() => {
+                state.gitPanelOpen = !state.gitPanelOpen;
+              }}
+              title=${state.gitPanelOpen ? "Close source control (⇧⌘G)" : "Source control (⇧⌘G)"}
+            >
+              <span style="display:inline-flex;width:14px;height:14px;">${icons.gitBranch}</span>
+              <span>Git</span>
+            </button>
+          `
+              : nothing
+          }
           ${renderThemeToggle(state)}
+          ${
+            state.tab === "chat"
+              ? html`
+            <button
+              class="coding-panel-toggle ${state.codingPanelOpen ? "coding-panel-toggle--active" : ""}"
+              @click=${() => state.toggleCodingPanel()}
+              title="${state.codingPanelOpen ? "Close code sessions" : "Open code sessions"}"
+              style="background:none;border:none;color:var(--text-secondary);cursor:pointer;padding:4px 8px;border-radius:4px;display:flex;align-items:center;gap:4px;font-size:12px;${state.codingPanelOpen ? "color:var(--accent);background:var(--hover);" : ""}"
+            >
+              ${icons.code}
+              <span>Code</span>
+              ${
+                state.codingSessions.filter(
+                  (s: any) => s.status === "running" || s.status === "starting",
+                ).length > 0
+                  ? html`<span style="background:var(--accent);color:white;font-size:10px;padding:0 5px;border-radius:8px;font-weight:700;">${state.codingSessions.filter((s: any) => s.status === "running" || s.status === "starting").length}</span>`
+                  : nothing
+              }
+            </button>
+          `
+              : nothing
+          }
         </div>
       </header>
       <aside class="nav ${state.settings.navCollapsed ? "nav--collapsed" : ""}">
         ${TAB_GROUPS.map((group) => {
-          const isGroupCollapsed = state.settings.navGroupsCollapsed[group.label] ?? false;
+          const isGroupCollapsed =
+            state.settings.navGroupsCollapsed[group.label] ?? group.label !== "Chat";
           const hasActiveTab = group.tabs.some((tab) => tab === state.tab);
           return html`
             <div class="nav-group ${isGroupCollapsed && !hasActiveTab ? "nav-group--collapsed" : ""}">
@@ -174,37 +372,158 @@ export function renderApp(state: AppViewState) {
               </button>
               <div class="nav-group__items">
                 ${group.tabs.map((tab) => renderTab(state, tab))}
+                ${
+                  group.label === "Chat" && state.tab === "chat"
+                    ? renderNavThreadList({
+                        sessions: ensureOpenSessions(
+                          state.sessionsResult?.sessions ?? [],
+                          state.sessionKey,
+                          computeOpenPaneKeys(state),
+                        ),
+                        activeSessionKey: state.sessionKey,
+                        unreadCounts: new Map(),
+                        runningSessions: computeRunningSessions(state),
+                        subagentCounts: computeSubagentCounts(state),
+                        openPaneKeys: computeOpenPaneKeys(state),
+                        gateway: state.client,
+                        onSelect: (sessionKey) => {
+                          // In split mode, also update the focused pane's leaf
+                          if (state.splitLayout && state.focusedPaneId) {
+                            state.setThreadInPane(state.focusedPaneId, sessionKey);
+                          }
+                          // Full session switch: clear state + load history
+                          state.sessionKey = sessionKey;
+                          state.chatMessage = "";
+                          state.chatMessages = [];
+                          state.chatToolMessages = [];
+                          state.chatStream = null;
+                          state.chatStreamStartedAt = null;
+                          state.chatRunId = null;
+                          state.resetToolStream();
+                          state.resetChatScroll();
+                          state.applySettings({
+                            ...state.settings,
+                            sessionKey,
+                            lastActiveSessionKey: sessionKey,
+                          });
+                          void state.loadAssistantIdentity();
+                          syncUrlWithSessionKey(
+                            state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+                            sessionKey,
+                            true,
+                          );
+                          void loadChatHistory(state);
+                          focusComposer();
+                        },
+                        onRename: (sessionKey, label) => {
+                          void patchSession(state, sessionKey, { label });
+                        },
+                        onDelete: (sessionKey) => {
+                          void deleteSession(state, sessionKey);
+                        },
+                        onArchive: (sessionKey) => {
+                          void patchSession(state, sessionKey, { archived: true });
+                          if (state.splitLayout) {
+                            const leaf = allLeaves(state.splitLayout.root).find(
+                              (l) => l.threadId === sessionKey,
+                            );
+                            if (leaf) {
+                              state.closePane(leaf.id);
+                            }
+                          }
+                          if (state.sessionKey === sessionKey) {
+                            startNewSession(state);
+                          }
+                        },
+                        onUnarchive: (sessionKey) => {
+                          void patchSession(state, sessionKey, { archived: false });
+                        },
+                        onNewSession: () => startNewSession(state),
+                        onOpenTerminal: () => state.openTerminalPane(),
+                        onRequestUpdate: () => {
+                          // Force re-render by touching a reactive property
+                          state.threads = new Map(state.threads);
+                        },
+                      })
+                    : nothing
+                }
               </div>
             </div>
           `;
         })}
-        <div class="nav-group nav-group--links">
-          <div class="nav-label nav-label--static">
-            <span class="nav-label__text">Resources</span>
-          </div>
-          <div class="nav-group__items">
-            <a
-              class="nav-item nav-item--external"
-              href="https://docs.openclaw.ai"
-              target="_blank"
-              rel="noreferrer"
-              title="Docs (opens in new tab)"
+        ${(() => {
+          const resCollapsed = state.settings.navGroupsCollapsed["Resources"] ?? true;
+          return html`
+          <div class="nav-group nav-group--links ${resCollapsed ? "nav-group--collapsed" : ""}">
+            <button
+              class="nav-label"
+              @click=${() => {
+                const next = { ...state.settings.navGroupsCollapsed };
+                next["Resources"] = !resCollapsed;
+                state.applySettings({
+                  ...state.settings,
+                  navGroupsCollapsed: next,
+                });
+              }}
+              aria-expanded=${!resCollapsed}
             >
-              <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
-              <span class="nav-item__text">Docs</span>
-            </a>
-          </div>
-        </div>
+              <span class="nav-label__text">Resources</span>
+              <span class="nav-label__chevron">${resCollapsed ? "+" : "−"}</span>
+            </button>
+            <div class="nav-group__items">
+              <a
+                class="nav-item nav-item--external"
+                href="https://docs.openclaw.ai"
+                target="_blank"
+                rel="noreferrer"
+                title="Docs (opens in new tab)"
+              >
+                <span class="nav-item__icon" aria-hidden="true">${icons.book}</span>
+                <span class="nav-item__text">Docs</span>
+              </a>
+            </div>
+          </div>`;
+        })()}
       </aside>
+      <div
+        class="nav-resize-handle ${state.settings.navCollapsed ? "nav-resize-handle--hidden" : ""}"
+        @mousedown=${(e: MouseEvent) => {
+          e.preventDefault();
+          const shell = (e.target as HTMLElement).closest(".shell") as HTMLElement;
+          if (!shell) {
+            return;
+          }
+          const startX = e.clientX;
+          const startWidth =
+            parseInt(getComputedStyle(shell).getPropertyValue("--shell-nav-width")) || 220;
+          const onMove = (me: MouseEvent) => {
+            const newWidth = Math.max(140, Math.min(500, startWidth + me.clientX - startX));
+            shell.style.setProperty("--shell-nav-width", newWidth + "px");
+          };
+          const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+            document.body.style.cursor = "";
+            document.body.style.userSelect = "";
+            // Persist the width
+            const finalWidth =
+              parseInt(getComputedStyle(shell).getPropertyValue("--shell-nav-width")) || 220;
+            state.applySettings({ ...state.settings, navWidth: finalWidth });
+          };
+          document.body.style.cursor = "col-resize";
+          document.body.style.userSelect = "none";
+          document.addEventListener("mousemove", onMove);
+          document.addEventListener("mouseup", onUp);
+        }}
+      ></div>
       <main class="content ${isChat ? "content--chat" : ""}">
         <section class="content-header">
           <div>
-            ${state.tab === "usage" ? nothing : html`<div class="page-title">${titleForTab(state.tab)}</div>`}
-            ${state.tab === "usage" ? nothing : html`<div class="page-sub">${subtitleForTab(state.tab)}</div>`}
+            <div class="page-title">${titleForTab(state.tab)}</div>
+            <div class="page-sub">${subtitleForTab(state.tab)}</div>
           </div>
           <div class="page-meta">
             ${state.lastError ? html`<div class="pill danger">${state.lastError}</div>` : nothing}
-            ${isChat ? renderChatControls(state) : nothing}
           </div>
         </section>
 
@@ -311,269 +630,6 @@ export function renderApp(state: AppViewState) {
                 onRefresh: () => loadSessions(state),
                 onPatch: (key, patch) => patchSession(state, key, patch),
                 onDelete: (key) => deleteSession(state, key),
-              })
-            : nothing
-        }
-
-        ${
-          state.tab === "usage"
-            ? renderUsage({
-                loading: state.usageLoading,
-                error: state.usageError,
-                startDate: state.usageStartDate,
-                endDate: state.usageEndDate,
-                sessions: state.usageResult?.sessions ?? [],
-                sessionsLimitReached: (state.usageResult?.sessions?.length ?? 0) >= 1000,
-                totals: state.usageResult?.totals ?? null,
-                aggregates: state.usageResult?.aggregates ?? null,
-                costDaily: state.usageCostSummary?.daily ?? [],
-                selectedSessions: state.usageSelectedSessions,
-                selectedDays: state.usageSelectedDays,
-                selectedHours: state.usageSelectedHours,
-                chartMode: state.usageChartMode,
-                dailyChartMode: state.usageDailyChartMode,
-                timeSeriesMode: state.usageTimeSeriesMode,
-                timeSeriesBreakdownMode: state.usageTimeSeriesBreakdownMode,
-                timeSeries: state.usageTimeSeries,
-                timeSeriesLoading: state.usageTimeSeriesLoading,
-                sessionLogs: state.usageSessionLogs,
-                sessionLogsLoading: state.usageSessionLogsLoading,
-                sessionLogsExpanded: state.usageSessionLogsExpanded,
-                logFilterRoles: state.usageLogFilterRoles,
-                logFilterTools: state.usageLogFilterTools,
-                logFilterHasTools: state.usageLogFilterHasTools,
-                logFilterQuery: state.usageLogFilterQuery,
-                query: state.usageQuery,
-                queryDraft: state.usageQueryDraft,
-                sessionSort: state.usageSessionSort,
-                sessionSortDir: state.usageSessionSortDir,
-                recentSessions: state.usageRecentSessions,
-                sessionsTab: state.usageSessionsTab,
-                visibleColumns:
-                  state.usageVisibleColumns as import("./views/usage.ts").UsageColumnId[],
-                timeZone: state.usageTimeZone,
-                contextExpanded: state.usageContextExpanded,
-                headerPinned: state.usageHeaderPinned,
-                onStartDateChange: (date) => {
-                  state.usageStartDate = date;
-                  state.usageSelectedDays = [];
-                  state.usageSelectedHours = [];
-                  state.usageSelectedSessions = [];
-                  debouncedLoadUsage(state);
-                },
-                onEndDateChange: (date) => {
-                  state.usageEndDate = date;
-                  state.usageSelectedDays = [];
-                  state.usageSelectedHours = [];
-                  state.usageSelectedSessions = [];
-                  debouncedLoadUsage(state);
-                },
-                onRefresh: () => loadUsage(state),
-                onTimeZoneChange: (zone) => {
-                  state.usageTimeZone = zone;
-                },
-                onToggleContextExpanded: () => {
-                  state.usageContextExpanded = !state.usageContextExpanded;
-                },
-                onToggleSessionLogsExpanded: () => {
-                  state.usageSessionLogsExpanded = !state.usageSessionLogsExpanded;
-                },
-                onLogFilterRolesChange: (next) => {
-                  state.usageLogFilterRoles = next;
-                },
-                onLogFilterToolsChange: (next) => {
-                  state.usageLogFilterTools = next;
-                },
-                onLogFilterHasToolsChange: (next) => {
-                  state.usageLogFilterHasTools = next;
-                },
-                onLogFilterQueryChange: (next) => {
-                  state.usageLogFilterQuery = next;
-                },
-                onLogFilterClear: () => {
-                  state.usageLogFilterRoles = [];
-                  state.usageLogFilterTools = [];
-                  state.usageLogFilterHasTools = false;
-                  state.usageLogFilterQuery = "";
-                },
-                onToggleHeaderPinned: () => {
-                  state.usageHeaderPinned = !state.usageHeaderPinned;
-                },
-                onSelectHour: (hour, shiftKey) => {
-                  if (shiftKey && state.usageSelectedHours.length > 0) {
-                    const allHours = Array.from({ length: 24 }, (_, i) => i);
-                    const lastSelected =
-                      state.usageSelectedHours[state.usageSelectedHours.length - 1];
-                    const lastIdx = allHours.indexOf(lastSelected);
-                    const thisIdx = allHours.indexOf(hour);
-                    if (lastIdx !== -1 && thisIdx !== -1) {
-                      const [start, end] =
-                        lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
-                      const range = allHours.slice(start, end + 1);
-                      state.usageSelectedHours = [
-                        ...new Set([...state.usageSelectedHours, ...range]),
-                      ];
-                    }
-                  } else {
-                    if (state.usageSelectedHours.includes(hour)) {
-                      state.usageSelectedHours = state.usageSelectedHours.filter((h) => h !== hour);
-                    } else {
-                      state.usageSelectedHours = [...state.usageSelectedHours, hour];
-                    }
-                  }
-                },
-                onQueryDraftChange: (query) => {
-                  state.usageQueryDraft = query;
-                  if (state.usageQueryDebounceTimer) {
-                    window.clearTimeout(state.usageQueryDebounceTimer);
-                  }
-                  state.usageQueryDebounceTimer = window.setTimeout(() => {
-                    state.usageQuery = state.usageQueryDraft;
-                    state.usageQueryDebounceTimer = null;
-                  }, 250);
-                },
-                onApplyQuery: () => {
-                  if (state.usageQueryDebounceTimer) {
-                    window.clearTimeout(state.usageQueryDebounceTimer);
-                    state.usageQueryDebounceTimer = null;
-                  }
-                  state.usageQuery = state.usageQueryDraft;
-                },
-                onClearQuery: () => {
-                  if (state.usageQueryDebounceTimer) {
-                    window.clearTimeout(state.usageQueryDebounceTimer);
-                    state.usageQueryDebounceTimer = null;
-                  }
-                  state.usageQueryDraft = "";
-                  state.usageQuery = "";
-                },
-                onSessionSortChange: (sort) => {
-                  state.usageSessionSort = sort;
-                },
-                onSessionSortDirChange: (dir) => {
-                  state.usageSessionSortDir = dir;
-                },
-                onSessionsTabChange: (tab) => {
-                  state.usageSessionsTab = tab;
-                },
-                onToggleColumn: (column) => {
-                  if (state.usageVisibleColumns.includes(column)) {
-                    state.usageVisibleColumns = state.usageVisibleColumns.filter(
-                      (entry) => entry !== column,
-                    );
-                  } else {
-                    state.usageVisibleColumns = [...state.usageVisibleColumns, column];
-                  }
-                },
-                onSelectSession: (key, shiftKey) => {
-                  state.usageTimeSeries = null;
-                  state.usageSessionLogs = null;
-                  state.usageRecentSessions = [
-                    key,
-                    ...state.usageRecentSessions.filter((entry) => entry !== key),
-                  ].slice(0, 8);
-
-                  if (shiftKey && state.usageSelectedSessions.length > 0) {
-                    // Shift-click: select range from last selected to this session
-                    // Sort sessions same way as displayed (by tokens or cost descending)
-                    const isTokenMode = state.usageChartMode === "tokens";
-                    const sortedSessions = [...(state.usageResult?.sessions ?? [])].toSorted(
-                      (a, b) => {
-                        const valA = isTokenMode
-                          ? (a.usage?.totalTokens ?? 0)
-                          : (a.usage?.totalCost ?? 0);
-                        const valB = isTokenMode
-                          ? (b.usage?.totalTokens ?? 0)
-                          : (b.usage?.totalCost ?? 0);
-                        return valB - valA;
-                      },
-                    );
-                    const allKeys = sortedSessions.map((s) => s.key);
-                    const lastSelected =
-                      state.usageSelectedSessions[state.usageSelectedSessions.length - 1];
-                    const lastIdx = allKeys.indexOf(lastSelected);
-                    const thisIdx = allKeys.indexOf(key);
-                    if (lastIdx !== -1 && thisIdx !== -1) {
-                      const [start, end] =
-                        lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
-                      const range = allKeys.slice(start, end + 1);
-                      const newSelection = [...new Set([...state.usageSelectedSessions, ...range])];
-                      state.usageSelectedSessions = newSelection;
-                    }
-                  } else {
-                    // Regular click: focus a single session (so details always open).
-                    // Click the focused session again to clear selection.
-                    if (
-                      state.usageSelectedSessions.length === 1 &&
-                      state.usageSelectedSessions[0] === key
-                    ) {
-                      state.usageSelectedSessions = [];
-                    } else {
-                      state.usageSelectedSessions = [key];
-                    }
-                  }
-
-                  // Load timeseries/logs only if exactly one session selected
-                  if (state.usageSelectedSessions.length === 1) {
-                    void loadSessionTimeSeries(state, state.usageSelectedSessions[0]);
-                    void loadSessionLogs(state, state.usageSelectedSessions[0]);
-                  }
-                },
-                onSelectDay: (day, shiftKey) => {
-                  if (shiftKey && state.usageSelectedDays.length > 0) {
-                    // Shift-click: select range from last selected to this day
-                    const allDays = (state.usageCostSummary?.daily ?? []).map((d) => d.date);
-                    const lastSelected =
-                      state.usageSelectedDays[state.usageSelectedDays.length - 1];
-                    const lastIdx = allDays.indexOf(lastSelected);
-                    const thisIdx = allDays.indexOf(day);
-                    if (lastIdx !== -1 && thisIdx !== -1) {
-                      const [start, end] =
-                        lastIdx < thisIdx ? [lastIdx, thisIdx] : [thisIdx, lastIdx];
-                      const range = allDays.slice(start, end + 1);
-                      // Merge with existing selection
-                      const newSelection = [...new Set([...state.usageSelectedDays, ...range])];
-                      state.usageSelectedDays = newSelection;
-                    }
-                  } else {
-                    // Regular click: toggle single day
-                    if (state.usageSelectedDays.includes(day)) {
-                      state.usageSelectedDays = state.usageSelectedDays.filter((d) => d !== day);
-                    } else {
-                      state.usageSelectedDays = [day];
-                    }
-                  }
-                },
-                onChartModeChange: (mode) => {
-                  state.usageChartMode = mode;
-                },
-                onDailyChartModeChange: (mode) => {
-                  state.usageDailyChartMode = mode;
-                },
-                onTimeSeriesModeChange: (mode) => {
-                  state.usageTimeSeriesMode = mode;
-                },
-                onTimeSeriesBreakdownChange: (mode) => {
-                  state.usageTimeSeriesBreakdownMode = mode;
-                },
-                onClearDays: () => {
-                  state.usageSelectedDays = [];
-                },
-                onClearHours: () => {
-                  state.usageSelectedHours = [];
-                },
-                onClearSessions: () => {
-                  state.usageSelectedSessions = [];
-                  state.usageTimeSeries = null;
-                  state.usageSessionLogs = null;
-                },
-                onClearFilters: () => {
-                  state.usageSelectedDays = [];
-                  state.usageSelectedHours = [];
-                  state.usageSelectedSessions = [];
-                  state.usageTimeSeries = null;
-                  state.usageSessionLogs = null;
-                },
               })
             : nothing
         }
@@ -693,7 +749,17 @@ export function renderApp(state: AppViewState) {
                     void state.loadCron();
                   }
                 },
-                onLoadFiles: (agentId) => loadAgentFiles(state, agentId),
+                onLoadFiles: (agentId) => {
+                  void (async () => {
+                    await loadAgentFiles(state, agentId);
+                    if (state.agentFileActive) {
+                      await loadAgentFileContent(state, agentId, state.agentFileActive, {
+                        force: true,
+                        preserveDraft: true,
+                      });
+                    }
+                  })();
+                },
                 onSelectFile: (name) => {
                   state.agentFileActive = name;
                   if (!resolvedAgentId) {
@@ -736,12 +802,19 @@ export function renderApp(state: AppViewState) {
                   }
                   const basePath = ["agents", "list", index, "tools"];
                   if (profile) {
-                    updateConfigFormValue(state, [...basePath, "profile"], profile);
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "profile"],
+                      profile,
+                    );
                   } else {
-                    removeConfigFormValue(state, [...basePath, "profile"]);
+                    removeConfigFormValue(state as unknown as ConfigState, [
+                      ...basePath,
+                      "profile",
+                    ]);
                   }
                   if (clearAllow) {
-                    removeConfigFormValue(state, [...basePath, "allow"]);
+                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "allow"]);
                   }
                 },
                 onToolsOverridesChange: (agentId, alsoAllow, deny) => {
@@ -764,18 +837,29 @@ export function renderApp(state: AppViewState) {
                   }
                   const basePath = ["agents", "list", index, "tools"];
                   if (alsoAllow.length > 0) {
-                    updateConfigFormValue(state, [...basePath, "alsoAllow"], alsoAllow);
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "alsoAllow"],
+                      alsoAllow,
+                    );
                   } else {
-                    removeConfigFormValue(state, [...basePath, "alsoAllow"]);
+                    removeConfigFormValue(state as unknown as ConfigState, [
+                      ...basePath,
+                      "alsoAllow",
+                    ]);
                   }
                   if (deny.length > 0) {
-                    updateConfigFormValue(state, [...basePath, "deny"], deny);
+                    updateConfigFormValue(
+                      state as unknown as ConfigState,
+                      [...basePath, "deny"],
+                      deny,
+                    );
                   } else {
-                    removeConfigFormValue(state, [...basePath, "deny"]);
+                    removeConfigFormValue(state as unknown as ConfigState, [...basePath, "deny"]);
                   }
                 },
-                onConfigReload: () => loadConfig(state),
-                onConfigSave: () => saveConfig(state),
+                onConfigReload: () => loadConfig(state as unknown as ConfigState),
+                onConfigSave: () => saveConfig(state as unknown as ConfigState),
                 onChannelsRefresh: () => loadChannels(state, false),
                 onCronRefresh: () => state.loadCron(),
                 onSkillsFilterChange: (next) => (state.skillsFilter = next),
@@ -820,7 +904,11 @@ export function renderApp(state: AppViewState) {
                   } else {
                     next.delete(normalizedSkill);
                   }
-                  updateConfigFormValue(state, ["agents", "list", index, "skills"], [...next]);
+                  updateConfigFormValue(
+                    state as unknown as ConfigState,
+                    ["agents", "list", index, "skills"],
+                    [...next],
+                  );
                 },
                 onAgentSkillsClear: (agentId) => {
                   if (!configValue) {
@@ -840,7 +928,12 @@ export function renderApp(state: AppViewState) {
                   if (index < 0) {
                     return;
                   }
-                  removeConfigFormValue(state, ["agents", "list", index, "skills"]);
+                  removeConfigFormValue(state as unknown as ConfigState, [
+                    "agents",
+                    "list",
+                    index,
+                    "skills",
+                  ]);
                 },
                 onAgentSkillsDisableAll: (agentId) => {
                   if (!configValue) {
@@ -860,7 +953,11 @@ export function renderApp(state: AppViewState) {
                   if (index < 0) {
                     return;
                   }
-                  updateConfigFormValue(state, ["agents", "list", index, "skills"], []);
+                  updateConfigFormValue(
+                    state as unknown as ConfigState,
+                    ["agents", "list", index, "skills"],
+                    [],
+                  );
                 },
                 onModelChange: (agentId, modelId) => {
                   if (!configValue) {
@@ -882,7 +979,7 @@ export function renderApp(state: AppViewState) {
                   }
                   const basePath = ["agents", "list", index, "model"];
                   if (!modelId) {
-                    removeConfigFormValue(state, basePath);
+                    removeConfigFormValue(state as unknown as ConfigState, basePath);
                     return;
                   }
                   const entry = list[index] as { model?: unknown };
@@ -893,9 +990,9 @@ export function renderApp(state: AppViewState) {
                       primary: modelId,
                       ...(Array.isArray(fallbacks) ? { fallbacks } : {}),
                     };
-                    updateConfigFormValue(state, basePath, next);
+                    updateConfigFormValue(state as unknown as ConfigState, basePath, next);
                   } else {
-                    updateConfigFormValue(state, basePath, modelId);
+                    updateConfigFormValue(state as unknown as ConfigState, basePath, modelId);
                   }
                 },
                 onModelFallbacksChange: (agentId, fallbacks) => {
@@ -936,16 +1033,16 @@ export function renderApp(state: AppViewState) {
                   const primary = resolvePrimary();
                   if (normalized.length === 0) {
                     if (primary) {
-                      updateConfigFormValue(state, basePath, primary);
+                      updateConfigFormValue(state as unknown as ConfigState, basePath, primary);
                     } else {
-                      removeConfigFormValue(state, basePath);
+                      removeConfigFormValue(state as unknown as ConfigState, basePath);
                     }
                     return;
                   }
                   const next = primary
                     ? { primary, fallbacks: normalized }
                     : { fallbacks: normalized };
-                  updateConfigFormValue(state, basePath, next);
+                  updateConfigFormValue(state as unknown as ConfigState, basePath, next);
                 },
               })
             : nothing
@@ -1051,84 +1148,7 @@ export function renderApp(state: AppViewState) {
             : nothing
         }
 
-        ${
-          state.tab === "chat"
-            ? renderChat({
-                sessionKey: state.sessionKey,
-                onSessionKeyChange: (next) => {
-                  state.sessionKey = next;
-                  state.chatMessage = "";
-                  state.chatAttachments = [];
-                  state.chatStream = null;
-                  state.chatStreamStartedAt = null;
-                  state.chatRunId = null;
-                  state.chatQueue = [];
-                  state.resetToolStream();
-                  state.resetChatScroll();
-                  state.applySettings({
-                    ...state.settings,
-                    sessionKey: next,
-                    lastActiveSessionKey: next,
-                  });
-                  void state.loadAssistantIdentity();
-                  void loadChatHistory(state);
-                  void refreshChatAvatar(state);
-                },
-                thinkingLevel: state.chatThinkingLevel,
-                showThinking,
-                loading: state.chatLoading,
-                sending: state.chatSending,
-                compactionStatus: state.compactionStatus,
-                assistantAvatarUrl: chatAvatarUrl,
-                messages: state.chatMessages,
-                toolMessages: state.chatToolMessages,
-                stream: state.chatStream,
-                streamStartedAt: state.chatStreamStartedAt,
-                draft: state.chatMessage,
-                queue: state.chatQueue,
-                connected: state.connected,
-                canSend: state.connected,
-                disabledReason: chatDisabledReason,
-                error: state.lastError,
-                sessions: state.sessionsResult,
-                focusMode: chatFocus,
-                onRefresh: () => {
-                  state.resetToolStream();
-                  return Promise.all([loadChatHistory(state), refreshChatAvatar(state)]);
-                },
-                onToggleFocusMode: () => {
-                  if (state.onboarding) {
-                    return;
-                  }
-                  state.applySettings({
-                    ...state.settings,
-                    chatFocusMode: !state.settings.chatFocusMode,
-                  });
-                },
-                onChatScroll: (event) => state.handleChatScroll(event),
-                onDraftChange: (next) => (state.chatMessage = next),
-                attachments: state.chatAttachments,
-                onAttachmentsChange: (next) => (state.chatAttachments = next),
-                onSend: () => state.handleSendChat(),
-                canAbort: Boolean(state.chatRunId),
-                onAbort: () => void state.handleAbortChat(),
-                onQueueRemove: (id) => state.removeQueuedMessage(id),
-                onNewSession: () => state.handleSendChat("/new", { restoreDraft: true }),
-                showNewMessages: state.chatNewMessagesBelow,
-                onScrollToBottom: () => state.scrollToBottom(),
-                // Sidebar props for tool output viewing
-                sidebarOpen: state.sidebarOpen,
-                sidebarContent: state.sidebarContent,
-                sidebarError: state.sidebarError,
-                splitRatio: state.splitRatio,
-                onOpenSidebar: (content: string) => state.handleOpenSidebar(content),
-                onCloseSidebar: () => state.handleCloseSidebar(),
-                onSplitRatioChange: (ratio: number) => state.handleSplitRatioChange(ratio),
-                assistantName: state.assistantName,
-                assistantAvatar: state.assistantAvatar,
-              })
-            : nothing
-        }
+        ${state.tab === "chat" ? renderChatWithArtifactPanel(state) : nothing}
 
         ${
           state.tab === "config"
@@ -1213,9 +1233,187 @@ export function renderApp(state: AppViewState) {
               })
             : nothing
         }
+
+        ${
+          state.tab === "models"
+            ? renderModels({
+                providers: state.modelsConfig?.providers ?? [],
+                loading: state.modelsConfigLoading,
+                saving: state.modelsConfigSaving,
+                error: state.modelsConfigError,
+                connected: state.connected,
+                visibleModels: state.visibleModels,
+                onToggleModelVisibility: (modelRef, visible) => {
+                  state.handleToggleModelVisibility(modelRef, visible);
+                },
+                onAddProvider: (provider) => {
+                  // Sort the new provider's models by capability
+                  const sortedProvider = {
+                    ...provider,
+                    models: [...provider.models].sort((a, b) => {
+                      const score = (m: typeof a) => {
+                        let s = 0;
+                        if (m.reasoning) s += 1000;
+                        if (m.input?.includes("image")) s += 100;
+                        s += (m.contextWindow ?? 0) / 10000;
+                        return s;
+                      };
+                      return score(b) - score(a);
+                    }),
+                  };
+                  const providers = [...(state.modelsConfig?.providers ?? []), sortedProvider];
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onRemoveProvider: (name) => {
+                  const providers = (state.modelsConfig?.providers ?? []).filter(
+                    (p) => p.name !== name,
+                  );
+                  state.modelsConfig = { ...state.modelsConfig, providers };
+                },
+                onSave: () => state.handleModelsConfigSave(),
+                onReload: () => state.handleModelsConfigLoad(),
+              })
+            : nothing
+        }
       </main>
       ${renderExecApprovalPrompt(state)}
+      ${renderToolApprovalPrompt(state)}
       ${renderGatewayUrlConfirmation(state)}
+    </div>
+  `;
+}
+
+// ── Chat area + global artifact panel ──
+
+function renderChatWithArtifactPanel(state: AppViewState) {
+  const hasArtifactTabs = state.artifactTabs.length > 0;
+  const artifactOpen = state.artifactOpen && hasArtifactTabs;
+
+  // Always use split pane container - single pane is just a single-leaf layout
+  const chatContent = renderSplitPaneContainer(state);
+
+  const gitOpen = state.gitPanelOpen;
+  const codingPanelOpen = state.codingPanelOpen;
+
+  // Auto-load git status when panel opens
+  if (gitOpen && state.gitFiles.length === 0 && !state.gitLoading && !state.gitError) {
+    void loadGitStatus(state);
+  }
+
+  // No side panels open — just chat
+  if (!artifactOpen && !gitOpen && !codingPanelOpen) {
+    return chatContent;
+  }
+
+  return html`
+    <div class="chat-artifact-wrapper" style="display:flex;flex:1;min-height:0;min-width:0;overflow:hidden;">
+      <div class="chat-artifact-wrapper__chat" style="flex:1;min-width:0;min-height:0;overflow:hidden;display:flex;">
+        ${chatContent}
+      </div>
+      ${
+        codingPanelOpen
+          ? html`
+        <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);">
+          ${renderCodingPanel({
+            sessions: state.codingSessions,
+            expanded: state.codingExpanded,
+            sessionEvents: state.codingSessionEvents,
+            sessionPhases: state.codingSessionPhases,
+            terminalOpen: state.codingTerminalOpen,
+            onToggleExpand: (id: string) => state.handleCodingToggleExpand(id),
+            onKill: (id: string) => state.handleCodingKill(id),
+            onClose: () => state.toggleCodingPanel(),
+            onRefresh: () => state.fetchCodingSessions(),
+            onDismiss: (id: string) => state.handleCodingDismiss(id),
+            onOpenTerminal: (id: string) => state.handleOpenCodingTerminal(id),
+            onCloseTerminal: () => state.handleCloseCodingTerminal(),
+            onAttachTerminal: (id: string) => state.handleAttachCodingTerminal(id),
+            onRespond: (id: string, text: string, toolUseId?: string) =>
+              state.handleCodingRespond(id, text, toolUseId),
+            pendingQuestions: state.codingQuestions,
+          })}
+        </div>
+      `
+          : nothing
+      }
+      ${
+        artifactOpen
+          ? html`
+            <div class="chat-artifact-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:45%;min-width:280px;min-height:0;overflow:hidden;display:flex;border-left:1px solid var(--border);">
+              ${renderArtifactPanel({
+                tabs: state.artifactTabs,
+                activeTabId: state.artifactActiveTabId,
+                onTabSelect: (tabId) => state.handleArtifactTabSelect(tabId),
+                onTabClose: (tabId) => state.handleArtifactTabClose(tabId),
+                onRefresh: (tabId) => state.handleArtifactRefresh(tabId),
+                onToggleRaw: (tabId) => state.handleArtifactToggleRaw(tabId),
+                onCopy: (tabId) => state.handleArtifactCopy(tabId),
+                onSave: (tabId, content) => state.handleArtifactSave(tabId, content),
+                onAutoSave: (tabId, content) => state.handleArtifactAutoSave(tabId, content),
+                onClose: () => state.handleArtifactClose(),
+              })}
+            </div>
+          `
+          : nothing
+      }
+      ${
+        gitOpen
+          ? html`
+            <div class="chat-git-wrapper__panel" style="flex:0 0 auto;width:380px;max-width:40%;min-width:300px;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;border-left:1px solid var(--border);padding:8px 12px;">
+              ${renderGit({
+                loading: state.gitLoading,
+                error: state.gitError,
+                branch: state.gitBranch,
+                files: state.gitFiles,
+                ahead: state.gitAhead,
+                behind: state.gitBehind,
+                logEntries: state.gitLogEntries,
+                logLoading: state.gitLogLoading,
+                diff: state.gitDiff,
+                diffLoading: state.gitDiffLoading,
+                diffStaged: state.gitDiffStaged,
+                commitMessage: state.gitCommitMessage,
+                committing: state.gitCommitting,
+                selectedPath: state.gitSelectedPath,
+                stagedCollapsed: state.gitStagedCollapsed,
+                changesCollapsed: state.gitChangesCollapsed,
+                logCollapsed: state.gitLogCollapsed,
+                onRefresh: () => loadGitStatus(state),
+                onLoadLog: () => loadGitLog(state),
+                onStage: (paths) => stageFiles(state, paths),
+                onUnstage: (paths) => unstageFiles(state, paths),
+                onDiscard: (paths) => discardFiles(state, paths),
+                onCommit: () => commitChanges(state),
+                onStageAllAndCommit: async () => {
+                  const unstaged = state.gitFiles.filter(
+                    (f) => f.working !== " " || (f.index === "?" && f.working === "?"),
+                  );
+                  if (unstaged.length > 0) {
+                    await stageFiles(
+                      state,
+                      unstaged.map((f) => f.path),
+                    );
+                  }
+                  await commitChanges(state);
+                },
+                onCommitMessageChange: (next) => {
+                  state.gitCommitMessage = next;
+                },
+                onViewDiff: (staged, path) => loadGitDiff(state, staged, path),
+                onToggleStagedCollapsed: () => {
+                  state.gitStagedCollapsed = !state.gitStagedCollapsed;
+                },
+                onToggleChangesCollapsed: () => {
+                  state.gitChangesCollapsed = !state.gitChangesCollapsed;
+                },
+                onToggleLogCollapsed: () => {
+                  state.gitLogCollapsed = !state.gitLogCollapsed;
+                },
+              })}
+            </div>
+          `
+          : nothing
+      }
     </div>
   `;
 }

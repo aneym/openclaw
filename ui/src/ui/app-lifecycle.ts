@@ -1,10 +1,9 @@
 import type { Tab } from "./navigation";
 import type { SplitPaneLayout } from "./split-tree";
-import type { ChatQueueItem } from "./ui-types";
 import type { UiSettings } from "./storage";
+import type { ChatQueueItem } from "./ui-types";
 import { refreshChat, flushChatQueueForEvent } from "./app-chat";
 import { connectGateway } from "./app-gateway";
-import { loadModels } from "./controllers/models";
 import {
   startLogsPolling,
   startModelsPolling,
@@ -30,6 +29,7 @@ import {
   syncTabWithLocation,
   syncThemeWithSettings,
 } from "./app-settings";
+import { loadModels } from "./controllers/models";
 import { installKeyboardShortcuts, removeKeyboardShortcuts } from "./keyboard-shortcuts";
 import { findLeaf } from "./split-tree";
 
@@ -50,8 +50,8 @@ type LifecycleHost = {
   logsEntries: unknown[];
   popStateHandler: () => void;
   topbarObserver: ResizeObserver | null;
-  initThreadsFromStorage: () => void;
-  restoreSplitLayout: () => void;
+  initThreadsFromStorage?: () => void;
+  restoreSplitLayout?: () => void;
   // Split pane management (for keyboard shortcuts)
   sessionKey: string;
   splitLayout: SplitPaneLayout | null;
@@ -62,7 +62,7 @@ type LifecycleHost = {
   toggleNav: () => void;
   archiveCurrentSession: () => void;
   toggleGitPanel: () => void;
-  syncPaneStatesFromLayout: () => void;
+  syncPaneStatesFromLayout?: () => void;
   // URL pane restoration (set by applySettingsFromUrl)
   urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
   // Visibility change handler for staleness detection
@@ -106,8 +106,8 @@ export async function handleConnected(host: LifecycleHost) {
   syncThemeWithSettings(host as unknown as Parameters<typeof syncThemeWithSettings>[0]);
   attachThemeListener(host as unknown as Parameters<typeof attachThemeListener>[0]);
   window.addEventListener("popstate", host.popStateHandler);
-  // Always load saved thread descriptors (threads are always enabled)
-  host.initThreadsFromStorage();
+  // Load saved thread descriptors if the host implements it
+  host.initThreadsFromStorage?.();
   connectGateway(host as unknown as Parameters<typeof connectGateway>[0]);
   // Install split-pane keyboard shortcuts
   installKeyboardShortcuts(host);
@@ -122,11 +122,11 @@ export async function handleConnected(host: LifecycleHost) {
     if (layout) {
       host.splitLayout = layout;
       host.focusedPaneId = layout.focusedPaneId;
-      host.syncPaneStatesFromLayout();
+      host.syncPaneStatesFromLayout?.();
     }
   } else {
     // Fall back to localStorage split layout
-    host.restoreSplitLayout();
+    host.restoreSplitLayout?.();
   }
   // Ensure we always have a split layout (single-leaf for non-split mode).
   // During HMR, prefer restoring from settings if a layout was saved, to preserve
@@ -148,7 +148,7 @@ export async function handleConnected(host: LifecycleHost) {
       };
       host.focusedPaneId = leaf.id;
     }
-    host.syncPaneStatesFromLayout();
+    host.syncPaneStatesFromLayout?.();
   }
 
   // Sync sessionKey to the focused pane so live state targets the right pane

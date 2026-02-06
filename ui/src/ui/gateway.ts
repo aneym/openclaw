@@ -76,6 +76,7 @@ export class GatewayBrowserClient {
 
   start() {
     this.closed = false;
+    console.log("[gateway] start() → connecting to", this.opts.url);
     this.connect();
   }
 
@@ -94,18 +95,23 @@ export class GatewayBrowserClient {
     if (this.closed) {
       return;
     }
+    console.log("[gateway] connect() → opening WebSocket to", this.opts.url);
     this.ws = new WebSocket(this.opts.url);
-    this.ws.addEventListener("open", () => this.queueConnect());
+    this.ws.addEventListener("open", () => {
+      console.log("[gateway] WebSocket open");
+      this.queueConnect();
+    });
     this.ws.addEventListener("message", (ev) => this.handleMessage(String(ev.data ?? "")));
     this.ws.addEventListener("close", (ev) => {
       const reason = String(ev.reason ?? "");
+      console.log("[gateway] WebSocket closed code=%d reason=%s", ev.code, reason || "(none)");
       this.ws = null;
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
       this.scheduleReconnect();
     });
-    this.ws.addEventListener("error", () => {
-      // ignored; close handler will fire
+    this.ws.addEventListener("error", (ev) => {
+      console.error("[gateway] WebSocket error event:", ev);
     });
   }
 
@@ -115,10 +121,14 @@ export class GatewayBrowserClient {
     }
     const delay = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
+    console.log("[gateway] scheduling reconnect in %dms", delay);
     window.setTimeout(() => this.connect(), delay);
   }
 
   private flushPending(err: Error) {
+    if (this.pending.size > 0) {
+      console.log("[gateway] flushing %d pending requests:", this.pending.size, err.message);
+    }
     for (const [, p] of this.pending) {
       p.reject(err);
     }
@@ -127,6 +137,7 @@ export class GatewayBrowserClient {
 
   private async sendConnect() {
     if (this.connectSent) {
+      console.log("[gateway] sendConnect() skipped — already sent");
       return;
     }
     this.connectSent = true;
@@ -139,6 +150,12 @@ export class GatewayBrowserClient {
     // Over plain HTTP, we skip device identity and fall back to token-only auth.
     // Gateways may reject this unless gateway.controlUi.allowInsecureAuth is enabled.
     const isSecureContext = typeof crypto !== "undefined" && !!crypto.subtle;
+    console.log(
+      "[gateway] sendConnect() isSecureContext=%s crypto=%s crypto.subtle=%s",
+      isSecureContext,
+      typeof crypto !== "undefined",
+      typeof crypto !== "undefined" && !!crypto.subtle,
+    );
 
     const scopes = ["operator.admin", "operator.approvals", "operator.pairing"];
     const role = "operator";
@@ -147,14 +164,31 @@ export class GatewayBrowserClient {
     let authToken = this.opts.token;
 
     if (isSecureContext) {
-      deviceIdentity = await loadOrCreateDeviceIdentity();
-      const storedToken = loadDeviceAuthToken({
-        deviceId: deviceIdentity.deviceId,
-        role,
-      })?.token;
-      authToken = storedToken ?? this.opts.token;
-      canFallbackToShared = Boolean(storedToken && this.opts.token);
+      try {
+        console.log("[gateway] loading device identity...");
+        deviceIdentity = await loadOrCreateDeviceIdentity();
+        console.log("[gateway] device identity loaded: deviceId=%s", deviceIdentity.deviceId);
+        const storedToken = loadDeviceAuthToken({
+          deviceId: deviceIdentity.deviceId,
+          role,
+        })?.token;
+        console.log("[gateway] stored device token: %s", storedToken ? "(present)" : "(none)");
+        authToken = storedToken ?? this.opts.token;
+        canFallbackToShared = Boolean(storedToken && this.opts.token);
+      } catch (err) {
+        console.error("[gateway] device identity FAILED, falling back to token auth:", err);
+        deviceIdentity = null;
+      }
+    } else {
+      console.log("[gateway] NOT secure context — skipping device identity");
     }
+
+    console.log(
+      "[gateway] auth: token=%s password=%s",
+      authToken ? "(present)" : "(none)",
+      this.opts.password ? "(present)" : "(none)",
+    );
+
     const auth =
       authToken || this.opts.password
         ? {
@@ -174,27 +208,41 @@ export class GatewayBrowserClient {
       | undefined;
 
     if (isSecureContext && deviceIdentity) {
-      const signedAtMs = Date.now();
-      const nonce = this.connectNonce ?? undefined;
-      const payload = buildDeviceAuthPayload({
-        deviceId: deviceIdentity.deviceId,
-        clientId: this.opts.clientName ?? GATEWAY_CLIENT_NAMES.CONTROL_UI,
-        clientMode: this.opts.mode ?? GATEWAY_CLIENT_MODES.WEBCHAT,
-        role,
-        scopes,
-        signedAtMs,
-        token: authToken ?? null,
-        nonce,
-      });
-      const signature = await signDevicePayload(deviceIdentity.privateKey, payload);
-      device = {
-        id: deviceIdentity.deviceId,
-        publicKey: deviceIdentity.publicKey,
-        signature,
-        signedAt: signedAtMs,
-        nonce,
-      };
+      try {
+        const signedAtMs = Date.now();
+        const nonce = this.connectNonce ?? undefined;
+        console.log("[gateway] signing device payload nonce=%s", nonce ?? "(none)");
+        const payload = buildDeviceAuthPayload({
+          deviceId: deviceIdentity.deviceId,
+          clientId: this.opts.clientName ?? GATEWAY_CLIENT_NAMES.CONTROL_UI,
+          clientMode: this.opts.mode ?? GATEWAY_CLIENT_MODES.WEBCHAT,
+          role,
+          scopes,
+          signedAtMs,
+          token: authToken ?? null,
+          nonce,
+        });
+        const signature = await signDevicePayload(deviceIdentity.privateKey, payload);
+        device = {
+          id: deviceIdentity.deviceId,
+          publicKey: deviceIdentity.publicKey,
+          signature,
+          signedAt: signedAtMs,
+          nonce,
+        };
+        console.log("[gateway] device payload signed OK deviceId=%s", device.id);
+      } catch (err) {
+        console.error("[gateway] device signing FAILED:", err);
+        device = undefined;
+      }
+    } else {
+      console.log(
+        "[gateway] skipping device signing (isSecure=%s, hasIdentity=%s)",
+        isSecureContext,
+        !!deviceIdentity,
+      );
     }
+
     const params = {
       minProtocol: 3,
       maxProtocol: 3,
@@ -214,8 +262,20 @@ export class GatewayBrowserClient {
       locale: navigator.language,
     };
 
+    console.log(
+      "[gateway] sending connect request: clientId=%s device=%s auth=%s",
+      params.client.id,
+      device ? device.id : "(none)",
+      auth?.token ? "token" : auth?.password ? "password" : "none",
+    );
+
     void this.request<GatewayHelloOk>("connect", params)
       .then((hello) => {
+        console.log(
+          "[gateway] connect SUCCESS! protocol=%d auth.deviceToken=%s",
+          hello?.protocol,
+          hello?.auth?.deviceToken ? "(present)" : "(none)",
+        );
         if (hello?.auth?.deviceToken && deviceIdentity) {
           storeDeviceAuthToken({
             deviceId: deviceIdentity.deviceId,
@@ -223,12 +283,26 @@ export class GatewayBrowserClient {
             token: hello.auth.deviceToken,
             scopes: hello.auth.scopes ?? [],
           });
+          console.log("[gateway] stored device token for future connections");
         }
         this.backoffMs = 800;
-        this.opts.onHello?.(hello);
+        try {
+          this.opts.onHello?.(hello);
+          console.log("[gateway] onHello callback completed OK");
+        } catch (err) {
+          console.error("[gateway] onHello callback THREW:", err);
+          throw err;
+        }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error("[gateway] connect FAILED:", err);
+        console.error(
+          "[gateway] connect FAILED details: message=%s stack=%s",
+          err?.message,
+          err?.stack,
+        );
         if (canFallbackToShared && deviceIdentity) {
+          console.log("[gateway] clearing device token for fallback");
           clearDeviceAuthToken({ deviceId: deviceIdentity.deviceId, role });
         }
         this.ws?.close(CONNECT_FAILED_CLOSE_CODE, "connect failed");
@@ -240,6 +314,7 @@ export class GatewayBrowserClient {
     try {
       parsed = JSON.parse(raw);
     } catch {
+      console.warn("[gateway] unparseable message:", raw.slice(0, 200));
       return;
     }
 
@@ -249,6 +324,7 @@ export class GatewayBrowserClient {
       if (evt.event === "connect.challenge") {
         const payload = evt.payload as { nonce?: unknown } | undefined;
         const nonce = payload && typeof payload.nonce === "string" ? payload.nonce : null;
+        console.log("[gateway] got connect.challenge nonce=%s", nonce ?? "(none)");
         if (nonce) {
           this.connectNonce = nonce;
           void this.sendConnect();
@@ -272,8 +348,15 @@ export class GatewayBrowserClient {
 
     if (frame.type === "res") {
       const res = parsed as GatewayResponseFrame;
+      console.log(
+        "[gateway] response id=%s ok=%s error=%s",
+        res.id,
+        res.ok,
+        res.error?.message ?? "(none)",
+      );
       const pending = this.pending.get(res.id);
       if (!pending) {
+        console.warn("[gateway] response for unknown request id=%s", res.id);
         return;
       }
       this.pending.delete(res.id);
@@ -284,6 +367,8 @@ export class GatewayBrowserClient {
       }
       return;
     }
+
+    console.warn("[gateway] unknown frame type:", (frame as { type?: unknown }).type);
   }
 
   request<T = unknown>(method: string, params?: unknown): Promise<T> {
@@ -305,7 +390,9 @@ export class GatewayBrowserClient {
     if (this.connectTimer !== null) {
       window.clearTimeout(this.connectTimer);
     }
+    console.log("[gateway] queueConnect() → waiting 750ms for challenge nonce");
     this.connectTimer = window.setTimeout(() => {
+      console.log("[gateway] connect timer fired — sending connect without challenge");
       void this.sendConnect();
     }, 750);
   }

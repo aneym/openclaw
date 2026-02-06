@@ -659,6 +659,17 @@ export function renderChat(props: ChatProps) {
 
   const handleThreadClick = (e: Event) => {
     const target = e.target as HTMLElement;
+
+    // Click on a markdown-rendered image → open in new tab
+    if (target instanceof HTMLImageElement && target.closest(".chat-text")) {
+      const src = target.getAttribute("src");
+      if (src) {
+        e.preventDefault();
+        window.open(src, "_blank");
+        return;
+      }
+    }
+
     const copyBtn = target.closest(".code-block__copy") as HTMLButtonElement | null;
     if (!copyBtn) return;
     e.preventDefault();

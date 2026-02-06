@@ -770,3 +770,57 @@ export type LogEntry = {
   message?: string | null;
   meta?: Record<string, unknown> | null;
 };
+
+// ── Git types ──────────────────────────────────────────────────────
+
+export type GitFileStatus = {
+  path: string;
+  index: string;
+  working: string;
+};
+
+export type GitStatusResult = {
+  branch: string;
+  files: GitFileStatus[];
+  ahead: number;
+  behind: number;
+};
+
+export type GitLogEntry = {
+  hash: string;
+  hashShort: string;
+  author: string;
+  date: string;
+  message: string;
+};
+
+export type GitRepoEntry = {
+  path: string;
+  name: string;
+};
+
+// ── Sub-agent status ──────────────────────────────────────────────
+
+export type SubagentRunInfo = {
+  runId: string;
+  childSessionKey: string;
+  requesterSessionKey: string;
+  task: string;
+  label?: string;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
+};
+
+export type SubagentEventPayload = {
+  phase: "start" | "end" | "error";
+  runId: string;
+  requesterSessionKey: string;
+  childSessionKey: string;
+  task: string;
+  label?: string;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
+};

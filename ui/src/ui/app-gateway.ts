@@ -86,20 +86,20 @@ type GatewayHost = {
   execApprovalError: string | null;
   toolApprovalQueue: ToolApprovalRequest[];
   toolApprovalError: string | null;
-  threads: Map<string, ThreadState>;
-  activeThreadId: string | null;
-  sessionKeyToThreadId: Map<string, string>;
+  threads?: Map<string, ThreadState>;
+  activeThreadId?: string | null;
+  sessionKeyToThreadId?: Map<string, string>;
   chatMessages: unknown[];
   runningSessions: Set<string>;
   subagentRuns: Map<string, SubagentRunInfo[]>;
-  initDefaultThread: () => void;
-  renameThread: (threadId: string, label: string) => void;
+  initDefaultThread?: () => void;
+  renameThread?: (threadId: string, label: string) => void;
   slashCommands: SlashCommandEntry[];
   // Split pane state
-  splitLayout: SplitPaneLayout | null;
-  paneStates: Map<string, PaneState>;
-  loadAllPaneHistories: () => Promise<void>;
-  scrollAllPanesToBottom: () => void;
+  splitLayout?: SplitPaneLayout | null;
+  paneStates?: Map<string, PaneState>;
+  loadAllPaneHistories?: () => Promise<void>;
+  scrollAllPanesToBottom?: () => void;
 };
 
 type SessionDefaultsSnapshot = {
@@ -197,9 +197,11 @@ export function connectGateway(host: GatewayHost) {
       host.chatRunId = null;
 
       // 4. Clear per-thread chatSending and chatRunId for the same reasons.
-      for (const thread of host.threads.values()) {
-        thread.chatSending = false;
-        thread.chatRunId = null;
+      if (host.threads) {
+        for (const thread of host.threads.values()) {
+          thread.chatSending = false;
+          thread.chatRunId = null;
+        }
       }
 
       // 5. Clear compaction toast — the "end" event will never arrive from
@@ -223,11 +225,13 @@ export function connectGateway(host: GatewayHost) {
           resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         }
         // Clear per-thread state only for threads without an active run
-        for (const thread of host.threads.values()) {
-          if (!thread.chatRunId) {
-            thread.chatStream = null;
-            thread.chatStreamStartedAt = null;
-            resetToolStreamForThread(thread);
+        if (host.threads) {
+          for (const thread of host.threads.values()) {
+            if (!thread.chatRunId) {
+              thread.chatStream = null;
+              thread.chatStreamStartedAt = null;
+              resetToolStreamForThread(thread);
+            }
           }
         }
 
@@ -240,17 +244,19 @@ export function connectGateway(host: GatewayHost) {
           void abortChatRun(host as unknown as OpenClawApp);
         }
         // Also check visible split-pane threads
-        for (const thread of host.threads.values()) {
-          const threadSessionKey = thread.descriptor?.sessionKey;
-          if (threadSessionKey && hasPendingAbort(threadSessionKey) && thread.chatRunId) {
-            clearAbortPending(threadSessionKey);
-            if (host.client && host.connected) {
-              void host.client
-                .request("chat.abort", {
-                  sessionKey: threadSessionKey,
-                  runId: thread.chatRunId,
-                })
-                .catch(() => {});
+        if (host.threads) {
+          for (const thread of host.threads.values()) {
+            const threadSessionKey = thread.descriptor?.sessionKey;
+            if (threadSessionKey && hasPendingAbort(threadSessionKey) && thread.chatRunId) {
+              clearAbortPending(threadSessionKey);
+              if (host.client && host.connected) {
+                void host.client
+                  .request("chat.abort", {
+                    sessionKey: threadSessionKey,
+                    runId: thread.chatRunId,
+                  })
+                  .catch(() => {});
+              }
             }
           }
         }
@@ -270,19 +276,22 @@ export function connectGateway(host: GatewayHost) {
       void loadDevices(host as unknown as OpenClawApp, { quiet: true });
       void fetchSubagentRuns(host);
       // Initialize default thread if none exist yet
-      host.initDefaultThread();
+      host.initDefaultThread?.();
       // Mark all threads (and host) as loading before async history fetch
       // so the session picker doesn't flash while history loads.
       (host as unknown as { chatLoading: boolean }).chatLoading = true;
-      for (const thread of host.threads.values()) {
-        thread.chatLoading = true;
+      if (host.threads) {
+        for (const thread of host.threads.values()) {
+          thread.chatLoading = true;
+        }
       }
       void refreshActiveTab(host as unknown as Parameters<typeof refreshActiveTab>[0]).then(() => {
         // Load history for all visible split panes (non-focused panes need data)
-        void host.loadAllPaneHistories().then(() => {
-          // Force all panes to bottom after history loads
-          host.scrollAllPanesToBottom();
-        });
+        if (host.loadAllPaneHistories) {
+          void host.loadAllPaneHistories().then(() => {
+            host.scrollAllPanesToBottom?.();
+          });
+        }
       });
     },
     onClose: ({ code, reason }) => {
@@ -326,18 +335,20 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
     // In split-pane mode, check if any visible pane matches the session key
     if (host.splitLayout && agentSessionKey) {
-      const visibleKeys = new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId));
+      const visibleKeys = new Set(
+        allLeaves(host.splitLayout.root).map((l: { threadId: string }) => l.threadId),
+      );
       if (!visibleKeys.has(agentSessionKey)) {
         // Route to background thread: skip tool stream processing
-        const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+        const bgThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
         if (bgThreadId && bgThreadId !== host.activeThreadId) {
           return;
         }
       } else if (agentSessionKey !== host.sessionKey) {
         // Visible-but-not-focused pane: route to per-thread tool stream
-        const paneThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
-        const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
-        if (paneThread) {
+        const paneThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
+        const paneThread = paneThreadId ? host.threads?.get(paneThreadId) : null;
+        if (paneThread && host.threads) {
           handleAgentEventForThread(paneThread, agentPayload);
           host.threads = new Map(host.threads);
         }
@@ -345,7 +356,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
       }
     } else if (agentSessionKey && agentSessionKey !== host.sessionKey) {
       // Single pane mode: existing background thread logic
-      const bgThreadId = host.sessionKeyToThreadId.get(agentSessionKey);
+      const bgThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
       if (bgThreadId && bgThreadId !== host.activeThreadId) {
         return;
       }
@@ -381,15 +392,15 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
     // In split-pane mode, visible pane sessions should not be treated as background
     const visibleSessionKeys = host.splitLayout
-      ? new Set(allLeaves(host.splitLayout.root).map((l) => l.threadId))
+      ? new Set(allLeaves(host.splitLayout.root).map((l: { threadId: string }) => l.threadId))
       : null;
 
     // Check if this event is for a background thread
     const isVisibleInPane = visibleSessionKeys?.has(eventSessionKey ?? "");
     if (eventSessionKey && eventSessionKey !== host.sessionKey && !isVisibleInPane) {
-      const bgThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
+      const bgThreadId = host.sessionKeyToThreadId?.get(eventSessionKey);
       if (bgThreadId && bgThreadId !== host.activeThreadId) {
-        const bgThread = host.threads.get(bgThreadId);
+        const bgThread = host.threads?.get(bgThreadId);
         if (bgThread) {
           bgThread.unreadCount++;
           bgThread.hasNewMessages = true;
@@ -413,8 +424,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     // Route chat events for visible-but-not-focused panes to their thread state.
     // Full lifecycle: state machine, tool stream reset, queue flush, auto-rename.
     if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
-      const paneThreadId = host.sessionKeyToThreadId.get(eventSessionKey);
-      const paneThread = paneThreadId ? host.threads.get(paneThreadId) : null;
+      const paneThreadId = host.sessionKeyToThreadId?.get(eventSessionKey);
+      const paneThread = paneThreadId ? host.threads?.get(paneThreadId) : null;
       if (paneThread && payload) {
         const threadState = handleChatEventForThread(paneThread, payload);
 
@@ -578,7 +589,7 @@ async function loadChatHistoryForThread(host: GatewayHost, sessionKey: string, t
   if (!host.connected || !host.client) {
     return;
   }
-  const thread = host.threads.get(threadId);
+  const thread = host.threads?.get(threadId);
   if (!thread) {
     return;
   }
@@ -645,9 +656,9 @@ async function queryChatStatus(host: GatewayHost) {
         });
         if (res?.activeRun?.runId) {
           activeSessionKeys.push(leaf.threadId);
-          const threadMapId = host.sessionKeyToThreadId.get(leaf.threadId);
-          const thread = threadMapId ? host.threads.get(threadMapId) : null;
-          if (thread) {
+          const threadMapId = host.sessionKeyToThreadId?.get(leaf.threadId);
+          const thread = threadMapId ? host.threads?.get(threadMapId) : null;
+          if (thread && host.threads) {
             thread.chatRunId = res.activeRun.runId;
             // Restore stream state: non-null chatStream signals "active run"
             const paneStreamText =

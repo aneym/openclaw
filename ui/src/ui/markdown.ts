@@ -40,6 +40,7 @@ const allowedTags = [
   "h4",
   "hr",
   "i",
+  "img",
   "li",
   "ol",
   "p",
@@ -62,9 +63,12 @@ const allowedTags = [
 ];
 
 const allowedAttrs = [
+  "alt",
   "class",
   "href",
+  "loading",
   "rel",
+  "src",
   "target",
   "title",
   "start",
@@ -128,15 +132,17 @@ function installHooks() {
   hooksInstalled = true;
 
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-    if (!(node instanceof HTMLAnchorElement)) {
-      return;
+    if (node instanceof HTMLAnchorElement) {
+      const href = node.getAttribute("href");
+      if (!href) return;
+      node.setAttribute("rel", "noreferrer noopener");
+      node.setAttribute("target", "_blank");
     }
-    const href = node.getAttribute("href");
-    if (!href) {
-      return;
+
+    // Lazy-load markdown images
+    if (node instanceof HTMLImageElement) {
+      node.setAttribute("loading", "lazy");
     }
-    node.setAttribute("rel", "noreferrer noopener");
-    node.setAttribute("target", "_blank");
   });
 }
 
