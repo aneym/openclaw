@@ -25,9 +25,18 @@
   "exports": {
     ".": "./dist/index.js",
     "./plugin-sdk": "./dist/plugin-sdk/index.js",
+    "./plugin-sdk/*": "./dist/plugin-sdk/*",
     "./cli-entry": "./openclaw.mjs"
   },
   "scripts": {
+    "agent:cleanup": "bash scripts/agent-server.sh cleanup",
+    "agent:kill-all": "bash scripts/agent-server.sh kill-all",
+    "agent:list": "bash scripts/agent-server.sh list",
+    "agent:logs": "bash scripts/agent-server.sh logs",
+    "agent:restart": "bash scripts/agent-server.sh restart",
+    "agent:start": "bash scripts/agent-server.sh start",
+    "agent:status": "bash scripts/agent-server.sh status",
+    "agent:stop": "bash scripts/agent-server.sh stop",
     "android:assemble": "cd apps/android && ./gradlew :app:assembleDebug",
     "android:install": "cd apps/android && ./gradlew :app:installDebug",
     "android:run": "cd apps/android && ./gradlew :app:installDebug && adb shell am start -n ai.openclaw.android/.MainActivity",
@@ -38,6 +47,7 @@
     "check:docs": "pnpm format:docs && pnpm lint:docs && pnpm docs:build",
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
     "dev": "node scripts/run-node.mjs",
+    "dev:all": "bash scripts/dev-all.sh",
     "docs:bin": "node scripts/build-docs-list.mjs",
     "docs:build": "cd docs && pnpm dlx --reporter append-only mint broken-links",
     "docs:dev": "cd docs && mint dev",
@@ -70,6 +80,7 @@
     "plugins:sync": "node --import tsx scripts/sync-plugin-versions.ts",
     "prepack": "pnpm build && pnpm ui:build",
     "prepare": "command -v git >/dev/null 2>&1 && git config core.hooksPath git-hooks || exit 0",
+    "prod": "openclaw gateway stop 2>/dev/null; pnpm build && pnpm ui:build && openclaw daemon install --port 18789 --runtime node --force && openclaw dashboard --no-open",
     "protocol:check": "pnpm protocol:gen && pnpm protocol:gen:swift && git diff --exit-code -- dist/protocol.schema.json apps/macos/Sources/OpenClawProtocol/GatewayModels.swift",
     "protocol:gen": "node --import tsx scripts/protocol-gen.ts",
     "protocol:gen:swift": "node --import tsx scripts/protocol-gen-swift.ts",
@@ -100,7 +111,10 @@
     "tui:dev": "OPENCLAW_PROFILE=dev CLAWDBOT_PROFILE=dev node scripts/run-node.mjs --dev tui",
     "ui:build": "node scripts/ui.js build",
     "ui:dev": "node scripts/ui.js dev",
-    "ui:install": "node scripts/ui.js install"
+    "ui:install": "node scripts/ui.js install",
+    "web-ui:build": "node scripts/web-ui.js build",
+    "web-ui:dev": "node scripts/web-ui.js dev",
+    "web-ui:install": "node scripts/web-ui.js install"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.14.1",
