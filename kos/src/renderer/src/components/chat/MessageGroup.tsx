@@ -198,10 +198,11 @@ export const MessageGroup = memo(function MessageGroup({
           {textParts.map((tp, idx) => (
             <TextPart key={`text-${idx}`} text={tp.text} isStreaming={isStreaming && tp.isLast} />
           ))}
-          {/* Streaming text */}
-          {isStreaming && displayStreamText && (
-            <span className="whitespace-pre-wrap">{displayStreamText}</span>
-          )}
+          {/* Streaming / bridge text — rendered via Streamdown for visual continuity.
+              During streaming: isAnimating=true (cursor animation).
+              After final, before history loads: isAnimating=false (bridge, no flash).
+              Once history loads, streamText clears and textParts take over. */}
+          {displayStreamText && <TextPart text={displayStreamText} isStreaming={isStreaming} />}
           {/* Streaming indicator when no content yet */}
           {isStreaming && !displayStreamText && textParts.length === 0 && (
             <StreamingIndicator className="opacity-60" />

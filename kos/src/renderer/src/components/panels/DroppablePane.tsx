@@ -8,23 +8,26 @@
 import type { ReactNode } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import type { DropZone } from "../../lib/panel-dnd";
+import type { PanelType } from "../../types";
 import { motion, AnimatePresence } from "../../lib/motion";
 import { cn } from "../../lib/utils";
+import { TABBED_PANEL_TYPES } from "../../types";
 import { usePanelDnd } from "./PanelDndProvider";
 
 interface DroppablePaneProps {
   panelId: string;
+  panelType?: PanelType;
   children: ReactNode;
   className?: string;
 }
 
-export function DroppablePane({ panelId, children, className }: DroppablePaneProps) {
+export function DroppablePane({ panelId, panelType, children, className }: DroppablePaneProps) {
   const { setNodeRef } = useDroppable({
     id: `droppable-${panelId}`,
     data: { panelId },
   });
 
-  const { overPanelId, dropZone, activeDragData, sourcePanelId } = usePanelDnd();
+  const { overPanelId, dropZone, activeDragData, sourcePanelId, sourcePanelType } = usePanelDnd();
 
   // Check if this pane is the source being dragged (for fade effect)
   const isSource = activeDragData?.type === "pane" && sourcePanelId === panelId;
@@ -47,7 +50,18 @@ export function DroppablePane({ panelId, children, className }: DroppablePanePro
 
       {/* Animated drop zone overlays */}
       <AnimatePresence>
-        {showDropZone && <DropZoneOverlay zone={dropZone} dragType={activeDragData?.type} />}
+        {showDropZone && (
+          <DropZoneOverlay
+            zone={dropZone}
+            dragType={activeDragData?.type}
+            isMergeTarget={
+              activeDragData?.type === "tab" &&
+              !!panelType &&
+              TABBED_PANEL_TYPES.includes(panelType) &&
+              panelType === sourcePanelType
+            }
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -65,15 +79,41 @@ const springConfig = { type: "spring", stiffness: 400, damping: 25 } as const;
 function DropZoneOverlay({
   zone,
   dragType,
+  isMergeTarget,
 }: {
   zone: DropZone;
   dragType?: "pane" | "thread" | "tab";
+  isMergeTarget?: boolean;
 }) {
   if (!zone) return null;
 
+  // When merging tabs, show "Add Tab" overlay on any zone (edges don't split)
+  if (isMergeTarget) {
+    return (
+      <motion.div
+        key="merge"
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.98 }}
+        transition={springConfig}
+        className="absolute inset-2 pointer-events-none border-2 border-dashed border-primary rounded-md bg-primary/10"
+      >
+        <span className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-xs font-medium text-primary-foreground bg-primary px-2.5 py-1 rounded shadow-md">
+          Add Tab
+        </span>
+      </motion.div>
+    );
+  }
+
   // Center zone has different treatment - more visible for replace/swap action
   if (zone === "center") {
-    const centerLabel = dragType === "pane" ? "Swap" : dragType === "tab" ? "Move Here" : "Replace";
+    const centerLabel = isMergeTarget
+      ? "Add Tab"
+      : dragType === "pane"
+        ? "Swap"
+        : dragType === "tab"
+          ? "Move Here"
+          : "Replace";
     return (
       <motion.div
         key="center"

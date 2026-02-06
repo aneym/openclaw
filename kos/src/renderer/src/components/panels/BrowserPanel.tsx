@@ -119,6 +119,25 @@ export function BrowserPanel({ initialUrl = "https://example.com" }: BrowserPane
     };
   }, [created]);
 
+  // Hide BrowserView when clicking outside it so it doesn't block other UI
+  useEffect(() => {
+    if (!created) return;
+
+    const handleMouseDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // If click is inside the browser panel component, show the view
+      if (target.closest("[data-browser-panel]")) {
+        window.api.browser.show();
+      } else {
+        // Click is outside — hide the BrowserView overlay
+        window.api.browser.hide();
+      }
+    };
+
+    document.addEventListener("mousedown", handleMouseDown, true);
+    return () => document.removeEventListener("mousedown", handleMouseDown, true);
+  }, [created]);
+
   const handleNavigate = useCallback(async () => {
     let navigateUrl = url;
     if (!/^https?:\/\//i.test(navigateUrl)) {
@@ -204,7 +223,7 @@ export function BrowserPanel({ initialUrl = "https://example.com" }: BrowserPane
   );
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-browser-panel>
       {/* Tab bar */}
       <div className="flex items-center gap-0.5 px-1 py-1 border-b bg-muted/30 overflow-x-auto">
         {tabs.map((tab) => (

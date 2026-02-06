@@ -69,6 +69,7 @@ These provide implementation-level detail. When a spec and PRD conflict, the PRD
 | ----------------------- | ----------------------------------------------------- |
 | `rules/theme-colors.md` | Any UI work: components, styling, Tailwind classes    |
 | `rules/animations.md`   | Adding transitions, animations, mount/unmount effects |
+| `rules/session-keys.md` | Any code comparing session keys                       |
 
 ### Skills (invoke before writing code)
 

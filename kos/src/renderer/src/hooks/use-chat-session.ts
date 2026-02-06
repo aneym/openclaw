@@ -215,15 +215,23 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
     wasConnectedRef.current = connected;
   }, [store, sessionKey, connected]);
 
-  // Cleanup store on unmount
+  // Cleanup store on unmount only (not on sessionKey/chatId changes).
+  // The store is keyed by chatId (stable), so cleanup should only happen
+  // when the component actually unmounts. Use a ref to capture latest values
+  // without adding them as effect dependencies.
+  const cleanupRef = useRef({ sessionKey, chatId });
+  cleanupRef.current = { sessionKey, chatId };
+
   useEffect(() => {
     return () => {
-      if (sessionKey && chatId) {
-        klog.session("useChatSession: cleanup on unmount", { sessionKey, chatId });
-        cleanupChatSessionStore(sessionKey, chatId);
+      const { sessionKey: sk, chatId: cid } = cleanupRef.current;
+      if (sk && cid) {
+        klog.session("useChatSession: cleanup on unmount", { sessionKey: sk, chatId: cid });
+        cleanupChatSessionStore(sk, cid);
       }
     };
-  }, [sessionKey, chatId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Use store selectors with stable selector functions
   const messages = useStoreSelector(store, selectMessages, emptyState.messages);
@@ -250,14 +258,11 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
   const queue = useStoreSelector(store, selectQueue, emptyState.queue);
   const sending = useStoreSelector(store, selectSending, emptyState.sending);
 
-  // Poll history every 3s while a run is active (picks up tool results mid-stream)
-  useEffect(() => {
-    if (!store || !runId || !connected) return;
-    const interval = setInterval(() => {
-      if (store.getState().runId) void store.getState().loadHistory();
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [store, runId, connected]);
+  // No polling during streaming — web-ui doesn't do this.
+  // Streaming text comes via events (handleChatEvent deltas).
+  // History is loaded once on final (includes all messages + tool results).
+  // Polling during streaming caused duplicate messages because the in-progress
+  // assistant message from history overlapped with streamText.
 
   // Stable action references (get from store state)
   const actions = useMemo(() => {

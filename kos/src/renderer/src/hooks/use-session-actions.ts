@@ -1,14 +1,21 @@
 import { useCallback, useState } from "react";
+import type { Chat } from "../types";
 import { notifications } from "../lib/notifications";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
+import { usePanelStore } from "../stores/panel-store";
 
 interface SessionActionsState {
   isLoading: boolean;
   error: string | null;
 }
 
-export function useSessionActions(sessionKey: string, chatId: string) {
+export function useSessionActions(
+  sessionKey: string,
+  chatId: string,
+  panelId: string,
+  workspaceId: string,
+) {
   const [state, setState] = useState<SessionActionsState>({
     isLoading: false,
     error: null,
@@ -17,6 +24,8 @@ export function useSessionActions(sessionKey: string, chatId: string) {
   const request = useGatewayStore((s) => s.request);
   const connected = useGatewayStore((s) => s.connected);
   const archiveChat = useChatStore((s) => s.archiveChat);
+  const addChat = useChatStore((s) => s.addChat);
+  const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
 
   const archive = useCallback(async () => {
     if (!connected) {
@@ -40,26 +49,24 @@ export function useSessionActions(sessionKey: string, chatId: string) {
     }
   }, [connected, request, sessionKey, chatId, archiveChat]);
 
-  const reload = useCallback(async () => {
-    if (!connected) {
-      notifications.error("Not connected", "Cannot reload session while disconnected");
-      return false;
-    }
+  const resetSession = useCallback(() => {
+    const uuid = crypto.randomUUID();
+    const newSessionKey = `kos:thread:${uuid}`;
+    const now = Date.now();
 
-    setState({ isLoading: true, error: null });
+    const newChat: Chat = {
+      id: `chat-${now}`,
+      workspaceId: workspaceId || undefined,
+      sessionKey: newSessionKey,
+      title: "New Chat",
+      status: "active",
+      lastMessageAt: now,
+      createdAt: now,
+    };
 
-    try {
-      await request("sessions.reset", { key: sessionKey });
-      notifications.sessionReloaded();
-      setState({ isLoading: false, error: null });
-      return true;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      setState({ isLoading: false, error: message });
-      notifications.rpcError("sessions.reset", message);
-      return false;
-    }
-  }, [connected, request, sessionKey]);
+    addChat(newChat);
+    openThreadInPane(workspaceId, panelId, newChat.id);
+  }, [workspaceId, panelId, addChat, openThreadInPane]);
 
   const copySessionKey = useCallback(async () => {
     try {
@@ -76,7 +83,7 @@ export function useSessionActions(sessionKey: string, chatId: string) {
     ...state,
     connected,
     archive,
-    reload,
+    resetSession,
     copySessionKey,
   };
 }

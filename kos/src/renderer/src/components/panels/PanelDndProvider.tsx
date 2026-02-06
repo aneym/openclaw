@@ -16,7 +16,9 @@ import {
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type DragMoveEvent,
   type CollisionDetection,
+  type Modifier,
 } from "@dnd-kit/core";
 import { hasSortableData } from "@dnd-kit/sortable";
 import {
@@ -39,12 +41,22 @@ import {
   type ReactNode,
 } from "react";
 import type { DragData, DropZone, ZoneState } from "../../lib/panel-dnd";
-import type { PanelType } from "../../types";
-import type { Chat } from "../../types";
+import type { PanelType, Chat } from "../../types";
 import { motion, AnimatePresence } from "../../lib/motion";
 import { resolveDropZoneWithHysteresis, zoneToAction, isValidDrop } from "../../lib/panel-dnd";
 import { useChatStore } from "../../stores/chat-store";
 import { usePanelStore } from "../../stores/panel-store";
+import { TABBED_PANEL_TYPES } from "../../types";
+
+// Snap overlay center to cursor so the preview doesn't offset when grabbing wide drag handles
+const snapCenterToCursor: Modifier = ({ activatorEvent, draggingNodeRect, transform }) => {
+  if (activatorEvent instanceof MouseEvent && draggingNodeRect) {
+    const offsetX = activatorEvent.clientX - draggingNodeRect.left - draggingNodeRect.width / 2;
+    const offsetY = activatorEvent.clientY - draggingNodeRect.top - draggingNodeRect.height / 2;
+    return { ...transform, x: transform.x + offsetX, y: transform.y + offsetY };
+  }
+  return transform;
+};
 
 interface PanelDndProviderProps {
   workspaceId: string;
@@ -151,6 +163,7 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
   const movePanelBeside = usePanelStore((s) => s.movePanelBeside);
   const swapPanelContents = usePanelStore((s) => s.swapPanelContents);
   const detachTab = usePanelStore((s) => s.detachTab);
+  const mergeTabIntoPanel = usePanelStore((s) => s.mergeTabIntoPanel);
   const moveTab = usePanelStore((s) => s.moveTab);
 
   // Chat store
@@ -302,6 +315,45 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
     [activeDragData],
   );
 
+  // Continuous zone update — onDragOver only fires when `over` changes,
+  // so we need onDragMove for zone updates as cursor moves within a panel.
+  const handleDragMove = useCallback(
+    (event: DragMoveEvent) => {
+      const { over } = event;
+      if (!over || !activeDragData) return;
+
+      // Only update zone for panel drops (gutters/sortable handled by onDragOver)
+      if (over.data.current?.sortable || over.data.current?.type === "gutter") return;
+
+      const panelId = over.data.current?.panelId as string | undefined;
+      if (!panelId) return;
+
+      const rect = over.rect;
+      if (!rect) return;
+
+      const mousePos = mousePositionRef.current;
+      const cursorX = mousePos?.x ?? rect.left + rect.width / 2;
+      const cursorY = mousePos?.y ?? rect.top + rect.height / 2;
+
+      const { zone, state: newZoneState } = resolveDropZoneWithHysteresis(
+        new DOMRect(rect.left, rect.top, rect.width, rect.height),
+        cursorX,
+        cursorY,
+        zoneStateRef.current,
+      );
+      zoneStateRef.current = newZoneState;
+
+      if (isValidDrop(activeDragData, panelId, zone)) {
+        setOverPanelId(panelId);
+        setDropZone(zone);
+      } else {
+        setOverPanelId(null);
+        setDropZone(null);
+      }
+    },
+    [activeDragData],
+  );
+
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       const { active, over } = event;
@@ -372,13 +424,24 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
         const action = zoneToAction(dropZone, activeDragData.type);
 
         if (action) {
-          if (action.type === "split") {
-            if (activeDragData.type === "thread") {
-              splitPanel(workspaceId, overPanelId, action.direction, "chat", {
-                chatId: activeDragData.chatId,
-              });
-            } else if (activeDragData.type === "tab") {
-              // Tab edge drop: create new panel with tab content
+          // Tab drag onto a same-type tabbed panel → always merge (any zone)
+          // Use pane drag (panel icon) for splitting instead
+          if (activeDragData.type === "tab") {
+            const targetPanel = getLayout(workspaceId).panels.get(overPanelId);
+            const canMerge =
+              targetPanel &&
+              sourcePanelType === targetPanel.type &&
+              TABBED_PANEL_TYPES.includes(targetPanel.type);
+
+            if (canMerge) {
+              mergeTabIntoPanel(
+                workspaceId,
+                activeDragData.panelId,
+                activeDragData.tabId,
+                overPanelId,
+              );
+            } else if (action.type === "split") {
+              // Tab onto non-compatible panel edge: split into new panel
               const tabPanelType = sourcePanelType || "chat";
               const tabData: Record<string, unknown> = {};
               if (tabPanelType === "chat") {
@@ -388,6 +451,19 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
               }
               splitPanel(workspaceId, overPanelId, action.direction, tabPanelType, tabData);
               detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
+            } else if (
+              action.type === "replace" &&
+              activeDragData.contentId &&
+              sourcePanelType === "chat"
+            ) {
+              openThreadInPane(workspaceId, overPanelId, activeDragData.contentId);
+              detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
+            }
+          } else if (action.type === "split") {
+            if (activeDragData.type === "thread") {
+              splitPanel(workspaceId, overPanelId, action.direction, "chat", {
+                chatId: activeDragData.chatId,
+              });
             } else {
               movePanelBeside(
                 workspaceId,
@@ -400,12 +476,6 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
           } else if (action.type === "replace") {
             if (activeDragData.type === "thread") {
               openThreadInPane(workspaceId, overPanelId, activeDragData.chatId);
-            } else if (activeDragData.type === "tab" && activeDragData.contentId) {
-              // Tab center drop only works for chat tabs (openThreadInPane is chat-specific)
-              if (sourcePanelType === "chat") {
-                openThreadInPane(workspaceId, overPanelId, activeDragData.contentId);
-                detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
-              }
             }
           } else if (action.type === "swap") {
             if (activeDragData.type === "pane") {
@@ -433,11 +503,13 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       gutterDropData,
       workspaceId,
       sourcePanelType,
+      getLayout,
       splitPanel,
       openThreadInPane,
       movePanelBeside,
       swapPanelContents,
       detachTab,
+      mergeTabIntoPanel,
       moveTab,
     ],
   );
@@ -459,6 +531,7 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       sensors={sensors}
       collisionDetection={panelCollisionDetection}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
@@ -478,7 +551,7 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       </PanelDndContext.Provider>
 
       {/* Animated drag overlay */}
-      <DragOverlay dropAnimation={null}>
+      <DragOverlay dropAnimation={null} modifiers={[snapCenterToCursor]}>
         <AnimatePresence>
           {activeId && activeDragData && (
             <DragOverlayContent

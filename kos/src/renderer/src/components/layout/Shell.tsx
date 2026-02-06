@@ -11,7 +11,7 @@ import { useMarkRead } from "../../hooks/use-mark-read";
 import { ProjectIcon } from "../../lib/project-icons";
 import { useChatStore } from "../../stores/chat-store";
 import { useDashboardStore } from "../../stores/dashboard-store";
-import { usePanelStore } from "../../stores/panel-store";
+import { usePanelStore, getPanelChatId } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useSettingsStore } from "../../stores/settings-store";
 import { HOME_WORKSPACE_ID, useWorkspaceStore } from "../../stores/workspace-store";
@@ -89,6 +89,8 @@ export function Shell() {
   const prevTab = usePanelStore((s) => s.prevTab);
   const getFocusedChatPanelId = usePanelStore((s) => s.getFocusedChatPanelId);
   const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
+  const layoutsMap = usePanelStore((s) => s.layouts);
+  const focusedPanelIds = usePanelStore((s) => s.focusedPanelIds);
 
   // Derived values
   const projects = useMemo(
@@ -122,11 +124,31 @@ export function Shell() {
   // Home tab detection (shows all chats)
   const isHome = activeProjectId === HOME_PROJECT_ID;
 
-  // Get the chat to display in home mode
+  // Get the chat to display in home mode — derive from panel store (source of truth)
   const homeActiveChat = useMemo(() => {
-    if (!isHome || !dashboardActiveChatId) return undefined;
-    return chatsMap.get(dashboardActiveChatId);
-  }, [isHome, dashboardActiveChatId, chatsMap]);
+    if (!isHome) return undefined;
+
+    // Derive from panel store
+    const layout = layoutsMap.get(HOME_WORKSPACE_ID);
+    if (layout) {
+      const focusedId = focusedPanelIds.get(HOME_WORKSPACE_ID);
+      if (focusedId) {
+        const panel = layout.panels.get(focusedId);
+        if (panel) {
+          const chatId = getPanelChatId(panel);
+          if (chatId) return chatsMap.get(chatId);
+        }
+      }
+      // Fallback: first chat panel
+      for (const [, panel] of layout.panels) {
+        const chatId = getPanelChatId(panel);
+        if (chatId) return chatsMap.get(chatId);
+      }
+    }
+
+    // Last resort: dashboard store
+    return dashboardActiveChatId ? chatsMap.get(dashboardActiveChatId) : undefined;
+  }, [isHome, layoutsMap, focusedPanelIds, chatsMap, dashboardActiveChatId]);
 
   const toggleSidebar = useCallback(() => {
     const panel = sidebarRef.current;
@@ -167,6 +189,7 @@ export function Shell() {
         key: "k",
         metaKey: true,
         shiftKey: false,
+        skipInTerminal: true,
         handler: () => setCommandPaletteOpen(true),
         description: "Open command palette",
       },

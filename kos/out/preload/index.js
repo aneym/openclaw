@@ -175,6 +175,9 @@ const api = {
     getCdpUrl: (tabId) => electron.ipcRenderer.invoke("browser:get-cdp-url", tabId),
     // Focus active tab
     focus: () => electron.ipcRenderer.invoke("browser:focus"),
+    // Hide/show the BrowserView overlay (prevents click-blocking)
+    hide: () => electron.ipcRenderer.invoke("browser:hide"),
+    show: () => electron.ipcRenderer.invoke("browser:show"),
     // Tab management
     createTab: (url) => electron.ipcRenderer.invoke("browser:create-tab", url),
     closeTab: (tabId) => electron.ipcRenderer.invoke("browser:close-tab", tabId),

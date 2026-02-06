@@ -171,6 +171,16 @@ function initBrowserPanel(window) {
   electron.ipcMain.handle("browser:focus", () => {
     getActiveView()?.webContents.focus();
   });
+  electron.ipcMain.handle("browser:hide", () => {
+    for (const tab of tabs.values()) {
+      tab.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+  });
+  electron.ipcMain.handle("browser:show", () => {
+    if (activeTabId && currentBounds) {
+      showTab(activeTabId);
+    }
+  });
   electron.ipcMain.handle("browser:destroy", () => {
     if (!mainWindow) return;
     for (const tab of tabs.values()) {
@@ -245,7 +255,7 @@ function initBrowserPanel(window) {
     return activeTabId;
   });
 }
-const KOS_DIR = path.join(os.homedir(), ".kos");
+const KOS_DIR = path.join(os.homedir(), electron.app.isPackaged ? ".kos" : ".kos-dev");
 const GLOBAL_CONFIG_PATH = path.join(KOS_DIR, "config.json");
 const GITHUB_CONFIG_PATH = path.join(KOS_DIR, "github.json");
 const LINEAR_CONFIG_PATH = path.join(KOS_DIR, "linear.json");
@@ -253,7 +263,7 @@ const THEMES_CONFIG_PATH = path.join(KOS_DIR, "themes.json");
 const DEFAULT_THEMES_CONFIG = {
   version: 1,
   themes: [],
-  activeThemeId: "twitter",
+  activeThemeId: "palantir",
   mode: "dark",
 };
 const DEFAULT_GLOBAL_CONFIG = {
@@ -1044,7 +1054,7 @@ function registerProjectIpc() {
     return generateProjectId();
   });
 }
-const SCROLLBACK_DIR = path.join(os.homedir(), ".kos", "terminals");
+const SCROLLBACK_DIR = path.join(getKosDir(), "terminals");
 function ensureScrollbackDir() {
   if (!fs.existsSync(SCROLLBACK_DIR)) {
     fs.mkdirSync(SCROLLBACK_DIR, { recursive: true });
@@ -1597,7 +1607,7 @@ function getLogsAsText() {
   if (filtered.length === 0) return "(no main process logs)";
   return filtered.map(formatEntry).join("\n");
 }
-const STATE_FILE = path.join(os.homedir(), ".kos", "window-state.json");
+const STATE_FILE = path.join(getKosDir(), "window-state.json");
 let debounceTimer = null;
 function restoreWindowState() {
   try {
@@ -1622,7 +1632,6 @@ function trackWindowState(win) {
           y: bounds.y,
           isMaximized: win.isMaximized(),
         };
-        fs.mkdirSync(path.join(os.homedir(), ".kos"), { recursive: true });
         fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
       } catch (error) {
         console.error("Failed to save window state:", error);
@@ -1643,6 +1652,7 @@ if (process.platform === "darwin") {
   }
 }
 if (utils.is.dev) {
+  electron.app.name = "kos-dev";
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
 const CDP_PORT = 9222;
@@ -1673,22 +1683,22 @@ electron.ipcMain.handle("get-gateway-config", () => {
       return { url: `ws://localhost:${port}`, token, source: configPath };
     } catch {}
   }
-  try {
-    const devRaw = fs.readFileSync(devPath, "utf-8");
-    const devConfig = JSON.parse(devRaw);
-    const port = devConfig?.gateway?.port ?? 19001;
-    const token = devConfig?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token, source: devPath };
-  } catch {}
-  try {
-    const raw = fs.readFileSync(prodPath, "utf-8");
-    const config = JSON.parse(raw);
-    const port = config?.gateway?.port ?? 18789;
-    const token = config?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token, source: prodPath };
-  } catch {
-    return { url: "ws://localhost:18789", source: "default" };
+  const primary = utils.is.dev
+    ? { path: devPath, defaultPort: 19001 }
+    : { path: prodPath, defaultPort: 18789 };
+  const fallback = utils.is.dev
+    ? { path: prodPath, defaultPort: 18789 }
+    : { path: devPath, defaultPort: 19001 };
+  for (const source of [primary, fallback]) {
+    try {
+      const raw = fs.readFileSync(source.path, "utf-8");
+      const config = JSON.parse(raw);
+      const port = config?.gateway?.port ?? source.defaultPort;
+      const token = config?.gateway?.auth?.token;
+      return { url: `ws://localhost:${port}`, token, source: source.path };
+    } catch {}
   }
+  return { url: `ws://localhost:${utils.is.dev ? 19001 : 18789}`, source: "default" };
 });
 electron.ipcMain.handle("app:set-dock-badge", (_, count) => {
   if (process.platform === "darwin" && electron.app.dock) {
@@ -2053,7 +2063,7 @@ electron.app.whenReady().then(() => {
   createMenu();
   utils.electronApp.setAppUserModelId("com.kinetic.kos");
   electron.app.on("browser-window-created", (_, window) => {
-    utils.optimizer.watchWindowShortcuts(window);
+    utils.optimizer.watchWindowShortcuts(window, { zoom: true });
   });
   createWindow();
   electron.app.on("activate", function () {

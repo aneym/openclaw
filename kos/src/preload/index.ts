@@ -442,6 +442,9 @@ const api = {
       ipcRenderer.invoke("browser:get-cdp-url", tabId),
     // Focus active tab
     focus: (): Promise<void> => ipcRenderer.invoke("browser:focus"),
+    // Hide/show the BrowserView overlay (prevents click-blocking)
+    hide: (): Promise<void> => ipcRenderer.invoke("browser:hide"),
+    show: (): Promise<void> => ipcRenderer.invoke("browser:show"),
 
     // Tab management
     createTab: (url?: string): Promise<string> => ipcRenderer.invoke("browser:create-tab", url),

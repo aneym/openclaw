@@ -1,4 +1,4 @@
-import { MessageSquare, Globe, Hash, type LucideIcon } from "lucide-react";
+import { MessageSquare, Globe, Hash, Timer, type LucideIcon } from "lucide-react";
 
 /**
  * Map of channel identifiers to lucide-react icon components.
@@ -17,6 +17,9 @@ const CHANNEL_ICONS: Record<string, LucideIcon> = {
   webchat: Globe,
   kos: Globe,
 
+  // Automated
+  cron: Timer,
+
   // Extensions
   msteams: MessageSquare,
   matrix: Hash,
@@ -32,6 +35,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   imessage: "iMessage",
   webchat: "Web",
   kos: "kOS",
+  cron: "Cron",
   msteams: "Teams",
   matrix: "Matrix",
   zalo: "Zalo",

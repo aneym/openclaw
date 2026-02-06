@@ -7,6 +7,7 @@ import {
   Copy,
   RefreshCw,
   Archive,
+  Bot,
   MessageSquare,
   Hammer,
   Keyboard,
@@ -80,9 +81,11 @@ export const PanelTabBar = memo(function PanelTabBar({
 
   // Session state and actions (only for chat panels)
   const { isStreaming } = useChatSession(sessionKey, chatId ?? "");
-  const { archive, reload, copySessionKey, isLoading, connected } = useSessionActions(
+  const { archive, resetSession, copySessionKey, isLoading, connected } = useSessionActions(
     sessionKey,
     chatId ?? "",
+    panelId,
+    workspaceId,
   );
 
   // Drag handle on the panel icon (works for all panels, tabbed or not)
@@ -129,8 +132,11 @@ export const PanelTabBar = memo(function PanelTabBar({
         const tabChat = chatsMap.get(tab.contentId) as Chat | undefined;
         return tabChat?.title || `Chat ${index + 1}`;
       }
-      if (panelType === "terminal" && tab.contentId) {
-        return tab.contentId;
+      if (panelType === "terminal") {
+        // Prefer agent-provided label, fall back to terminal ID
+        const label = tab.data?.label as string | undefined;
+        if (label) return label;
+        if (tab.contentId) return tab.contentId;
       }
       return panelType === "chat" ? `New Chat` : `Tab ${index + 1}`;
     },
@@ -141,61 +147,63 @@ export const PanelTabBar = memo(function PanelTabBar({
     <div className="h-8 flex items-center border-b border-border bg-background/50 overflow-hidden">
       {isTabbed && tabs && tabs.length > 0 ? (
         <>
-          {/* Tabbed: icon is the drag handle */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div
-                ref={setDragRef}
-                {...listeners}
-                {...attributes}
-                className={cn(
-                  "flex items-center shrink-0 p-1 ml-1 rounded cursor-grab hover:bg-accent/50",
-                  isDragging && "cursor-grabbing",
-                )}
-                title="Drag to rearrange"
-              >
-                <PanelTypeIcon type={panelType} className="h-4 w-4 text-foreground/70" />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">Drag to rearrange</TooltipContent>
-          </Tooltip>
-
-          {/* Tabs — sortable within the panel, draggable across panels */}
-          <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none">
-            <SortableContext
-              id={panelId}
-              items={tabs.map((t) => `tab-${panelId}-${t.id}`)}
-              strategy={horizontalListSortingStrategy}
-            >
-              {tabs.map((tab, index) => (
-                <TabButton
-                  key={tab.id}
-                  tab={tab}
-                  isActive={tab.id === activeTabId}
-                  label={getTabLabel(tab, index)}
-                  canClose={tabs.length > 1}
-                  panelId={panelId}
-                  workspaceId={workspaceId}
-                  onSelect={() => handleSelectTab(tab.id)}
-                  onClose={(e) => handleCloseTab(tab.id, e)}
-                />
-              ))}
-            </SortableContext>
-            {/* Add tab button */}
+          {/* Tabbed: entire left portion (icon + tabs + empty space) is pane drag handle.
+              Nested sortable tabs win when grabbing a tab; draggable wins on empty space. */}
+          <div
+            ref={setDragRef}
+            {...listeners}
+            {...attributes}
+            className={cn(
+              "flex items-center flex-1 min-w-0 h-full cursor-grab",
+              isDragging && "cursor-grabbing",
+            )}
+          >
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-6 w-6 shrink-0 ml-1"
-                  onClick={handleAddTab}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  <span className="sr-only">New tab</span>
-                </Button>
+                <div className="flex items-center shrink-0 p-1 ml-1 rounded hover:bg-accent/50">
+                  <PanelTypeIcon type={panelType} className="h-4 w-4 text-foreground/70" />
+                </div>
               </TooltipTrigger>
-              <TooltipContent side="bottom">New tab (Cmd+T)</TooltipContent>
+              <TooltipContent side="bottom">Drag to rearrange</TooltipContent>
             </Tooltip>
+
+            {/* Tabs — sortable within the panel, draggable across panels */}
+            <div className="flex items-center min-w-0 overflow-x-auto scrollbar-none">
+              <SortableContext
+                id={panelId}
+                items={tabs.map((t) => `tab-${panelId}-${t.id}`)}
+                strategy={horizontalListSortingStrategy}
+              >
+                {tabs.map((tab, index) => (
+                  <TabButton
+                    key={tab.id}
+                    tab={tab}
+                    isActive={tab.id === activeTabId}
+                    label={getTabLabel(tab, index)}
+                    canClose={tabs.length > 1}
+                    panelId={panelId}
+                    workspaceId={workspaceId}
+                    onSelect={() => handleSelectTab(tab.id)}
+                    onClose={(e) => handleCloseTab(tab.id, e)}
+                  />
+                ))}
+              </SortableContext>
+              {/* Add tab button */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 shrink-0 ml-1"
+                    onClick={handleAddTab}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="sr-only">New tab</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">New tab (Cmd+T)</TooltipContent>
+              </Tooltip>
+            </div>
           </div>
         </>
       ) : (
@@ -245,14 +253,13 @@ export const PanelTabBar = memo(function PanelTabBar({
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6"
-                  onClick={() => reload()}
-                  disabled={actionsDisabled}
+                  onClick={() => resetSession()}
                 >
                   <RefreshCw className="h-3.5 w-3.5" />
-                  <span className="sr-only">Reload session</span>
+                  <span className="sr-only">Reset session</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="bottom">Reload session</TooltipContent>
+              <TooltipContent side="bottom">Reset session</TooltipContent>
             </Tooltip>
 
             <Tooltip>
@@ -355,6 +362,7 @@ const TabButton = memo(function TabButton({
         isDragging && "opacity-50 cursor-grabbing",
       )}
     >
+      {tab.data?.managed === true && <Bot className="h-3 w-3 shrink-0 text-primary" />}
       <span className="truncate">{label}</span>
       {hasUnread && (
         <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" aria-label="Unread" />

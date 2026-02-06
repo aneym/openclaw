@@ -325,6 +325,9 @@ export interface BrowserAPI {
   getCdpUrl: (tabId?: string) => Promise<string | null>;
   // Focus active tab
   focus: () => Promise<void>;
+  // Hide/show the BrowserView overlay (prevents click-blocking)
+  hide: () => Promise<void>;
+  show: () => Promise<void>;
 
   // Tab management
   createTab: (url?: string) => Promise<string>;

@@ -540,11 +540,7 @@ function extractMediaFromText(text: string): {
 
   pieces.push(text.slice(lastIndex));
 
-  const cleanedText = pieces
-    .join("")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{2,}/g, "\n")
-    .trim();
+  const cleanedText = pieces.join("").trim();
 
   return { cleanedText, mediaParts };
 }

@@ -1,9 +1,10 @@
+import { app } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, unlinkSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 
-// ~/.kos/ base directory
-const KOS_DIR = join(homedir(), ".kos");
+// Dev uses ~/.kos-dev/, prod uses ~/.kos/ — fully isolated instances
+const KOS_DIR = join(homedir(), app.isPackaged ? ".kos" : ".kos-dev");
 
 // File paths
 const GLOBAL_CONFIG_PATH = join(KOS_DIR, "config.json");
@@ -58,7 +59,7 @@ export interface ThemesConfig {
 const DEFAULT_THEMES_CONFIG: ThemesConfig = {
   version: 1,
   themes: [],
-  activeThemeId: "twitter",
+  activeThemeId: "palantir",
   mode: "dark",
 };
 

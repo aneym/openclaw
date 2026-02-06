@@ -49,7 +49,7 @@ function getInitialState() {
   if (!config) {
     return {
       themes: builtInThemes,
-      activeThemeId: "twitter",
+      activeThemeId: "palantir",
       mode: "dark" as const,
       liquidGlass: true,
       glass: DEFAULT_GLASS,
@@ -65,7 +65,7 @@ function getInitialState() {
 
   return {
     themes: merged,
-    activeThemeId: activeExists ? config.activeThemeId : "twitter",
+    activeThemeId: activeExists ? config.activeThemeId : "palantir",
     mode: config.mode ?? ("dark" as const),
     liquidGlass: config.liquidGlass ?? true,
     glass: { ...DEFAULT_GLASS, ...config.glass },

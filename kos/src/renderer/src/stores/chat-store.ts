@@ -205,7 +205,7 @@ export const useChatStore = create<ChatState>()(
         getUnreadCount: () => {
           let count = 0;
           for (const chat of get().chats.values()) {
-            if (chat.hasUnread) count++;
+            if (chat.hasUnread && !chat.isCron) count++;
           }
           return count;
         },

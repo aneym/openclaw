@@ -112,6 +112,18 @@ function insertLeafBeside(
   };
 }
 
+/** Extract the chatId a panel is currently displaying */
+export function getPanelChatId(panel: PanelState): string | null {
+  if (panel.type !== "chat") return null;
+  const fromData = panel.data?.chatId as string | undefined;
+  if (fromData) return fromData;
+  if (panel.tabs && panel.activeTabId) {
+    const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId);
+    if (activeTab?.contentId) return activeTab.contentId;
+  }
+  return null;
+}
+
 interface PanelStoreState {
   // Keyed by workspaceId (not threadId)
   layouts: Map<string, PanelLayout>;
@@ -191,6 +203,14 @@ interface PanelStoreState {
   prevTab: (workspaceId: string, panelId: string) => void;
   getFocusedPanel: (workspaceId: string) => PanelState | null;
 
+  /** Move a tab from one panel into another panel's tab bar (merge). */
+  mergeTabIntoPanel: (
+    workspaceId: string,
+    sourcePanelId: string,
+    tabId: string,
+    targetPanelId: string,
+  ) => void;
+
   // Tab reordering (for sortable drag-and-drop)
   moveTab: (workspaceId: string, panelId: string, fromIndex: number, toIndex: number) => void;
 
@@ -198,7 +218,12 @@ interface PanelStoreState {
   changePanelType: (workspaceId: string, panelId: string, newType: PanelType) => void;
 
   // Managed terminal (for AI agent control)
-  openManagedTerminal: (workspaceId: string, terminalId: string, cwd?: string) => void;
+  openManagedTerminal: (
+    workspaceId: string,
+    terminalId: string,
+    cwd?: string,
+    opts?: { label?: string; target?: "tab" | "pane"; sessionKey?: string },
+  ) => void;
 }
 
 export const usePanelStore = create<PanelStoreState>()(
@@ -921,6 +946,77 @@ export const usePanelStore = create<PanelStoreState>()(
         });
       },
 
+      // Move a tab from one panel into another panel's tab bar (merge)
+      mergeTabIntoPanel: (
+        workspaceId: string,
+        sourcePanelId: string,
+        tabId: string,
+        targetPanelId: string,
+      ) => {
+        if (sourcePanelId === targetPanelId) return;
+
+        const layout = get().getLayout(workspaceId);
+        const sourcePanel = layout.panels.get(sourcePanelId);
+        const targetPanel = layout.panels.get(targetPanelId);
+        if (!sourcePanel?.tabs || !targetPanel) return;
+
+        // Only merge into same-type tabbed panels
+        if (sourcePanel.type !== targetPanel.type) return;
+        if (!TABBED_PANEL_TYPES.includes(targetPanel.type)) return;
+
+        const tab = sourcePanel.tabs.find((t) => t.id === tabId);
+        if (!tab) return;
+
+        const newPanels = new Map(layout.panels);
+
+        // If target has no tabs yet, bootstrap from its existing content
+        let targetTabs: PanelTab[] = targetPanel.tabs || [];
+        if (targetTabs.length === 0) {
+          const existingContentId =
+            targetPanel.type === "chat"
+              ? (targetPanel.data?.chatId as string | undefined)
+              : (targetPanel.data?.contentId as string | undefined);
+          if (existingContentId) {
+            targetTabs = [{ id: generateTabId(), contentId: existingContentId }];
+          }
+        }
+
+        // Add the dragged tab
+        const newTabId = generateTabId();
+        const newTab: PanelTab = { id: newTabId, contentId: tab.contentId, data: tab.data };
+        newPanels.set(targetPanelId, {
+          ...targetPanel,
+          tabs: [...targetTabs, newTab],
+          activeTabId: newTabId,
+        });
+
+        // Remove tab from source (close panel if last tab)
+        if (sourcePanel.tabs.length === 1) {
+          // Last tab — remove panel from tree
+          const newRoot = removeLeafFromTree(layout.root, sourcePanelId);
+          if (!newRoot) return; // Source was the only panel, shouldn't happen
+          newPanels.delete(sourcePanelId);
+          get().setLayout(workspaceId, { root: newRoot, panels: newPanels });
+        } else {
+          const tabIndex = sourcePanel.tabs.findIndex((t) => t.id === tabId);
+          const newSourceTabs = sourcePanel.tabs.filter((t) => t.id !== tabId);
+          let newActiveTabId = sourcePanel.activeTabId;
+          if (sourcePanel.activeTabId === tabId) {
+            const newIndex = Math.min(tabIndex, newSourceTabs.length - 1);
+            newActiveTabId = newSourceTabs[newIndex]?.id;
+          }
+          newPanels.set(sourcePanelId, {
+            ...sourcePanel,
+            tabs: newSourceTabs,
+            activeTabId: newActiveTabId,
+          });
+          get().setLayout(workspaceId, { ...layout, panels: newPanels });
+        }
+
+        // Focus the target panel
+        get().setFocusedPanelId(workspaceId, targetPanelId);
+      },
+
       // Set the active tab within a panel
       setActiveTab: (workspaceId: string, panelId: string, tabId: string) => {
         const layout = get().getLayout(workspaceId);
@@ -1023,31 +1119,52 @@ export const usePanelStore = create<PanelStoreState>()(
       },
 
       // Open a managed terminal panel (for AI agent control)
-      openManagedTerminal: (workspaceId: string, terminalId: string, cwd?: string) => {
+      // Prefers adding a tab to an existing terminal panel; falls back to splitting a new pane.
+      openManagedTerminal: (
+        workspaceId: string,
+        terminalId: string,
+        cwd?: string,
+        opts?: { label?: string; target?: "tab" | "pane"; sessionKey?: string },
+      ) => {
         const layout = get().getLayout(workspaceId);
+        const tabData = {
+          cwd,
+          managed: true,
+          label: opts?.label,
+          sessionKey: opts?.sessionKey,
+        };
 
+        // Prefer adding as a tab to an existing terminal panel (unless target is "pane")
+        if (opts?.target !== "pane") {
+          for (const [panelId, panel] of layout.panels) {
+            if (panel.type === "terminal") {
+              // Add tab to this existing terminal panel
+              get().addTab(workspaceId, panelId, {
+                contentId: terminalId,
+                data: tabData,
+              });
+              // Set active tab but do NOT change focused panel (stay on chat)
+              console.log(
+                `[panel-store] Added managed terminal tab: panelId=${panelId}, terminalId=${terminalId}`,
+              );
+              return;
+            }
+          }
+        }
+
+        // No existing terminal panel (or target is "pane") — split a new pane
         const newPanelId = generatePanelId();
         const newTabId = generateTabId();
 
         const newPanelState: PanelState = {
           id: newPanelId,
           type: "terminal",
-          isUserOpened: false, // Opened by AI, not user
-          data: {
-            managed: true,
-            cwd,
-          },
-          tabs: [
-            {
-              id: newTabId,
-              contentId: terminalId,
-              data: { cwd, managed: true },
-            },
-          ],
+          isUserOpened: false,
+          data: { managed: true, cwd },
+          tabs: [{ id: newTabId, contentId: terminalId, data: tabData }],
           activeTabId: newTabId,
         };
 
-        // Find the focused panel to split (or first leaf if no focus)
         const focusedId = get().getFocusedPanelId(workspaceId);
         const targetPanelId = focusedId || findFirstLeaf(layout.root);
 
@@ -1056,7 +1173,6 @@ export const usePanelStore = create<PanelStoreState>()(
           return;
         }
 
-        // Split horizontally (new panel on right)
         const newLeaf: PanelLeaf = { type: "leaf", panelId: newPanelId };
 
         const splitNode = (node: PanelNode): PanelNode => {
@@ -1089,10 +1205,9 @@ export const usePanelStore = create<PanelStoreState>()(
           panels: newPanels,
         });
 
-        // Focus the new panel
-        get().setFocusedPanelId(workspaceId, newPanelId);
+        // Do NOT focus the new panel — keep focus on chat
         console.log(
-          `[panel-store] Opened managed terminal panel: panelId=${newPanelId}, terminalId=${terminalId}`,
+          `[panel-store] Opened managed terminal pane: panelId=${newPanelId}, terminalId=${terminalId}`,
         );
       },
     }),

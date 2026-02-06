@@ -10,9 +10,10 @@ import {
 import * as pty from "node-pty";
 import { homedir } from "os";
 import { join } from "path";
+import { getKosDir } from "./config-storage";
 
-// Scrollback storage directory
-const SCROLLBACK_DIR = join(homedir(), ".kos", "terminals");
+// Scrollback storage directory — follows instance isolation (dev vs prod)
+const SCROLLBACK_DIR = join(getKosDir(), "terminals");
 
 // Ensure scrollback directory exists
 function ensureScrollbackDir(): void {

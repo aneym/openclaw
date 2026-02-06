@@ -1,13 +1,19 @@
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
 import { Bot } from "lucide-react";
-import { useEffect, useRef, useCallback, useState } from "react";
+import { useEffect, useRef, useCallback, useState, useMemo } from "react";
+import type { Chat } from "../../types";
+import { sessionKeysMatch } from "../../lib/session-keys";
+import { useChatStore } from "../../stores/chat-store";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalPanelProps {
   terminalId?: string;
   cwd?: string;
   managed?: boolean; // True if controlled by AI agent
+  label?: string; // Agent-provided display label (e.g. "dev server")
+  sessionKey?: string; // Controlling chat session key
   isFocused?: boolean;
 }
 
@@ -76,6 +82,8 @@ export function TerminalPanel({
   terminalId: stableId,
   cwd,
   managed,
+  label,
+  sessionKey,
   isFocused,
 }: TerminalPanelProps) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -95,6 +103,7 @@ export function TerminalPanel({
       fontFamily: "Menlo, Monaco, 'Courier New', monospace",
       fontSize: 13,
       lineHeight: 1.2,
+      macOptionIsMeta: true,
       theme: buildTheme(),
     });
 
@@ -104,6 +113,84 @@ export function TerminalPanel({
 
     // Open terminal in container
     terminal.open(container);
+
+    // Attach macOS keybindings immediately after open (before PTY connection)
+    // so they're always active. The handler reads terminalIdRef at call time.
+    terminal.attachCustomKeyEventHandler((e) => {
+      if (e.type !== "keydown") return true;
+
+      const id = terminalIdRef.current;
+      if (!id) return true;
+
+      // --- Cmd keybindings ---
+      if (e.metaKey && !e.altKey && !e.ctrlKey) {
+        let seq: string | null = null;
+
+        switch (e.key) {
+          case "k":
+            if (!e.shiftKey) {
+              // Cmd+K: clear terminal (iTerm2/VS Code convention)
+              e.preventDefault();
+              e.stopPropagation();
+              window.api.terminal.write(id, "\x1b[2J\x1b[3J\x1b[H");
+              window.api.terminal.clearScrollback(id);
+              terminal.clear();
+              return false;
+            }
+            break;
+          case "Backspace":
+            seq = "\x15";
+            break; // Ctrl+U: kill to beginning of line
+          case "Delete":
+            seq = "\x0b";
+            break; // Ctrl+K: kill to end of line
+          case "ArrowLeft":
+            seq = "\x01";
+            break; // Ctrl+A: beginning of line
+          case "ArrowRight":
+            seq = "\x05";
+            break; // Ctrl+E: end of line
+        }
+
+        if (seq) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.api.terminal.write(id, seq);
+          return false;
+        }
+      }
+
+      // --- Option keybindings for word navigation ---
+      // macOptionIsMeta handles Option+letter (b/f/d) automatically,
+      // but arrow keys and special keys need explicit translation.
+      if (e.altKey && !e.metaKey && !e.ctrlKey) {
+        let seq: string | null = null;
+
+        switch (e.key) {
+          case "ArrowLeft":
+            seq = "\x1bb";
+            break; // backward-word
+          case "ArrowRight":
+            seq = "\x1bf";
+            break; // forward-word
+          case "Backspace":
+            seq = "\x1b\x7f";
+            break; // backward-kill-word
+          case "Delete":
+            seq = "\x1bd";
+            break; // kill-word (forward)
+        }
+
+        if (seq) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.api.terminal.write(id, seq);
+          return false;
+        }
+      }
+
+      return true;
+    });
 
     terminalRef.current = terminal;
     fitAddonRef.current = fitAddon;
@@ -132,22 +219,6 @@ export function TerminalPanel({
         terminalIdRef.current = result.id;
         setIsConnected(true);
         console.log(`[TerminalPanel] ✅ Connected: id=${result.id}, pid=${result.pid}`);
-
-        // Intercept Cmd+K to clear terminal (like iTerm2/VS Code)
-        capturedTerminal.attachCustomKeyEventHandler((e) => {
-          if (e.key === "k" && e.metaKey && !e.shiftKey && e.type === "keydown") {
-            e.preventDefault();
-            e.stopPropagation();
-            // Clear screen + scrollback + cursor home via PTY escape sequences
-            if (terminalIdRef.current) {
-              window.api.terminal.write(terminalIdRef.current, "\x1b[2J\x1b[3J\x1b[H");
-              window.api.terminal.clearScrollback(terminalIdRef.current);
-            }
-            capturedTerminal.clear();
-            return false;
-          }
-          return true;
-        });
 
         // Auto-focus the terminal (e.g., when split creates a new terminal pane)
         capturedTerminal.focus();
@@ -281,13 +352,43 @@ export function TerminalPanel({
     terminalRef.current?.focus();
   }, []);
 
+  // Resolve controlling chat title from sessionKey
+  const chatsMap = useChatStore((s) => s.chats);
+  const chatTitle = useMemo(() => {
+    if (!sessionKey) return undefined;
+    for (const chat of chatsMap.values()) {
+      if (sessionKeysMatch((chat as Chat).sessionKey, sessionKey)) return (chat as Chat).title;
+    }
+    return undefined;
+  }, [chatsMap, sessionKey]);
+
+  const badgeLabel = label ? `AI: ${label}` : "AI-controlled";
+  const tooltipLines = [
+    stableId && `Terminal: ${stableId}`,
+    chatTitle && `Chat: ${chatTitle}`,
+    cwd && `cwd: ${cwd}`,
+  ].filter(Boolean);
+
   return (
     <div className="h-full w-full relative">
       {managed && (
-        <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-primary text-xs font-medium">
-          <Bot className="h-3 w-3" />
-          AI-controlled
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded-md bg-primary/10 border border-primary/20 text-primary text-xs font-medium cursor-default">
+              <Bot className="h-3 w-3" />
+              {badgeLabel}
+            </div>
+          </TooltipTrigger>
+          {tooltipLines.length > 0 && (
+            <TooltipContent side="left" className="max-w-xs">
+              <div className="space-y-0.5 text-xs">
+                {tooltipLines.map((line, i) => (
+                  <div key={i}>{line}</div>
+                ))}
+              </div>
+            </TooltipContent>
+          )}
+        </Tooltip>
       )}
       <div
         ref={containerRef}

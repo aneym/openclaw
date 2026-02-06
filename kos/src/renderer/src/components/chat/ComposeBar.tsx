@@ -1,5 +1,6 @@
 import { Send, Square, X, ImageIcon } from "lucide-react";
 import { useState, useRef, useEffect, KeyboardEvent, ClipboardEvent, DragEvent } from "react";
+import { flushSync } from "react-dom";
 import type { QueuedMessage } from "../../stores/chat-session-store";
 import { useGatewayConnected } from "../../gateway/hooks";
 import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
@@ -179,6 +180,70 @@ export function ComposeBar({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const ta = textareaRef.current;
+
+    // Cmd+Backspace: delete to beginning of line
+    if (e.key === "Backspace" && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey && ta) {
+      e.preventDefault();
+      const start = ta.selectionStart;
+      const lineStart = text.lastIndexOf("\n", start - 1) + 1;
+      if (start > lineStart) {
+        flushSync(() => setText(text.slice(0, lineStart) + text.slice(start)));
+        ta.setSelectionRange(lineStart, lineStart);
+      }
+      return;
+    }
+
+    // Cmd+Delete (Fn+Backspace): delete to end of line
+    if (e.key === "Delete" && e.metaKey && !e.altKey && !e.ctrlKey && !e.shiftKey && ta) {
+      e.preventDefault();
+      const end = ta.selectionEnd;
+      const nextNl = text.indexOf("\n", end);
+      const lineEnd = nextNl === -1 ? text.length : nextNl;
+      if (end < lineEnd) {
+        flushSync(() => setText(text.slice(0, end) + text.slice(lineEnd)));
+        ta.setSelectionRange(end, end);
+      }
+      return;
+    }
+
+    // Option+Backspace: delete previous word
+    if (e.key === "Backspace" && e.altKey && !e.metaKey && !e.ctrlKey && ta) {
+      e.preventDefault();
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      if (start !== end) {
+        flushSync(() => setText(text.slice(0, start) + text.slice(end)));
+        ta.setSelectionRange(start, start);
+      } else if (start > 0) {
+        // Walk backward: skip trailing spaces, then skip word chars
+        let i = start;
+        while (i > 0 && /\s/.test(text[i - 1])) i--;
+        while (i > 0 && /\S/.test(text[i - 1])) i--;
+        flushSync(() => setText(text.slice(0, i) + text.slice(start)));
+        ta.setSelectionRange(i, i);
+      }
+      return;
+    }
+
+    // Option+Delete (Fn+Backspace): delete next word
+    if (e.key === "Delete" && e.altKey && !e.metaKey && !e.ctrlKey && ta) {
+      e.preventDefault();
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      if (start !== end) {
+        flushSync(() => setText(text.slice(0, start) + text.slice(end)));
+        ta.setSelectionRange(start, start);
+      } else if (end < text.length) {
+        let i = end;
+        while (i < text.length && /\S/.test(text[i])) i++;
+        while (i < text.length && /\s/.test(text[i])) i++;
+        flushSync(() => setText(text.slice(0, end) + text.slice(i)));
+        ta.setSelectionRange(end, end);
+      }
+      return;
+    }
+
     // Enter = send (unless Shift is held)
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();

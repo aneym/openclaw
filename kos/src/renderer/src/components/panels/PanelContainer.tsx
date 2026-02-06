@@ -117,7 +117,7 @@ function RenderNode({
           : scaleIn;
 
     return (
-      <DroppablePane panelId={node.panelId}>
+      <DroppablePane panelId={node.panelId} panelType={panelState.type}>
         <motion.div
           key={node.panelId}
           variants={variants}
@@ -125,7 +125,7 @@ function RenderNode({
           animate="animate"
           onClick={handleFocus}
           onFocus={handleFocus}
-          className={`h-full w-full flex flex-col overflow-hidden border ${isFocused ? "border-primary/40" : "border-transparent"}`}
+          className={`h-full w-full flex flex-col overflow-hidden border transition-colors ${isFocused ? "border-primary/40" : "border-transparent hover:border-border"}`}
         >
           <PanelTabBar
             panelId={node.panelId}

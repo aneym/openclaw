@@ -1,18 +1,12 @@
 /**
  * Chat Session Store — Unified per-session state management.
  *
- * This store manages ALL chat state atomically to prevent race conditions
- * and flash bugs that occurred with separate useStreaming + useMessages hooks.
- *
- * Key design:
- * - One store per sessionKey (factory pattern)
- * - Single handleChatEvent processes all chat events atomically
- * - Stream state is cleared atomically with final message insertion
- * - Queue operations are part of the store for coordination
- *
- * Based on web-ui's proven handleChatEvent pattern in:
- * - ui/src/ui/controllers/chat.ts:192-246
- * - ui/src/ui/app-chat.ts:89-119
+ * Matches the web-ui's proven pattern (ui/src/ui/controllers/chat.ts):
+ * - `messages` = server-authoritative history (full replacement from chat.history)
+ * - `streamText` = separate streaming display (never mixed with messages)
+ * - No polling during streaming (web-ui doesn't do this)
+ * - On final: clear stream + reload history (history includes the final message)
+ * - Optimistic user messages tracked separately, reconciled on history load
  */
 
 import { createStore, type StoreApi } from "zustand/vanilla";
@@ -45,10 +39,13 @@ export interface ChatSessionState {
   sessionKey: string;
   chatId: string;
 
-  // Messages (server-authoritative)
+  // Messages (server-authoritative — full replacement from chat.history)
   messages: ChatMessage[];
   loading: boolean;
   error: string | null;
+
+  // Optimistic user messages (tracked separately for reconciliation)
+  _optimisticIds: Set<string>;
 
   // Streaming (atomic group — all cleared together)
   runId: string | null;
@@ -81,7 +78,7 @@ export interface ChatSessionState {
   /** Set the gateway request function (called by hook on mount) */
   setRequest: (request: <T>(method: string, params?: unknown) => Promise<T>) => void;
 
-  /** Load message history from gateway */
+  /** Load message history from gateway (full replacement — server is authoritative) */
   loadHistory: () => Promise<void>;
 
   /** Handle incoming chat event (delta, final, aborted, error) */
@@ -110,9 +107,6 @@ export interface ChatSessionState {
 
   /** Clear pending abort flag */
   clearPendingAbort: () => void;
-
-  /** Add an optimistic user message */
-  addOptimisticMessage: (message: ChatMessage) => void;
 
   /** Flush queue — send next message if not streaming */
   flushQueue: () => Promise<void>;
@@ -218,20 +212,6 @@ function separateThinkingFromText(text: string): { cleanText: string; reasoning:
   return { cleanText, reasoning: parts.join("\n") };
 }
 
-/**
- * Dedupe-append a message to the list.
- * If message with same ID exists, replace it. Otherwise append.
- */
-function dedupeAppend(messages: ChatMessage[], msg: ChatMessage): ChatMessage[] {
-  const existingIndex = messages.findIndex((m) => m.id === msg.id);
-  if (existingIndex >= 0) {
-    const updated = [...messages];
-    updated[existingIndex] = msg;
-    return updated;
-  }
-  return [...messages, msg];
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Store Factory
 // ─────────────────────────────────────────────────────────────────────────────
@@ -251,6 +231,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     messages: [],
     loading: true,
     error: null,
+
+    // Optimistic tracking
+    _optimisticIds: new Set(),
 
     // Streaming
     runId: null,
@@ -285,7 +268,8 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     },
 
     loadHistory: async () => {
-      const { sessionKey, chatId, _request } = get();
+      const { sessionKey, _request } = get();
+
       if (!sessionKey || !_request) {
         set({ loading: false });
         return;
@@ -299,9 +283,45 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           limit: 200,
         });
 
+        const { chatId } = get();
         const normalized = history.messages.map((m) => normalizeMessage(m, chatId));
-        klog.session("loadHistory complete", { count: normalized.length });
-        set({ messages: normalized, loading: false, error: null });
+
+        klog.session("loadHistory complete", {
+          count: normalized.length,
+          ids: normalized.map((m) => m.id),
+        });
+
+        // Snapshot state AFTER await (may have changed during network round-trip)
+        const { _optimisticIds, messages: currentMessages } = get();
+
+        // Preserve optimistic user messages not yet reflected in server history.
+        // Race condition: user sends a message while loadHistory is in flight —
+        // the server may not have the user message yet. Keep optimistic messages
+        // appended until handleChatEvent clears _optimisticIds on final/aborted/error,
+        // at which point the next loadHistory does a full replacement.
+        const optimistic =
+          _optimisticIds.size > 0 ? currentMessages.filter((m) => _optimisticIds.has(m.id)) : [];
+
+        if (optimistic.length > 0) {
+          const merged = [...normalized, ...optimistic];
+          set({
+            messages: merged,
+            loading: false,
+            error: null,
+            streamText: "",
+            streamReasoning: "",
+          });
+        } else {
+          // Full replacement — server is authoritative
+          set({
+            messages: normalized,
+            loading: false,
+            error: null,
+            streamText: "",
+            streamReasoning: "",
+            _optimisticIds: new Set(),
+          });
+        }
       } catch (err) {
         klog.sessionError("loadHistory failed", err);
         set({
@@ -331,6 +351,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
       if (payload.state === "delta") {
         // Clear awaitingResponse on first delta
         if (get().awaitingResponse) {
+          klog.streaming("first delta received, clearing awaitingResponse");
           set({ awaitingResponse: false });
         }
 
@@ -346,7 +367,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           });
         }
 
-        // Update cumulative stream text, extracting <think> tags into reasoning
+        // Update cumulative stream text, extracting <think> tags into reasoning.
+        // Length monotonicity check (web-ui pattern): only accept longer text
+        // to prevent backwards-running text from out-of-order events.
         const nextText = extractText(payload.message);
         if (typeof nextText === "string") {
           const { cleanText, reasoning } = separateThinkingFromText(nextText);
@@ -366,36 +389,33 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         payload.state === "aborted" ||
         payload.state === "error"
       ) {
-        klog.streaming(`run ended (${payload.state})`);
-
-        // ATOMIC: Clear ALL streaming state in one set()
-        // Flash prevention: Add final message from event immediately if present
-        const finalMsg =
-          payload.state === "final" && payload.message
-            ? normalizeMessage(payload.message, state.chatId)
-            : null;
+        klog.streaming(`run ended (${payload.state})`, {
+          existingMsgCount: state.messages.length,
+        });
 
         // Cancel any pending tool throttle timer
         if (state._toolThrottleTimer) clearTimeout(state._toolThrottleTimer);
 
-        set((s) => ({
+        // For "final": keep streamText as a bridge to prevent flash between
+        // "stream cleared" and "history loaded". loadHistory clears it.
+        // For "aborted"/"error": clear everything (no final message coming).
+        const keepBridgeText = payload.state === "final";
+        set({
           runId: null,
-          streamText: "",
-          streamReasoning: "",
           streamStartedAt: null,
           activeTools: [],
           pendingAbort: false,
           awaitingResponse: false,
           _pendingToolUpdates: [],
           _toolThrottleTimer: null,
-          // Insert final message immediately to prevent flash
-          messages: finalMsg ? dedupeAppend(s.messages, finalMsg) : s.messages,
-          // Set error if present
-          error: payload.state === "error" ? (payload.errorMessage ?? "chat error") : s.error,
-        }));
+          // Clear optimistic IDs — server has the user message by now.
+          // This lets the subsequent loadHistory do a full replacement.
+          _optimisticIds: new Set(),
+          ...(keepBridgeText ? {} : { streamText: "", streamReasoning: "" }),
+          error: payload.state === "error" ? (payload.errorMessage ?? "chat error") : null,
+        });
 
-        // Reload history in background (will merge, not flash)
-        // Then flush queue to send any pending messages
+        // Reload history (includes the final message) then flush queue.
         void state.loadHistory().then(() => state.flushQueue());
       }
     },
@@ -499,7 +519,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     },
 
     sendNow: async (text, attachments) => {
-      const { sessionKey, chatId, _request, addOptimisticMessage } = get();
+      const { sessionKey, chatId, _request } = get();
 
       if (!_request) {
         klog.composeError("sendNow: no request function");
@@ -515,16 +535,22 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
       klog.compose("sendNow", { sessionKey, messageId, textLength: trimmed.length });
 
-      // Add optimistic user message
-      addOptimisticMessage({
-        id: messageId,
+      // Add optimistic user message so it appears immediately in the UI.
+      // Track its ID so we can reconcile when history loads.
+      const optimisticMsg: ChatMessage = {
+        id: `optimistic-${messageId}`,
         role: "user",
         parts: [{ type: "text", text: trimmed }],
         createdAt: Date.now(),
         chatId,
-      });
+      };
 
-      set({ sending: true, awaitingResponse: true });
+      set((s) => ({
+        messages: [...s.messages, optimisticMsg],
+        _optimisticIds: new Set([...s._optimisticIds, optimisticMsg.id]),
+        sending: true,
+        awaitingResponse: true,
+      }));
 
       try {
         // Build attachments array for API
@@ -555,10 +581,17 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         set({ runId: respondedRunId, streamStartedAt: Date.now() });
       } catch (err) {
         klog.composeError("send failed", err);
-        set({
+        // Remove the optimistic message on failure
+        set((s) => ({
+          messages: s.messages.filter((m) => m.id !== optimisticMsg.id),
+          _optimisticIds: (() => {
+            const next = new Set(s._optimisticIds);
+            next.delete(optimisticMsg.id);
+            return next;
+          })(),
           error: err instanceof Error ? err.message : "Send failed",
           awaitingResponse: false,
-        });
+        }));
       } finally {
         set({ sending: false });
         // NOTE: awaitingResponse stays true — cleared on first delta by handleChatEvent
@@ -642,13 +675,6 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
       set({ pendingAbort: false });
     },
 
-    addOptimisticMessage: (message) => {
-      klog.messages("adding optimistic message", { id: message.id, role: message.role });
-      set((s) => ({
-        messages: dedupeAppend(s.messages, message),
-      }));
-    },
-
     queryChatStatus: async () => {
       const { sessionKey, _request } = get();
       if (!sessionKey || !_request) return;
@@ -681,9 +707,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
       // Get next message from queue
       const next = state.dequeue();
-      if (!next) {
-        return;
-      }
+      if (!next) return;
 
       klog.compose("flushQueue: sending queued message", { id: next.id });
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, ChatStatus } from "../types";
 import { klog } from "../lib/klog";
 import { playNotificationSound } from "../lib/notification-sounds";
-import { sessionKeysMatch } from "../lib/session-keys";
+import { isCronSessionKey, sessionKeysMatch } from "../lib/session-keys";
 import { isChatVisible } from "../lib/unread";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
@@ -207,7 +207,7 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
 
     const patch: Partial<Chat> = {};
 
-    if (sessionKey !== existing.sessionKey) {
+    if (!sessionKeysMatch(sessionKey, existing.sessionKey)) {
       patch.sessionKey = sessionKey;
     }
 
@@ -240,6 +240,7 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
   const createdAt = resolveSessionCreatedAt(session) ?? now;
   const initialLastMessageAt = typeof lastMessageAt === "number" ? lastMessageAt : createdAt;
   const channel = resolveSessionChannel(session);
+  const isCron = isCronSessionKey(sessionKey);
 
   const newChat: Chat = {
     id: generateChatId(),
@@ -247,6 +248,7 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
     sessionKey,
     title,
     channel,
+    ...(isCron && { isCron: true }),
     status: resolvedStatus ?? "idle",
     lastMessageAt: initialLastMessageAt,
     createdAt,
@@ -306,7 +308,7 @@ export function useSessionSync() {
 
         const patch: Partial<Chat> = {};
 
-        if (sessionKey !== existing.sessionKey) {
+        if (!sessionKeysMatch(sessionKey, existing.sessionKey)) {
           patch.sessionKey = sessionKey;
         }
 
@@ -340,12 +342,15 @@ export function useSessionSync() {
       const initialLastMessageAt = typeof lastMessageAt === "number" ? lastMessageAt : createdAt;
       const channel = resolveSessionChannel(session);
 
+      const isCron = isCronSessionKey(sessionKey);
+
       const newChat: Chat = {
         id: generateChatId(),
         // Don't assign workspace/project - synced sessions are unassigned until user explicitly assigns them
         sessionKey,
         title,
         channel,
+        ...(isCron && { isCron: true }),
         status: resolvedStatus ?? "idle",
         lastMessageAt: initialLastMessageAt,
         createdAt,
@@ -409,8 +414,8 @@ export function useSessionSync() {
           }
 
           // Mark as unread if the chat isn't currently visible to the user.
-          // Check all workspaces where this chat might be displayed.
-          if (chat) {
+          // Cron/automated sessions never trigger unread notifications.
+          if (chat && !chat.isCron) {
             const wsId = chat.workspaceId || HOME_WORKSPACE_ID;
             const visibleInHome = isChatVisible(chat.id, HOME_WORKSPACE_ID);
             const visibleInWorkspace = wsId !== HOME_WORKSPACE_ID && isChatVisible(chat.id, wsId);

@@ -160,6 +160,20 @@ export function initBrowserPanel(window: BrowserWindow) {
     getActiveView()?.webContents.focus();
   });
 
+  // Hide the BrowserView (set bounds to zero so it doesn't capture clicks)
+  ipcMain.handle("browser:hide", () => {
+    for (const tab of tabs.values()) {
+      tab.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+    }
+  });
+
+  // Show the BrowserView (restore bounds for active tab)
+  ipcMain.handle("browser:show", () => {
+    if (activeTabId && currentBounds) {
+      showTab(activeTabId);
+    }
+  });
+
   // Destroy all tabs (cleanup)
   ipcMain.handle("browser:destroy", () => {
     if (!mainWindow) return;

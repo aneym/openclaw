@@ -146,13 +146,6 @@ export const notifications = {
     });
   },
 
-  sessionReloaded: () => {
-    toast.success("Session reloaded", {
-      description: "History has been cleared",
-      duration: 3000,
-    });
-  },
-
   // Clipboard events
   copied: (item: string) => {
     toast.success("Copied", {

@@ -18,6 +18,7 @@ import {
 interface ChatItemProps {
   chat: Chat;
   isActive: boolean;
+  isOpenInPane?: boolean;
   onSelect: (options?: { splitPane?: boolean }) => void;
   onArchive: () => void;
   onCopySessionId: () => void;
@@ -30,6 +31,7 @@ interface ChatItemProps {
 export const ChatItem = memo(function ChatItem({
   chat,
   isActive,
+  isOpenInPane = false,
   onSelect,
   onArchive,
   onCopySessionId,
@@ -73,11 +75,15 @@ export const ChatItem = memo(function ChatItem({
   return (
     <div
       className={cn(
-        "group w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
+        "group w-full py-2 rounded-md text-left text-sm transition-colors",
         "flex items-center gap-2 relative cursor-pointer",
+        // Left border: accent for active, muted for open-in-pane, transparent for default
+        "border-l-2 pl-2.5 pr-3",
         isActive
-          ? "bg-accent text-accent-foreground"
-          : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+          ? "border-l-primary bg-accent text-accent-foreground"
+          : isOpenInPane
+            ? "border-l-muted-foreground/50 bg-accent/30 text-foreground"
+            : "border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50",
       )}
       onClick={handleClick}
       role="button"

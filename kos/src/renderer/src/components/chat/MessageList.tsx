@@ -2,11 +2,13 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import type { ActiveTool } from "@/stores/chat-session-store";
 import { Button } from "@/components/ui/button";
+import { klog } from "@/lib/klog";
 import { cn } from "@/lib/utils";
 import { ChatMessage } from "@/types/message";
 import { ExecutingToolsSummary } from "./ExecutingTools";
 import { MessageGroup } from "./MessageGroup";
 import { StreamingIndicator } from "./StreamingIndicator";
+import { TextPart } from "./TextPart";
 
 interface MessageListProps {
   messages: ChatMessage[];
@@ -75,7 +77,21 @@ export function MessageList({
   const userScrolledAwayRef = useRef(false);
 
   // Group consecutive same-role messages
-  const messageGroups = useMemo(() => groupConsecutiveMessages(messages), [messages]);
+  const messageGroups = useMemo(() => {
+    const groups = groupConsecutiveMessages(messages);
+    klog.messages("MessageList grouping", {
+      messageCount: messages.length,
+      groupCount: groups.length,
+      groups: groups.map((g) => ({
+        role: g.role,
+        count: g.messages.length,
+        ids: g.messages.map((m) => m.id),
+      })),
+      isStreaming,
+      hasStreamText: !!streamText,
+    });
+    return groups;
+  }, [messages]);
 
   // Scroll to bottom instantly on initial mount
   useEffect(() => {
@@ -177,10 +193,12 @@ export function MessageList({
           <div className="space-y-4 max-w-3xl mx-auto w-full">
             {messageGroups.map((group, idx) => {
               const isLastGroup = idx === messageGroups.length - 1;
-              // Show streaming on last assistant group ONLY when actively streaming
-              // (runId is non-null). Using !!streamText as a fallback caused duplicate
-              // rendering between final event and history reload.
-              const shouldShowStreaming = isLastGroup && isStreaming && group.role === "assistant";
+              // Show streaming/bridge text on last assistant group when:
+              // - actively streaming (runId non-null), OR
+              // - streamText is non-empty (bridge text between final and history load)
+              const hasStreamContent = !!(streamText || streamReasoning);
+              const shouldShowStream =
+                isLastGroup && (isStreaming || hasStreamContent) && group.role === "assistant";
               // Show timestamp only at turn boundaries (last group before role change or end)
               const nextGroup = messageGroups[idx + 1];
               const isEndOfTurn = !nextGroup || nextGroup.role !== group.role;
@@ -190,41 +208,38 @@ export function MessageList({
                   key={`group-${idx}-${group.messages[0].id}`}
                   messages={group.messages}
                   role={group.role}
-                  isStreaming={shouldShowStreaming}
-                  streamText={shouldShowStreaming ? streamText : undefined}
-                  streamReasoning={shouldShowStreaming ? streamReasoning : undefined}
-                  activeTools={shouldShowStreaming ? activeTools : undefined}
+                  isStreaming={shouldShowStream ? isStreaming : false}
+                  streamText={shouldShowStream ? streamText : undefined}
+                  streamReasoning={shouldShowStream ? streamReasoning : undefined}
+                  activeTools={shouldShowStream && isStreaming ? activeTools : undefined}
                   showTimestamp={isEndOfTurn}
                 />
               );
             })}
 
-            {/* Show dots when awaiting response and no stream text yet */}
-            {awaitingResponse && !streamText && !isStreaming && (
-              <div className="py-2">
-                <StreamingIndicator className="opacity-60" />
-              </div>
-            )}
-
-            {/* Show streaming content when no assistant group exists yet */}
-            {isStreaming &&
+            {/* Show streaming/bridge text when last group isn't assistant */}
+            {!!streamText &&
               messageGroups.length > 0 &&
               messageGroups[messageGroups.length - 1].role !== "assistant" && (
                 <div className="flex flex-col gap-2 items-start">
-                  {/* Show executing tools */}
                   {activeTools.length > 0 && <ExecutingToolsSummary tools={activeTools} />}
                   <div className="max-w-[85%] text-foreground">
-                    {streamText ? (
-                      <div className="whitespace-pre-wrap">{streamText}</div>
-                    ) : (
-                      <StreamingIndicator className="opacity-60" />
-                    )}
+                    <TextPart text={streamText} isStreaming={!!isStreaming} />
                   </div>
                 </div>
               )}
           </div>
         )}
 
+        {/* Typing indicator — visible throughout entire response lifecycle */}
+        {(isStreaming || awaitingResponse) && (
+          <div className="max-w-3xl mx-auto w-full py-2">
+            <StreamingIndicator className="opacity-60" />
+          </div>
+        )}
+
+        {/* Bottom spacer — breathing room above compose bar (like standard chat apps) */}
+        <div className="h-24" />
         {/* Sentinel element for IntersectionObserver */}
         <div ref={sentinelRef} className="h-px" />
       </div>

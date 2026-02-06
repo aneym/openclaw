@@ -12,6 +12,7 @@ interface ChatGroupSectionProps {
   isCollapsed: boolean;
   onToggle: () => void;
   activeChatId: string | null;
+  openPaneChatIds?: Set<string>;
   onSelectChat: (chat: Chat, options?: { splitPane?: boolean }) => void;
   onArchiveChat: (chatId: string) => void;
   onCopySessionId: (sessionKey: string) => void;
@@ -27,6 +28,7 @@ export const ChatGroupSection = memo(function ChatGroupSection({
   isCollapsed,
   onToggle,
   activeChatId,
+  openPaneChatIds,
   onSelectChat,
   onArchiveChat,
   onCopySessionId,
@@ -48,7 +50,6 @@ export const ChatGroupSection = memo(function ChatGroupSection({
       >
         {isCollapsed ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
         <span className="uppercase tracking-wider">{group}</span>
-        <span className="ml-auto text-muted-foreground/50">{chats.length}</span>
       </button>
       {/* No animation - immediate show/hide for performance */}
       {!isCollapsed && (
@@ -58,6 +59,7 @@ export const ChatGroupSection = memo(function ChatGroupSection({
               key={chat.id}
               chat={chat}
               isActive={chat.id === activeChatId}
+              isOpenInPane={openPaneChatIds?.has(chat.id) ?? false}
               onSelectChat={onSelectChat}
               onArchiveChat={onArchiveChat}
               onCopySessionId={onCopySessionId}
@@ -77,6 +79,7 @@ export const ChatGroupSection = memo(function ChatGroupSection({
 interface ChatItemWrapperProps {
   chat: Chat;
   isActive: boolean;
+  isOpenInPane: boolean;
   onSelectChat: (chat: Chat, options?: { splitPane?: boolean }) => void;
   onArchiveChat: (chatId: string) => void;
   onCopySessionId: (sessionKey: string) => void;
@@ -89,6 +92,7 @@ interface ChatItemWrapperProps {
 const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
   chat,
   isActive,
+  isOpenInPane,
   onSelectChat,
   onArchiveChat,
   onCopySessionId,
@@ -119,6 +123,7 @@ const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
       <ChatItem
         chat={chat}
         isActive={isActive}
+        isOpenInPane={isOpenInPane}
         onSelect={handleSelect}
         onArchive={handleArchive}
         onCopySessionId={handleCopySessionId}

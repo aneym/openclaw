@@ -266,7 +266,7 @@ export function ProfileSettings() {
                 id="gatewayUrl"
                 value={formData.gatewayUrl}
                 onChange={(e) => setFormData({ ...formData, gatewayUrl: e.target.value })}
-                placeholder="ws://localhost:18789"
+                placeholder={DEFAULT_GATEWAY_URL}
               />
               <p className="text-xs text-muted-foreground">
                 WebSocket URL for the OpenClaw gateway.

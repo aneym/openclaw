@@ -44,6 +44,16 @@ export function sessionKeysMatch(
 }
 
 /**
+ * Check if a session key belongs to a cron/automated session.
+ * Cron keys follow the pattern: agent:main:cron:... or cron:...
+ */
+export function isCronSessionKey(key: string | undefined | null): boolean {
+  if (!key) return false;
+  const lower = key.toLowerCase().trim();
+  return lower.includes(":cron:") || lower.includes(":cron-") || lower.startsWith("cron:");
+}
+
+/**
  * Build a canonical session key with the `agent:{agentId}:{rest}` prefix.
  * If the key already has the prefix it is returned as-is.
  */

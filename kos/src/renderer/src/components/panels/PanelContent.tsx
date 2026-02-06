@@ -133,6 +133,8 @@ export function PanelContent({
         const terminalId = activeTab?.contentId;
         const terminalCwd = activeTab?.data?.cwd as string | undefined;
         const tabManaged = Boolean(activeTab?.data?.managed) || isManaged;
+        const terminalLabel = activeTab?.data?.label as string | undefined;
+        const terminalSessionKey = activeTab?.data?.sessionKey as string | undefined;
 
         // If no contentId yet, show empty state with type switcher
         // This allows switching panel type before starting the terminal
@@ -152,6 +154,8 @@ export function PanelContent({
             terminalId={terminalId}
             cwd={terminalCwd}
             managed={tabManaged}
+            label={terminalLabel}
+            sessionKey={terminalSessionKey}
             isFocused={isFocused}
           />
         );

@@ -10,8 +10,8 @@ import { useProjectStore } from "./stores/project-store";
 import { useThemeStore } from "./stores/theme-store";
 import "./styles/globals.css";
 
-// Default gateway URL for local development
-const DEFAULT_GATEWAY_URL = "ws://localhost:19001";
+// Default gateway URL — dev uses 19001, prod uses 18789
+const DEFAULT_GATEWAY_URL = `ws://localhost:${import.meta.env.DEV ? 19001 : 18789}`;
 
 function App() {
   // Gateway state
@@ -39,15 +39,39 @@ function App() {
   // Toggle .liquid-glass class + apply glass tuning vars on <html>
   const liquidGlass = useThemeStore((s) => s.liquidGlass);
   const glass = useThemeStore((s) => s.glass);
+  const themeMode = useThemeStore((s) => s.mode);
   useEffect(() => {
     const el = document.documentElement;
     el.classList.toggle("liquid-glass", liquidGlass);
     if (liquidGlass) {
-      el.style.setProperty("--glass-chrome-tint", String(glass.chromeTint / 100));
-      el.style.setProperty("--glass-sidebar-tint", String(glass.sidebarTint / 100));
+      const ct = glass.chromeTint / 100;
+      const st = glass.sidebarTint / 100;
+      el.style.setProperty("--glass-chrome-tint", String(ct));
+      el.style.setProperty("--glass-sidebar-tint", String(st));
       el.style.setProperty("--glass-border-opacity", String(glass.borderOpacity / 100));
+      // Compute glass backgrounds directly — Chromium doesn't reliably
+      // re-evaluate rgba() when only a nested var() changes via inline style
+      const isDark = el.classList.contains("dark");
+      if (isDark) {
+        el.style.setProperty("--glass-chrome-bg", `rgba(0, 0, 0, ${ct * 2})`);
+        el.style.setProperty("--glass-sidebar-bg", `rgba(0, 0, 0, ${st * 2})`);
+      } else {
+        el.style.setProperty("--glass-chrome-bg", `rgba(255, 255, 255, ${ct})`);
+        el.style.setProperty("--glass-sidebar-bg", `rgba(255, 255, 255, ${st})`);
+      }
+    } else {
+      // Clean up inline overrides so CSS fallbacks take over
+      for (const prop of [
+        "--glass-chrome-tint",
+        "--glass-sidebar-tint",
+        "--glass-border-opacity",
+        "--glass-chrome-bg",
+        "--glass-sidebar-bg",
+      ]) {
+        el.style.removeProperty(prop);
+      }
     }
-  }, [liquidGlass, glass]);
+  }, [liquidGlass, glass, themeMode]);
   // Note: Abort retry is now handled internally by useChatSession per-session
 
   // Connect to gateway on startup and reconnect on profile change

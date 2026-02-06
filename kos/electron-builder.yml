@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: kos-temp
+appId: com.kinetic.kos
+productName: kOS
 directories:
   buildResources: build
 files:
@@ -13,7 +13,7 @@ asarUnpack:
   - resources/**
   - node_modules/kos-native/**
 win:
-  executableName: kos-temp
+  executableName: kos
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

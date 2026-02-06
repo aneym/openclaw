@@ -24,9 +24,10 @@ if (process.platform === "darwin") {
   }
 }
 
-// Suppress CSP warning in dev mode (unsafe-eval is required for Vite HMR)
-// The warning says it won't show in packaged apps anyway
+// Dev instance gets a separate app name → separate userData dir → separate localStorage
 if (is.dev) {
+  app.name = "kos-dev";
+  // Suppress CSP warning in dev mode (unsafe-eval is required for Vite HMR)
   process.env["ELECTRON_DISABLE_SECURITY_WARNINGS"] = "true";
 }
 
@@ -48,12 +49,12 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 
-// Read OpenClaw gateway config - checks both prod and dev locations
+// Read OpenClaw gateway config — dev instance prefers dev gateway, prod prefers prod
 ipcMain.handle("get-gateway-config", () => {
   const prodPath = join(homedir(), ".openclaw", "openclaw.json");
   const devPath = join(homedir(), ".openclaw-dev", "openclaw.json");
 
-  // Check for OPENCLAW_STATE_DIR override
+  // Check for OPENCLAW_STATE_DIR override (always takes priority)
   const stateDir = process.env.OPENCLAW_STATE_DIR;
   if (stateDir) {
     try {
@@ -68,27 +69,28 @@ ipcMain.handle("get-gateway-config", () => {
     }
   }
 
-  // Try dev config first if it exists (for active development)
-  try {
-    const devRaw = readFileSync(devPath, "utf-8");
-    const devConfig = JSON.parse(devRaw);
-    const port = devConfig?.gateway?.port ?? 19001;
-    const token = devConfig?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token, source: devPath };
-  } catch {
-    // Dev config doesn't exist, fall through to prod
+  // Dev instance → dev config first (port 19001), then prod fallback
+  // Prod instance → prod config first (port 18789), then dev fallback
+  const primary = is.dev
+    ? { path: devPath, defaultPort: 19001 }
+    : { path: prodPath, defaultPort: 18789 };
+  const fallback = is.dev
+    ? { path: prodPath, defaultPort: 18789 }
+    : { path: devPath, defaultPort: 19001 };
+
+  for (const source of [primary, fallback]) {
+    try {
+      const raw = readFileSync(source.path, "utf-8");
+      const config = JSON.parse(raw);
+      const port = config?.gateway?.port ?? source.defaultPort;
+      const token = config?.gateway?.auth?.token;
+      return { url: `ws://localhost:${port}`, token, source: source.path };
+    } catch {
+      // Config doesn't exist, try next
+    }
   }
 
-  // Fall back to prod config
-  try {
-    const raw = readFileSync(prodPath, "utf-8");
-    const config = JSON.parse(raw);
-    const port = config?.gateway?.port ?? 18789;
-    const token = config?.gateway?.auth?.token;
-    return { url: `ws://localhost:${port}`, token, source: prodPath };
-  } catch {
-    return { url: "ws://localhost:18789", source: "default" };
-  }
+  return { url: `ws://localhost:${is.dev ? 19001 : 18789}`, source: "default" };
 });
 
 // Dock badge (macOS)
@@ -541,7 +543,7 @@ app.whenReady().then(() => {
 
   // Default open or close DevTools by F12 in development
   app.on("browser-window-created", (_, window) => {
-    optimizer.watchWindowShortcuts(window);
+    optimizer.watchWindowShortcuts(window, { zoom: true });
   });
 
   createWindow();

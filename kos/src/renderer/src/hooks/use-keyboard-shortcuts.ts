@@ -8,6 +8,8 @@ export interface KeyboardShortcut {
   altKey?: boolean;
   handler: (e: KeyboardEvent) => void;
   description?: string;
+  /** If true, this shortcut won't fire when focus is inside a terminal panel */
+  skipInTerminal?: boolean;
 }
 
 /**
@@ -17,7 +19,10 @@ export interface KeyboardShortcut {
 export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const isInTerminal = !!(e.target as HTMLElement).closest?.(".xterm");
+
       for (const shortcut of shortcuts) {
+        if (isInTerminal && shortcut.skipInTerminal) continue;
         // For metaKey: if ctrlKey is explicitly set, don't cross-platform match metaKey with ctrlKey
         const metaMatch =
           shortcut.metaKey === undefined ||

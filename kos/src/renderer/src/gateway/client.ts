@@ -14,6 +14,12 @@ import { useWorkspaceStore } from "../stores/workspace-store";
 import { clearDeviceAuthToken, loadDeviceAuthToken, storeDeviceAuthToken } from "./device-auth";
 import { buildDeviceAuthPayload } from "./device-auth-payload";
 import { loadOrCreateDeviceIdentity, signDevicePayload } from "./device-identity";
+import {
+  handleDevtoolsLogs,
+  handleDevtoolsState,
+  handleDevtoolsEval,
+  handleDevtoolsErrors,
+} from "./devtools-handlers";
 
 // Generate a simple UUID for request IDs
 function generateUUID(): string {
@@ -32,7 +38,7 @@ const CLIENT_MODE = "webchat";
 const CLIENT_VERSION = "0.1.0";
 const ROLE = "operator";
 const SCOPES = ["operator.admin", "operator.approvals", "operator.pairing"];
-const CAPS = ["browser", "terminal"]; // Advertise browser and terminal capabilities
+const CAPS = ["browser", "terminal", "devtools"]; // Advertise browser, terminal, and devtools capabilities
 const COMMANDS = [
   "terminal.spawn",
   "terminal.exec",
@@ -40,6 +46,11 @@ const COMMANDS = [
   "terminal.copy",
   "terminal.close",
   "terminal.list",
+  "terminal.write",
+  "devtools.logs",
+  "devtools.state",
+  "devtools.eval",
+  "devtools.errors",
 ]; // Commands this node can handle
 
 export class GatewayClient {
@@ -317,14 +328,47 @@ export class GatewayClient {
     try {
       switch (req.command) {
         case "terminal.spawn": {
-          const result = await window.api.terminal.createManaged(params.cwd);
-          // Open a terminal panel for the managed terminal
+          // Resolve effective cwd: explicit param > workspace path > main repo path
+          let effectiveCwd = params.cwd as string | undefined;
           const projectId = useProjectStore.getState().activeProjectId;
+          if (!effectiveCwd && projectId) {
+            const activeWorkspaceByProject = useWorkspaceStore.getState().activeWorkspaceByProject;
+            const wsId = activeWorkspaceByProject.get(projectId);
+            if (wsId) {
+              const workspace = useWorkspaceStore.getState().workspaces.get(wsId);
+              effectiveCwd = workspace?.path;
+            }
+            if (!effectiveCwd) {
+              const project = useProjectStore.getState().projects.get(projectId);
+              const mainRepo =
+                project?.repositories?.find((r) => r.isMainRepo) ?? project?.repositories?.[0];
+              effectiveCwd = mainRepo?.path;
+            }
+          }
+
+          const result = await window.api.terminal.createManaged(effectiveCwd);
+
+          // Open a terminal panel for the managed terminal
           if (projectId) {
             const activeWorkspaceByProject = useWorkspaceStore.getState().activeWorkspaceByProject;
             const workspaceId = activeWorkspaceByProject.get(projectId);
             if (workspaceId) {
-              usePanelStore.getState().openManagedTerminal(workspaceId, result.id, params.cwd);
+              // Infer sessionKey from the active chat panel
+              const layout = usePanelStore.getState().getLayout(workspaceId);
+              let sessionKey: string | undefined;
+              for (const panel of layout.panels.values()) {
+                if (panel.type === "chat") {
+                  const activeTab = panel.tabs?.find((t) => t.id === panel.activeTabId);
+                  sessionKey = activeTab?.data?.sessionKey as string | undefined;
+                  if (sessionKey) break;
+                }
+              }
+
+              usePanelStore.getState().openManagedTerminal(workspaceId, result.id, effectiveCwd, {
+                label: params.label as string | undefined,
+                target: params.target as "tab" | "pane" | undefined,
+                sessionKey,
+              });
             }
           }
           sendResult(true, { terminalId: result.id, pid: result.pid });
@@ -361,6 +405,31 @@ export class GatewayClient {
         case "terminal.list": {
           const terminals = await window.api.terminal.listManaged();
           sendResult(true, { terminals });
+          break;
+        }
+        case "terminal.write": {
+          await window.api.terminal.write(params.terminalId, params.text + "\n");
+          sendResult(true, { written: true });
+          break;
+        }
+        case "devtools.logs": {
+          const result = await handleDevtoolsLogs(params);
+          sendResult(true, result);
+          break;
+        }
+        case "devtools.state": {
+          const result = await handleDevtoolsState(params);
+          sendResult(true, result);
+          break;
+        }
+        case "devtools.eval": {
+          const result = await handleDevtoolsEval(params);
+          sendResult(true, result);
+          break;
+        }
+        case "devtools.errors": {
+          const result = await handleDevtoolsErrors(params);
+          sendResult(true, result);
           break;
         }
         default:

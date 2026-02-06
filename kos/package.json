@@ -1,5 +1,5 @@
 {
-  "name": "kos-temp",
+  "name": "kos",
   "version": "1.0.0",
   "description": "An Electron application with React and TypeScript",
   "homepage": "https://electron-vite.org",
@@ -16,6 +16,7 @@
     "format": "prettier --write .",
     "lint": "eslint --cache .",
     "postinstall": "electron-rebuild -f -w node-pty && electron-rebuild -f -w kos-native",
+    "prod": "npm run typecheck && electron-vite build && electron-builder --mac --dir && pkill -x kOS 2>/dev/null; sleep 0.5 && rm -rf /Applications/kOS.app && cp -R dist/mac-$(uname -m)/kOS.app /Applications/kOS.app && open /Applications/kOS.app",
     "rebuild": "electron-rebuild -f -w node-pty && electron-rebuild -f -w kos-native",
     "start": "electron-vite preview",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",

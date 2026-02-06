@@ -27,7 +27,8 @@ export interface Profile {
 }
 
 export const DEFAULT_PROFILE_ID = "work";
-export const DEFAULT_GATEWAY_URL = "ws://localhost:19001";
+export const DEFAULT_GATEWAY_PORT = import.meta.env.DEV ? 19001 : 18789;
+export const DEFAULT_GATEWAY_URL = `ws://localhost:${DEFAULT_GATEWAY_PORT}`;
 
 export function createDefaultProfile(): Profile {
   const now = Date.now();
