@@ -224,22 +224,23 @@ html.liquid-glass {
   --glass-chrome-tint: 0.06;
   --glass-sidebar-tint: 0.08;
   --glass-border-opacity: 0.5;
-  --glass-chrome-bg: rgba(128, 128, 128, var(--glass-chrome-tint));
-  --glass-sidebar-bg: rgba(128, 128, 128, var(--glass-sidebar-tint));
+  /* Light mode: white tint → frosted/milky look over glass */
+  --glass-chrome-bg: rgba(255, 255, 255, var(--glass-chrome-tint));
+  --glass-sidebar-bg: rgba(255, 255, 255, var(--glass-sidebar-tint));
   --glass-chrome-opacity: 0;
 }
 
 .dark.liquid-glass {
+  /* Dark mode: black tint → smoky look over glass (doubled intensity) */
   --glass-chrome-bg: rgba(0, 0, 0, calc(var(--glass-chrome-tint) * 2));
   --glass-sidebar-bg: rgba(0, 0, 0, calc(var(--glass-sidebar-tint) * 2));
 }
 
-html {
-  /* Near-invisible bg prevents Electron click-through on transparent windows */
-  background: rgba(0, 0, 0, 0.005) !important;
-}
-
+html,
 body {
+  /* Both must be transparent for liquid glass to show through.
+     Opaque UI elements (sidebar, panels, status bar) provide the
+     native hit-test surface — clicks land on them, not the glass view. */
   background: transparent !important;
 }
 

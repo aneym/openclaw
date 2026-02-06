@@ -154,9 +154,17 @@ export const MessageGroup = memo(function MessageGroup({
     return [syntheticMessage];
   }, [toolParts, messages]);
 
+  // Safety-net: strip any residual <think> tags from stream text
+  const displayStreamText = useMemo(() => {
+    if (!streamText) return "";
+    return streamText
+      .replace(/<\s*think(?:ing)?\s*>[\s\S]*?(<\s*\/\s*think(?:ing)?\s*>|$)/gi, "")
+      .trim();
+  }, [streamText]);
+
   if (messages.length === 0) return null;
 
-  const hasTextContent = textParts.length > 0 || (isStreaming && streamText);
+  const hasTextContent = textParts.length > 0 || (isStreaming && displayStreamText);
 
   return (
     <div className={cn("flex flex-col gap-4 group", role === "user" ? "items-end" : "items-start")}>
@@ -191,9 +199,11 @@ export const MessageGroup = memo(function MessageGroup({
             <TextPart key={`text-${idx}`} text={tp.text} isStreaming={isStreaming && tp.isLast} />
           ))}
           {/* Streaming text */}
-          {isStreaming && streamText && <span className="whitespace-pre-wrap">{streamText}</span>}
+          {isStreaming && displayStreamText && (
+            <span className="whitespace-pre-wrap">{displayStreamText}</span>
+          )}
           {/* Streaming indicator when no content yet */}
-          {isStreaming && !streamText && textParts.length === 0 && (
+          {isStreaming && !displayStreamText && textParts.length === 0 && (
             <StreamingIndicator className="opacity-60" />
           )}
         </div>

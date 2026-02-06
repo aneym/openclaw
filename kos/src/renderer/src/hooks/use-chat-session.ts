@@ -188,22 +188,27 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
     };
   }, [store, sessionKey, chatId, subscribe]);
 
-  // Load history when connected (and on reconnect)
+  // Load history when connected (and on reconnect with status catch-up)
   useEffect(() => {
     if (!store || !sessionKey) return;
 
     const state = store.getState();
-    const justConnected = connected && !wasConnectedRef.current;
+    const justReconnected = connected && !wasConnectedRef.current;
 
     if (connected) {
-      // Load history when connected
-      klog.session("useChatSession: connected, loading history", { sessionKey });
-      void state.loadHistory();
-
-      // If we just reconnected, retry pending abort
-      if (justConnected && state.pendingAbort) {
-        klog.session("useChatSession: reconnected with pending abort, retrying");
-        void state.abort();
+      if (justReconnected) {
+        // Reconnect: query active run FIRST (web-ui pattern), then load history
+        klog.session("useChatSession: reconnected, querying chat status first", { sessionKey });
+        void state.queryChatStatus().then(() => {
+          void state.loadHistory();
+          if (state.pendingAbort && store.getState().runId) {
+            void state.abort();
+          }
+        });
+      } else {
+        // Initial connect
+        klog.session("useChatSession: connected, loading history", { sessionKey });
+        void state.loadHistory();
       }
     }
 
@@ -244,6 +249,15 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
   );
   const queue = useStoreSelector(store, selectQueue, emptyState.queue);
   const sending = useStoreSelector(store, selectSending, emptyState.sending);
+
+  // Poll history every 3s while a run is active (picks up tool results mid-stream)
+  useEffect(() => {
+    if (!store || !runId || !connected) return;
+    const interval = setInterval(() => {
+      if (store.getState().runId) void store.getState().loadHistory();
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [store, runId, connected]);
 
   // Stable action references (get from store state)
   const actions = useMemo(() => {

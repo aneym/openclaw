@@ -13,7 +13,7 @@ import { usePanelStore } from "../../stores/panel-store";
 import { USER_PANEL_TYPES, PANEL_TYPE_LABELS } from "../../types/panel";
 import { Button } from "../ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip";
-import { PanelTypeIcon } from "./PanelToolbar";
+import { PanelTypeIcon } from "./PanelTabBar";
 
 interface PanelTypeSwitcherProps {
   workspaceId: string;

@@ -11,10 +11,14 @@ import {
   useSensor,
   useSensors,
   PointerSensor,
+  pointerWithin,
+  rectIntersection,
   type DragStartEvent,
   type DragEndEvent,
   type DragOverEvent,
+  type CollisionDetection,
 } from "@dnd-kit/core";
+import { hasSortableData } from "@dnd-kit/sortable";
 import {
   MessageSquare,
   Globe,
@@ -81,6 +85,51 @@ export function usePanelDnd() {
   return useContext(PanelDndContext);
 }
 
+/**
+ * Custom collision detection that separates sortable tab reorder from panel drops.
+ *
+ * Problem: SortableContext creates droppable targets for each tab. These compete
+ * with DroppablePane in default collision detection, causing wrong rects and
+ * flickering zones.
+ *
+ * Solution: Same-container sortable items get priority (via pointerWithin for
+ * precision). Everything else (panels, gutters) uses rectIntersection. Cross-
+ * container sortable items are excluded entirely.
+ */
+const panelCollisionDetection: CollisionDetection = (args) => {
+  const { active, droppableContainers } = args;
+
+  // Check if active item is sortable (tab drag from SortableContext)
+  const activeSortableContainerId = active.data.current?.sortable?.containerId;
+
+  // Same-container sortable items (for tab reorder)
+  const sameContainerSortable = activeSortableContainerId
+    ? droppableContainers.filter(
+        (c) => c.data.current?.sortable?.containerId === activeSortableContainerId,
+      )
+    : [];
+
+  // Non-sortable items (DroppablePanes, gutters)
+  const nonSortable = droppableContainers.filter((c) => !c.data.current?.sortable);
+
+  // Prefer same-container sortable when pointer is directly over a tab
+  if (sameContainerSortable.length > 0) {
+    const sortableCollisions = pointerWithin({
+      ...args,
+      droppableContainers: sameContainerSortable,
+    });
+    if (sortableCollisions.length > 0) {
+      return sortableCollisions;
+    }
+  }
+
+  // Fall back to panels and gutters
+  return rectIntersection({
+    ...args,
+    droppableContainers: nonSortable,
+  });
+};
+
 export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProps) {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [activeDragData, setActiveDragData] = useState<DragData | null>(null);
@@ -101,6 +150,8 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
   const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
   const movePanelBeside = usePanelStore((s) => s.movePanelBeside);
   const swapPanelContents = usePanelStore((s) => s.swapPanelContents);
+  const detachTab = usePanelStore((s) => s.detachTab);
+  const moveTab = usePanelStore((s) => s.moveTab);
 
   // Chat store
   const chatsMap = useChatStore((s) => s.chats);
@@ -144,12 +195,15 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       if (data) {
         setActiveDragData(data);
 
-        // Track source panel for fade effect
-        if (data.type === "pane") {
-          setSourcePanelId(data.panelId);
+        // Track source panel type (needed for drop handler)
+        if (data.type === "pane" || data.type === "tab") {
           const layout = getLayout(workspaceId);
           const panel = layout.panels.get(data.panelId);
           setSourcePanelType(panel?.type || null);
+          // Only fade the panel when dragging the whole pane, not individual tabs
+          if (data.type === "pane") {
+            setSourcePanelId(data.panelId);
+          }
         }
       }
     },
@@ -171,11 +225,14 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       // Check if hovering over a gutter
       const gutterData = over.data.current as GutterDropData | undefined;
       if (gutterData?.type === "gutter") {
-        // Can't drop a pane into a gutter adjacent to itself
+        // Can't drop a pane/tab into a gutter adjacent to its source panel
+        const sourcePId =
+          activeDragData.type === "pane" || activeDragData.type === "tab"
+            ? activeDragData.panelId
+            : null;
         if (
-          activeDragData.type === "pane" &&
-          (activeDragData.panelId === gutterData.beforePanelId ||
-            activeDragData.panelId === gutterData.afterPanelId)
+          sourcePId &&
+          (sourcePId === gutterData.beforePanelId || sourcePId === gutterData.afterPanelId)
         ) {
           setOverGutterId(null);
           setGutterDropData(null);
@@ -194,6 +251,14 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       // Clear gutter state when over a panel
       setOverGutterId(null);
       setGutterDropData(null);
+
+      // If hovering over a sortable tab, clear panel drop zone (reorder handled in dragEnd).
+      // Custom collision detection guarantees this is same-container only.
+      if (over.data.current?.sortable) {
+        setOverPanelId(null);
+        setDropZone(null);
+        return;
+      }
 
       // Get the droppable panel ID
       const panelId = over.data.current?.panelId as string | undefined;
@@ -239,18 +304,62 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
-      const { over } = event;
+      const { active, over } = event;
+
+      // Handle sortable tab reorder within the same panel
+      if (
+        over &&
+        activeDragData?.type === "tab" &&
+        hasSortableData(active) &&
+        hasSortableData(over)
+      ) {
+        const activeSort = active.data.current.sortable;
+        const overSort = over.data.current.sortable;
+        // Same container = same panel tab bar → reorder
+        if (
+          activeSort.containerId === overSort.containerId &&
+          activeSort.index !== overSort.index
+        ) {
+          // Extract panelId from the drag data
+          moveTab(workspaceId, activeDragData.panelId, activeSort.index, overSort.index);
+          // Reset and return — don't fall through to split/swap logic
+          setActiveId(null);
+          setActiveDragData(null);
+          setOverPanelId(null);
+          setDropZone(null);
+          setOverGutterId(null);
+          setGutterDropData(null);
+          setSourcePanelId(null);
+          setSourcePanelType(null);
+          zoneStateRef.current = null;
+          return;
+        }
+      }
 
       // Handle gutter drops
       if (gutterDropData && activeDragData) {
-        // Insert panel at gutter position
         if (activeDragData.type === "thread") {
-          // Thread drop: split the "after" panel and insert before it
           splitPanel(workspaceId, gutterDropData.afterPanelId, gutterDropData.direction, "chat", {
             chatId: activeDragData.chatId,
           });
+        } else if (activeDragData.type === "tab") {
+          // Tab gutter drop: create new panel with tab content, detach from source
+          const tabPanelType = sourcePanelType || "chat";
+          const tabData: Record<string, unknown> = {};
+          if (tabPanelType === "chat") {
+            tabData.chatId = activeDragData.contentId;
+          } else {
+            tabData.contentId = activeDragData.contentId;
+          }
+          splitPanel(
+            workspaceId,
+            gutterDropData.afterPanelId,
+            gutterDropData.direction,
+            tabPanelType,
+            tabData,
+          );
+          detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
         } else if (activeDragData.type === "pane") {
-          // Pane drag: move pane to gutter position
           movePanelBeside(
             workspaceId,
             activeDragData.panelId,
@@ -260,7 +369,6 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
           );
         }
       } else if (over && activeDragData && overPanelId && dropZone) {
-        // Regular panel drops
         const action = zoneToAction(dropZone, activeDragData.type);
 
         if (action) {
@@ -269,6 +377,17 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
               splitPanel(workspaceId, overPanelId, action.direction, "chat", {
                 chatId: activeDragData.chatId,
               });
+            } else if (activeDragData.type === "tab") {
+              // Tab edge drop: create new panel with tab content
+              const tabPanelType = sourcePanelType || "chat";
+              const tabData: Record<string, unknown> = {};
+              if (tabPanelType === "chat") {
+                tabData.chatId = activeDragData.contentId;
+              } else {
+                tabData.contentId = activeDragData.contentId;
+              }
+              splitPanel(workspaceId, overPanelId, action.direction, tabPanelType, tabData);
+              detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
             } else {
               movePanelBeside(
                 workspaceId,
@@ -281,6 +400,12 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
           } else if (action.type === "replace") {
             if (activeDragData.type === "thread") {
               openThreadInPane(workspaceId, overPanelId, activeDragData.chatId);
+            } else if (activeDragData.type === "tab" && activeDragData.contentId) {
+              // Tab center drop only works for chat tabs (openThreadInPane is chat-specific)
+              if (sourcePanelType === "chat") {
+                openThreadInPane(workspaceId, overPanelId, activeDragData.contentId);
+                detachTab(workspaceId, activeDragData.panelId, activeDragData.tabId);
+              }
             }
           } else if (action.type === "swap") {
             if (activeDragData.type === "pane") {
@@ -307,10 +432,13 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
       dropZone,
       gutterDropData,
       workspaceId,
+      sourcePanelType,
       splitPanel,
       openThreadInPane,
       movePanelBeside,
       swapPanelContents,
+      detachTab,
+      moveTab,
     ],
   );
 
@@ -329,6 +457,7 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
   return (
     <DndContext
       sensors={sensors}
+      collisionDetection={panelCollisionDetection}
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
@@ -387,6 +516,26 @@ const PANEL_TYPE_LABELS: Record<PanelType, string> = {
   empty: "Empty",
 };
 
+// Small pill overlay for thread/tab drags
+function PillOverlay({ icon: Icon, label }: { icon: typeof MessageSquare; label: string }) {
+  return (
+    <motion.div
+      initial={{ scale: 0.95, opacity: 0, y: 5 }}
+      animate={{ scale: 1, opacity: 1, y: 0 }}
+      exit={{ scale: 0.95, opacity: 0 }}
+      transition={{ type: "spring", stiffness: 500, damping: 30 }}
+      className="flex items-center gap-2 px-2.5 py-1.5 bg-background/95 backdrop-blur-sm border border-border rounded-md shadow-xl max-w-48"
+      style={{
+        boxShadow:
+          "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.05)",
+      }}
+    >
+      <Icon className="h-3.5 w-3.5 text-primary shrink-0" />
+      <span className="text-xs font-medium truncate">{label}</span>
+    </motion.div>
+  );
+}
+
 // Animated drag overlay content
 function DragOverlayContent({
   dragData,
@@ -397,34 +546,28 @@ function DragOverlayContent({
   panelType: PanelType | null;
   chatsMap: Map<string, Chat>;
 }) {
+  // Thread drag: small pill with chat title
   if (dragData.type === "thread") {
     const chat = chatsMap.get(dragData.chatId);
-    return (
-      <motion.div
-        initial={{ scale: 0.95, opacity: 0, y: 5 }}
-        animate={{ scale: 1, opacity: 1, y: 0 }}
-        exit={{ scale: 0.95, opacity: 0 }}
-        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-        className="flex items-center gap-2 px-2.5 py-1.5 bg-background/95 backdrop-blur-sm border border-border rounded-md shadow-xl max-w-48"
-        style={{
-          boxShadow:
-            "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1), 0 0 0 1px rgb(0 0 0 / 0.05)",
-        }}
-      >
-        <MessageSquare className="h-3.5 w-3.5 text-primary shrink-0" />
-        <span className="text-xs font-medium truncate">
-          {chat?.title || dragData.title || "Chat"}
-        </span>
-      </motion.div>
-    );
+    return <PillOverlay icon={MessageSquare} label={chat?.title || dragData.title || "Chat"} />;
   }
 
-  // Pane drag overlay - miniaturized panel preview
+  // Tab drag: small pill with tab content title
+  if (dragData.type === "tab") {
+    const type = panelType || "chat";
+    const Icon = PANEL_TYPE_ICONS[type];
+    let label = PANEL_TYPE_LABELS[type];
+    if (dragData.contentId) {
+      const chat = chatsMap.get(dragData.contentId);
+      if (chat?.title) label = chat.title;
+    }
+    return <PillOverlay icon={Icon} label={label} />;
+  }
+
+  // Pane drag: miniaturized panel preview
   const type = panelType || "chat";
   const Icon = PANEL_TYPE_ICONS[type];
-  const label = PANEL_TYPE_LABELS[type];
-
-  const title = label;
+  const title = PANEL_TYPE_LABELS[type];
 
   return (
     <motion.div

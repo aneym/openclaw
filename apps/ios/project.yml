@@ -1,6 +1,6 @@
 name: OpenClaw
 options:
-  bundleIdPrefix: ai.openclaw
+  bundleIdPrefix: com.kinetic
   deploymentTarget:
     iOS: "18.0"
   xcodeVersion: "16.0"
@@ -69,10 +69,10 @@ targets:
     settings:
       base:
         CODE_SIGN_IDENTITY: "Apple Development"
-        CODE_SIGN_STYLE: Manual
-        DEVELOPMENT_TEAM: Y5PE65HELJ
-        PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios
-        PROVISIONING_PROFILE_SPECIFIER: "ai.openclaw.ios Development"
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: W7H3TL2ZU4
+        PRODUCT_BUNDLE_IDENTIFIER: com.kinetic.openclaw
+        PROVISIONING_PROFILE_SPECIFIER: ""
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         ENABLE_APPINTENTS_METADATA: NO
@@ -81,8 +81,9 @@ targets:
       properties:
         CFBundleDisplayName: OpenClaw
         CFBundleIconName: AppIcon
-        CFBundleShortVersionString: "2026.2.4"
-        CFBundleVersion: "20260202"
+        CFBundleShortVersionString: "2026.2.3"
+        CFBundleVersion: "20260206"
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen: {}
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
@@ -90,6 +91,7 @@ targets:
           - audio
         NSLocalNetworkUsageDescription: OpenClaw discovers and connects to your OpenClaw gateway on the local network.
         NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
           NSAllowsArbitraryLoadsInWebContent: true
           NSAllowsLocalNetworking: true
         NSBonjourServices:
@@ -122,7 +124,7 @@ targets:
       - sdk: AppIntents.framework
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: ai.openclaw.ios.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.kinetic.openclaw.tests
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/OpenClaw.app/OpenClaw"
@@ -131,5 +133,5 @@ targets:
       path: Tests/Info.plist
       properties:
         CFBundleDisplayName: OpenClawTests
-        CFBundleShortVersionString: "2026.2.4"
-        CFBundleVersion: "20260202"
+        CFBundleShortVersionString: "2026.2.3"
+        CFBundleVersion: "20260206"

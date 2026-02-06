@@ -1,3 +1,4 @@
+import { arrayMove } from "@dnd-kit/sortable";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type {
@@ -183,10 +184,15 @@ interface PanelStoreState {
   // Tab management
   addTab: (workspaceId: string, panelId: string, tab?: Partial<PanelTab>) => void;
   closeTab: (workspaceId: string, panelId: string, tabId: string) => void;
+  /** Remove tab without killing PTY (for DnD moves). Closes panel if last tab. */
+  detachTab: (workspaceId: string, panelId: string, tabId: string) => void;
   setActiveTab: (workspaceId: string, panelId: string, tabId: string) => void;
   nextTab: (workspaceId: string, panelId: string) => void;
   prevTab: (workspaceId: string, panelId: string) => void;
   getFocusedPanel: (workspaceId: string) => PanelState | null;
+
+  // Tab reordering (for sortable drag-and-drop)
+  moveTab: (workspaceId: string, panelId: string, fromIndex: number, toIndex: number) => void;
 
   // Panel type switching (for empty panels)
   changePanelType: (workspaceId: string, panelId: string, newType: PanelType) => void;
@@ -878,6 +884,43 @@ export const usePanelStore = create<PanelStoreState>()(
         });
       },
 
+      // Remove a tab without killing its PTY (for DnD moves). Closes panel if last tab.
+      detachTab: (workspaceId: string, panelId: string, tabId: string) => {
+        const layout = get().getLayout(workspaceId);
+        const panel = layout.panels.get(panelId);
+        if (!panel || !panel.tabs) return;
+
+        const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
+        if (tabIndex === -1) return;
+
+        // If last tab, close the panel
+        if (panel.tabs.length === 1) {
+          get().closePanel(workspaceId, panelId);
+          return;
+        }
+
+        const newTabs = panel.tabs.filter((t) => t.id !== tabId);
+
+        // If detaching the active tab, switch to adjacent tab
+        let newActiveTabId = panel.activeTabId;
+        if (panel.activeTabId === tabId) {
+          const newIndex = Math.min(tabIndex, newTabs.length - 1);
+          newActiveTabId = newTabs[newIndex]?.id;
+        }
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, {
+          ...panel,
+          tabs: newTabs,
+          activeTabId: newActiveTabId,
+        });
+
+        get().setLayout(workspaceId, {
+          ...layout,
+          panels: newPanels,
+        });
+      },
+
       // Set the active tab within a panel
       setActiveTab: (workspaceId: string, panelId: string, tabId: string) => {
         const layout = get().getLayout(workspaceId);
@@ -928,6 +971,26 @@ export const usePanelStore = create<PanelStoreState>()(
         const layout = get().layouts.get(workspaceId);
         if (!layout) return null;
         return layout.panels.get(focusedId) || null;
+      },
+
+      // Reorder a tab within a panel (for sortable drag-and-drop)
+      moveTab: (workspaceId: string, panelId: string, fromIndex: number, toIndex: number) => {
+        if (fromIndex === toIndex) return;
+
+        const layout = get().getLayout(workspaceId);
+        const panel = layout.panels.get(panelId);
+        if (!panel || !panel.tabs) return;
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(panelId, {
+          ...panel,
+          tabs: arrayMove(panel.tabs, fromIndex, toIndex),
+        });
+
+        get().setLayout(workspaceId, {
+          ...layout,
+          panels: newPanels,
+        });
       },
 
       // Change a panel's type (for switching empty panels before content is assigned)

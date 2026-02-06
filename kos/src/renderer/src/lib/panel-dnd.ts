@@ -6,7 +6,7 @@
  */
 
 // Drag data types
-export type DragItemType = "pane" | "thread";
+export type DragItemType = "pane" | "thread" | "tab";
 
 export interface PaneDragData {
   type: "pane";
@@ -20,7 +20,15 @@ export interface ThreadDragData {
   title: string;
 }
 
-export type DragData = PaneDragData | ThreadDragData;
+export interface TabDragData {
+  type: "tab";
+  panelId: string;
+  tabId: string;
+  contentId?: string;
+  workspaceId: string;
+}
+
+export type DragData = PaneDragData | ThreadDragData | TabDragData;
 
 // Drop zones - where in a panel the drop can occur
 export type DropZone = "left" | "right" | "top" | "bottom" | "center" | null;
@@ -175,7 +183,7 @@ export function zoneToAction(zone: DropZone, dragType: DragItemType): DropAction
     case "bottom":
       return { type: "split", direction: "vertical", position: "after" };
     case "center":
-      // Pane drag to center = swap contents, Thread drag = replace
+      // Pane drag to center = swap contents, Thread/tab drag = replace
       return dragType === "pane" ? { type: "swap" } : { type: "replace" };
   }
 }
@@ -191,6 +199,11 @@ export function isValidDrop(dragData: DragData, targetPanelId: string, zone: Dro
     return false;
   }
 
+  // Tab dropped on its own panel is always a no-op (any zone)
+  if (dragData.type === "tab" && dragData.panelId === targetPanelId) {
+    return false;
+  }
+
   return true;
 }
 
@@ -199,13 +212,19 @@ export function createDragId(data: DragData): string {
   if (data.type === "pane") {
     return `pane:${data.panelId}`;
   }
+  if (data.type === "tab") {
+    return `tab:${data.panelId}:${data.tabId}`;
+  }
   return `thread:${data.chatId}`;
 }
 
 export function parseDragId(id: string): { type: DragItemType; id: string } | null {
-  const [type, itemId] = id.split(":");
-  if (type === "pane" || type === "thread") {
-    return { type, id: itemId };
+  const parts = id.split(":");
+  if (parts[0] === "pane" || parts[0] === "thread") {
+    return { type: parts[0], id: parts[1] };
+  }
+  if (parts[0] === "tab") {
+    return { type: "tab", id: parts[2] }; // tab:panelId:tabId
   }
   return null;
 }

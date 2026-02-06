@@ -116,6 +116,9 @@ export interface ChatSessionState {
 
   /** Flush queue — send next message if not streaming */
   flushQueue: () => Promise<void>;
+
+  /** Query gateway for active run status (reconnect catch-up) */
+  queryChatStatus: () => Promise<void>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -196,6 +199,23 @@ function extractText(message: unknown): string | null {
   }
 
   return null;
+}
+
+/**
+ * Separate `<think>` / `<thinking>` blocks from visible text.
+ * Returns cleaned text and accumulated reasoning content.
+ */
+function separateThinkingFromText(text: string): { cleanText: string; reasoning: string } {
+  const thinkRegex = /<\s*think(?:ing)?\s*>([\s\S]*?)<\s*\/\s*think(?:ing)?\s*>/gi;
+  const parts: string[] = [];
+  const clean = text.replace(thinkRegex, (_, content) => {
+    const t = (content as string).trim();
+    if (t) parts.push(t);
+    return "";
+  });
+  // Strip unclosed opening tag at end (mid-stream)
+  const cleanText = clean.replace(/<\s*think(?:ing)?\s*>[\s\S]*$/i, "").trim();
+  return { cleanText, reasoning: parts.join("\n") };
 }
 
 /**
@@ -326,14 +346,19 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           });
         }
 
-        // Update cumulative stream text (length check for out-of-order delivery)
+        // Update cumulative stream text, extracting <think> tags into reasoning
         const nextText = extractText(payload.message);
         if (typeof nextText === "string") {
+          const { cleanText, reasoning } = separateThinkingFromText(nextText);
           set((s) => {
-            if (!s.streamText || nextText.length >= s.streamText.length) {
-              return { streamText: nextText };
+            const updates: Partial<ChatSessionState> = {};
+            if (!s.streamText || cleanText.length >= s.streamText.length) {
+              updates.streamText = cleanText;
             }
-            return s;
+            if (reasoning && (!s.streamReasoning || reasoning.length >= s.streamReasoning.length)) {
+              updates.streamReasoning = reasoning;
+            }
+            return Object.keys(updates).length > 0 ? updates : s;
           });
         }
       } else if (
@@ -622,6 +647,28 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
       set((s) => ({
         messages: dedupeAppend(s.messages, message),
       }));
+    },
+
+    queryChatStatus: async () => {
+      const { sessionKey, _request } = get();
+      if (!sessionKey || !_request) return;
+      try {
+        const res = await _request<{
+          activeRun: { runId: string; streamText: string | null } | null;
+        }>("chat.status", { sessionKey });
+        if (res?.activeRun?.runId) {
+          const raw = res.activeRun.streamText ?? "";
+          const { cleanText, reasoning } = separateThinkingFromText(raw);
+          set({
+            runId: res.activeRun.runId,
+            streamText: cleanText,
+            streamReasoning: reasoning,
+            streamStartedAt: Date.now(),
+          });
+        }
+      } catch {
+        // Older gateways may not support chat.status — graceful degradation
+      }
     },
 
     flushQueue: async () => {

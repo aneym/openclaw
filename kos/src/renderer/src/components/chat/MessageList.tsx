@@ -177,11 +177,10 @@ export function MessageList({
           <div className="space-y-4 max-w-3xl mx-auto w-full">
             {messageGroups.map((group, idx) => {
               const isLastGroup = idx === messageGroups.length - 1;
-              // Show streaming on last assistant group when actively streaming OR when we have
-              // pending stream text (between "final" event and history reload completing)
-              const hasStreamContent = isStreaming || !!streamText;
-              const shouldShowStreaming =
-                isLastGroup && hasStreamContent && group.role === "assistant";
+              // Show streaming on last assistant group ONLY when actively streaming
+              // (runId is non-null). Using !!streamText as a fallback caused duplicate
+              // rendering between final event and history reload.
+              const shouldShowStreaming = isLastGroup && isStreaming && group.role === "assistant";
               // Show timestamp only at turn boundaries (last group before role change or end)
               const nextGroup = messageGroups[idx + 1];
               const isEndOfTurn = !nextGroup || nextGroup.role !== group.role;
@@ -207,8 +206,8 @@ export function MessageList({
               </div>
             )}
 
-            {/* Show streaming content when assistant is responding (or pending clear) */}
-            {(isStreaming || streamText) &&
+            {/* Show streaming content when no assistant group exists yet */}
+            {isStreaming &&
               messageGroups.length > 0 &&
               messageGroups[messageGroups.length - 1].role !== "assistant" && (
                 <div className="flex flex-col gap-2 items-start">

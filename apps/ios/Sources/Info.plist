@@ -21,9 +21,13 @@
 	<key>CFBundleShortVersionString</key>
 	<string>2026.2.4</string>
 	<key>CFBundleVersion</key>
-	<string>20260202</string>
+	<string>20260206</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<key>NSAllowsArbitraryLoads</key>
+		<true/>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
 		<true/>
 		<key>NSAllowsLocalNetworking</key>

@@ -1847,6 +1847,121 @@ function createMenu() {
         { role: "togglefullscreen" },
       ],
     },
+    // Debug menu
+    {
+      label: "Debug",
+      submenu: [
+        {
+          label: "Diagnose Frozen UI",
+          accelerator: "CmdOrCtrl+Shift+F12",
+          click: () => {
+            const win = electron.BrowserWindow.getFocusedWindow();
+            if (!win) return;
+            win.webContents
+              .executeJavaScript(
+                `(function() {
+  const lines = [];
+  const vw = window.innerWidth, vh = window.innerHeight;
+  lines.push('=== kOS UI Diagnostic ===');
+  lines.push('viewport: ' + vw + 'x' + vh);
+
+  // Check what element is at various points
+  const points = [
+    ['center', vw/2, vh/2],
+    ['top-left', 100, 100],
+    ['sidebar', 50, vh/2],
+    ['bottom-right', vw-100, vh-100],
+  ];
+  lines.push('');
+  lines.push('--- elementFromPoint ---');
+  for (const [label, x, y] of points) {
+    const el = document.elementFromPoint(x, y);
+    if (el) {
+      const tag = el.tagName.toLowerCase();
+      const id = el.id ? '#' + el.id : '';
+      const cls = el.className && typeof el.className === 'string'
+        ? '.' + el.className.split(' ').slice(0,3).join('.')
+        : '';
+      const pe = getComputedStyle(el).pointerEvents;
+      const z = getComputedStyle(el).zIndex;
+      lines.push(label + ' (' + x + ',' + y + '): <' + tag + id + cls + '> pointer-events=' + pe + ' z-index=' + z);
+    } else {
+      lines.push(label + ': null');
+    }
+  }
+
+  // Find all fixed/absolute positioned elements that cover most of viewport
+  lines.push('');
+  lines.push('--- overlay candidates (fixed/absolute, large) ---');
+  const all = document.querySelectorAll('*');
+  let overlayCount = 0;
+  for (const el of all) {
+    const style = getComputedStyle(el);
+    if (style.position !== 'fixed' && style.position !== 'absolute') continue;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < vw * 0.5 || rect.height < vh * 0.5) continue;
+    overlayCount++;
+    const tag = el.tagName.toLowerCase();
+    const id = el.id ? '#' + el.id : '';
+    const cls = el.className && typeof el.className === 'string'
+      ? '.' + el.className.split(' ').slice(0,3).join('.')
+      : '';
+    lines.push('<' + tag + id + cls + '> pos=' + style.position + ' pe=' + style.pointerEvents + ' z=' + style.zIndex + ' opacity=' + style.opacity + ' rect=' + Math.round(rect.width) + 'x' + Math.round(rect.height));
+  }
+  if (overlayCount === 0) lines.push('(none found)');
+
+  // Check for @dnd-kit stuck state
+  lines.push('');
+  lines.push('--- dnd-kit state ---');
+  const dndOverlay = document.querySelector('[style*="position: fixed"][role="presentation"]');
+  if (dndOverlay) {
+    const style = getComputedStyle(dndOverlay);
+    lines.push('DragOverlay found: pe=' + style.pointerEvents + ' z=' + style.zIndex + ' display=' + style.display + ' children=' + dndOverlay.childElementCount);
+  } else {
+    lines.push('No DragOverlay element found');
+  }
+
+  // Check for any element with data-dnd-kit attributes
+  const dndEls = document.querySelectorAll('[data-dnd-kit-draggable], [data-dnd-kit-droppable]');
+  lines.push('dnd-kit draggables: ' + document.querySelectorAll('[data-dnd-kit-draggable]').length);
+  lines.push('dnd-kit droppables: ' + document.querySelectorAll('[data-dnd-kit-droppable]').length);
+
+  // Check dialog/modal elements
+  const dialogs = document.querySelectorAll('dialog, [role="dialog"], [data-state="open"]');
+  if (dialogs.length > 0) {
+    lines.push('');
+    lines.push('--- open dialogs/modals ---');
+    for (const d of dialogs) {
+      const tag = d.tagName.toLowerCase();
+      const cls = d.className && typeof d.className === 'string'
+        ? '.' + d.className.split(' ').slice(0,2).join('.')
+        : '';
+      const style = getComputedStyle(d);
+      lines.push('<' + tag + cls + '> display=' + style.display + ' pe=' + style.pointerEvents);
+    }
+  }
+
+  const result = lines.join('\\n');
+  navigator.clipboard.writeText(result);
+  return result;
+})()`,
+              )
+              .then((result) => {
+                console.log("[debug-diagnostic]", result);
+                electron.dialog.showMessageBox(win, {
+                  type: "info",
+                  title: "UI Diagnostic",
+                  message: "Diagnostic copied to clipboard",
+                  detail: String(result),
+                });
+              })
+              .catch((err) => {
+                console.error("[debug-diagnostic] Failed:", err);
+              });
+          },
+        },
+      ],
+    },
     // Window menu
     {
       label: "Window",

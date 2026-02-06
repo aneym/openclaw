@@ -62,12 +62,18 @@ const springConfig = { type: "spring", stiffness: 400, damping: 25 } as const;
  * For edge zones: thin 2px insertion line at the actual insertion edge + 50% split preview
  * For center zone: dashed border with "Swap" (pane) or "Replace" (thread) label
  */
-function DropZoneOverlay({ zone, dragType }: { zone: DropZone; dragType?: "pane" | "thread" }) {
+function DropZoneOverlay({
+  zone,
+  dragType,
+}: {
+  zone: DropZone;
+  dragType?: "pane" | "thread" | "tab";
+}) {
   if (!zone) return null;
 
   // Center zone has different treatment - more visible for replace/swap action
   if (zone === "center") {
-    const centerLabel = dragType === "pane" ? "Swap" : "Replace";
+    const centerLabel = dragType === "pane" ? "Swap" : dragType === "tab" ? "Move Here" : "Replace";
     return (
       <motion.div
         key="center"

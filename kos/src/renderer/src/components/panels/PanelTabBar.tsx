@@ -1,4 +1,6 @@
 import { useDraggable } from "@dnd-kit/core";
+import { SortableContext, useSortable, horizontalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   X,
   Plus,
@@ -17,7 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { memo, useMemo, useCallback } from "react";
-import type { PaneDragData } from "../../lib/panel-dnd";
+import type { PaneDragData, TabDragData } from "../../lib/panel-dnd";
 import type { Chat, PanelType, PanelTab } from "../../types";
 import { useChatSession } from "../../hooks/use-chat-session";
 import { useSessionActions } from "../../hooks/use-session-actions";
@@ -158,20 +160,27 @@ export const PanelTabBar = memo(function PanelTabBar({
             <TooltipContent side="bottom">Drag to rearrange</TooltipContent>
           </Tooltip>
 
-          {/* Tabs */}
+          {/* Tabs — sortable within the panel, draggable across panels */}
           <div className="flex items-center flex-1 min-w-0 overflow-x-auto scrollbar-none">
-            {tabs.map((tab, index) => (
-              <TabButton
-                key={tab.id}
-                tab={tab}
-                index={index}
-                isActive={tab.id === activeTabId}
-                label={getTabLabel(tab, index)}
-                canClose={tabs.length > 1}
-                onSelect={() => handleSelectTab(tab.id)}
-                onClose={(e) => handleCloseTab(tab.id, e)}
-              />
-            ))}
+            <SortableContext
+              id={panelId}
+              items={tabs.map((t) => `tab-${panelId}-${t.id}`)}
+              strategy={horizontalListSortingStrategy}
+            >
+              {tabs.map((tab, index) => (
+                <TabButton
+                  key={tab.id}
+                  tab={tab}
+                  isActive={tab.id === activeTabId}
+                  label={getTabLabel(tab, index)}
+                  canClose={tabs.length > 1}
+                  panelId={panelId}
+                  workspaceId={workspaceId}
+                  onSelect={() => handleSelectTab(tab.id)}
+                  onClose={(e) => handleCloseTab(tab.id, e)}
+                />
+              ))}
+            </SortableContext>
             {/* Add tab button */}
             <Tooltip>
               <TooltipTrigger asChild>
@@ -276,13 +285,14 @@ export const PanelTabBar = memo(function PanelTabBar({
   );
 });
 
-/** Individual tab button */
+/** Individual tab button — draggable to move tabs between panels */
 interface TabButtonProps {
   tab: PanelTab;
-  index: number;
   isActive: boolean;
   label: string;
   canClose: boolean;
+  panelId: string;
+  workspaceId: string;
   onSelect: () => void;
   onClose: (e: React.MouseEvent) => void;
 }
@@ -292,6 +302,8 @@ const TabButton = memo(function TabButton({
   isActive,
   label,
   canClose,
+  panelId,
+  workspaceId,
   onSelect,
   onClose,
 }: TabButtonProps) {
@@ -302,16 +314,45 @@ const TabButton = memo(function TabButton({
     return tabChat?.hasUnread === true;
   }, [chatsMap, tab.contentId]);
 
+  // Tab-level drag data (used by both sortable reorder and cross-panel drops)
+  const tabDragData: TabDragData = useMemo(
+    () => ({
+      type: "tab",
+      panelId,
+      tabId: tab.id,
+      contentId: tab.contentId,
+      workspaceId,
+    }),
+    [panelId, tab.id, tab.contentId, workspaceId],
+  );
+  const { attributes, listeners, setNodeRef, isDragging, transform, transition } = useSortable({
+    id: `tab-${panelId}-${tab.id}`,
+    data: tabDragData,
+  });
+
+  const sortableStyle = useMemo(
+    () => ({
+      transform: CSS.Transform.toString(transform),
+      transition,
+    }),
+    [transform, transition],
+  );
+
   return (
     <button
+      ref={setNodeRef}
+      {...listeners}
+      {...attributes}
       type="button"
       onClick={onSelect}
+      style={sortableStyle}
       className={cn(
-        "group flex items-center gap-1 px-2 h-7 text-xs font-medium border-b-2 transition-colors",
+        "group flex items-center gap-1 px-2 h-7 text-xs font-medium border-b-2 transition-colors cursor-grab",
         "hover:bg-accent/50 max-w-[150px]",
         isActive
           ? "border-primary text-foreground"
           : "border-transparent text-foreground/60 hover:text-foreground",
+        isDragging && "opacity-50 cursor-grabbing",
       )}
     >
       <span className="truncate">{label}</span>
@@ -350,7 +391,7 @@ const PANEL_ICONS: Record<PanelType, LucideIcon> = {
 };
 
 /** Renders the appropriate icon for a panel type */
-function PanelTypeIcon({ type, className }: { type: PanelType; className?: string }) {
+export function PanelTypeIcon({ type, className }: { type: PanelType; className?: string }) {
   const Icon = PANEL_ICONS[type] || HelpCircle;
   return <Icon className={className} />;
 }
