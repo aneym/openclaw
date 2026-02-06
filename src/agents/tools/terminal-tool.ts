@@ -86,8 +86,9 @@ export function createTerminalTool(): AnyAgentTool {
     description: [
       "Control terminals on connected kOS clients.",
       "Actions:",
-      "- spawn: Create a new visible terminal window (returns terminalId)",
-      "- exec: Run a command in a terminal (requires terminalId, command)",
+      "- spawn: Create a new visible terminal window (returns terminalId). Optional: label (tab name), target ('tab' or 'pane')",
+      "- exec: Run a command in a terminal with sentinel-based output capture (requires terminalId, command)",
+      "- write: Send raw text to terminal for interactive programs like vim, htop (requires terminalId, text). Newline appended automatically. Fire-and-forget.",
       "- read: Read recent output from terminal scrollback (requires terminalId)",
       "- copy: Copy terminal output to user's clipboard (requires terminalId)",
       "- close: Close a terminal (requires terminalId)",
@@ -113,7 +114,13 @@ export function createTerminalTool(): AnyAgentTool {
       switch (action) {
         case "spawn": {
           const cwd = readStringParam(params, "cwd");
-          const result = await invokeTerminalCommand(nodeTarget.nodeId, "spawn", { cwd });
+          const label = readStringParam(params, "label");
+          const target = readStringParam(params, "target");
+          const result = await invokeTerminalCommand(nodeTarget.nodeId, "spawn", {
+            cwd,
+            label,
+            target,
+          });
           return jsonResult(result);
         }
 
@@ -160,6 +167,16 @@ export function createTerminalTool(): AnyAgentTool {
 
         case "list": {
           const result = await invokeTerminalCommand(nodeTarget.nodeId, "list", {});
+          return jsonResult(result);
+        }
+
+        case "write": {
+          const terminalId = readStringParam(params, "terminalId", { required: true });
+          const text = readStringParam(params, "text", { required: true });
+          const result = await invokeTerminalCommand(nodeTarget.nodeId, "write", {
+            terminalId,
+            text,
+          });
           return jsonResult(result);
         }
 

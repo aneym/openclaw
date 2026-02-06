@@ -184,6 +184,29 @@ function broadcastChatError(params: {
 }
 
 export const chatHandlers: GatewayRequestHandlers = {
+  "chat.status": ({ params, respond, context }) => {
+    const sessionKey =
+      typeof (params as Record<string, unknown>).sessionKey === "string"
+        ? ((params as Record<string, unknown>).sessionKey as string)
+        : undefined;
+    if (!sessionKey) {
+      respond(
+        false,
+        undefined,
+        errorShape(ErrorCodes.INVALID_REQUEST, "missing required param: sessionKey"),
+      );
+      return;
+    }
+    // Find active run for this session
+    for (const [runId, entry] of context.chatAbortControllers) {
+      if (entry.sessionKey === sessionKey) {
+        const streamText = context.chatRunBuffers.get(runId) ?? null;
+        respond(true, { activeRun: { runId, streamText } });
+        return;
+      }
+    }
+    respond(true, { activeRun: null });
+  },
   "chat.history": async ({ params, respond, context }) => {
     if (!validateChatHistoryParams(params)) {
       respond(

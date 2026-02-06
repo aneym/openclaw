@@ -367,8 +367,9 @@ export function attachGatewayWsMessageHandler(params: {
         connectParams.scopes = scopes;
 
         const isControlUi = connectParams.client.id === GATEWAY_CLIENT_IDS.CONTROL_UI;
+        const isKos = connectParams.client.id === GATEWAY_CLIENT_IDS.KOS;
         const isWebchat = isWebchatConnect(connectParams);
-        if (isControlUi || isWebchat) {
+        if ((isControlUi || isWebchat) && !isKos) {
           const originCheck = checkBrowserOrigin({
             requestHost,
             origin: requestOrigin,
@@ -409,6 +410,14 @@ export function attachGatewayWsMessageHandler(params: {
           isControlUi && configSnapshot.gateway?.controlUi?.dangerouslyDisableDeviceAuth === true;
         const allowControlUiBypass = allowInsecureControlUi || disableControlUiDeviceAuth;
         const device = disableControlUiDeviceAuth ? null : deviceRaw;
+
+        logWsControl.info(
+          `[CONNECT-DEBUG] conn=${connId} client=${clientLabel} isControlUi=${isControlUi} ` +
+            `hasDevice=${!!device} hasDeviceRaw=${!!deviceRaw} isLocalClient=${isLocalClient} ` +
+            `hasToken=${hasTokenAuth} hasPassword=${hasPasswordAuth} ` +
+            `allowInsecure=${allowInsecureControlUi} disableDeviceAuth=${disableControlUiDeviceAuth} ` +
+            `allowBypass=${allowControlUiBypass}`,
+        );
 
         const authResult = await authorizeGatewayConnect({
           auth: resolvedAuth,
@@ -464,10 +473,20 @@ export function attachGatewayWsMessageHandler(params: {
           });
           close(1008, truncateCloseReason(authMessage));
         };
+        logWsControl.info(
+          `[CONNECT-DEBUG] conn=${connId} authResult.ok=${authResult.ok} authResult.reason=${authResult.reason ?? "n/a"} ` +
+            `authResult.method=${authResult.method ?? "n/a"} sharedAuthOk=${sharedAuthOk} authOk=${authOk}`,
+        );
+
         if (!device) {
           const canSkipDevice = sharedAuthOk;
+          logWsControl.info(
+            `[CONNECT-DEBUG] conn=${connId} NO DEVICE — canSkipDevice=${canSkipDevice} ` +
+              `isControlUi=${isControlUi} allowBypass=${allowControlUiBypass} ` +
+              `isLocalClient=${isLocalClient} → willReject=${isControlUi && !allowControlUiBypass && !(isLocalClient && canSkipDevice)}`,
+          );
 
-          if (isControlUi && !allowControlUiBypass) {
+          if (isControlUi && !allowControlUiBypass && !(isLocalClient && canSkipDevice)) {
             const errorMessage = "control ui requires HTTPS or localhost (secure context)";
             setHandshakeState("failed");
             setCloseCause("control-ui-insecure-auth", {
@@ -510,6 +529,9 @@ export function attachGatewayWsMessageHandler(params: {
           }
         }
         if (device) {
+          logWsControl.info(
+            `[CONNECT-DEBUG] conn=${connId} HAS DEVICE deviceId=${device.id} nonce=${device.nonce ?? "(none)"}`,
+          );
           const derivedId = deriveDeviceIdFromPublicKey(device.publicKey);
           if (!derivedId || derivedId !== device.id) {
             setHandshakeState("failed");
@@ -671,10 +693,16 @@ export function attachGatewayWsMessageHandler(params: {
           }
         }
         if (!authOk) {
+          logWsControl.info(
+            `[CONNECT-DEBUG] conn=${connId} REJECTING — authOk=false authMethod=${authMethod} reason=${authResult.reason ?? "n/a"}`,
+          );
           rejectUnauthorized();
           return;
         }
 
+        logWsControl.info(
+          `[CONNECT-DEBUG] conn=${connId} AUTH OK method=${authMethod} → proceeding to pairing check`,
+        );
         const skipPairing = allowControlUiBypass && sharedAuthOk;
         if (device && devicePublicKey && !skipPairing) {
           const requirePairing = async (reason: string, _paired?: { deviceId: string }) => {
@@ -967,6 +995,9 @@ export function attachGatewayWsMessageHandler(params: {
           stateVersion: snapshot.stateVersion.presence,
         });
 
+        logWsControl.info(
+          `[CONNECT-DEBUG] conn=${connId} SENDING hello-ok protocol=${PROTOCOL_VERSION} methods=${gatewayMethods.length} events=${events.length}`,
+        );
         send({ type: "res", id: frame.id, ok: true, payload: helloOk });
         void refreshGatewayHealthSnapshot({ probe: true }).catch((err) =>
           logHealth.error(`post-connect health refresh failed: ${formatError(err)}`),

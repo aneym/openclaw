@@ -27,7 +27,10 @@ const TERMINAL_COMMANDS = [
   "terminal.copy",
   "terminal.close",
   "terminal.list",
+  "terminal.write",
 ];
+
+const DEVTOOLS_COMMANDS = ["devtools.logs", "devtools.state", "devtools.eval", "devtools.errors"];
 
 const SYSTEM_COMMANDS = [
   "system.run",
@@ -54,6 +57,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...LOCATION_COMMANDS,
     ...SYSTEM_COMMANDS,
     ...TERMINAL_COMMANDS,
+    ...DEVTOOLS_COMMANDS,
   ],
   linux: [...SYSTEM_COMMANDS],
   windows: [...SYSTEM_COMMANDS],
@@ -65,6 +69,7 @@ const PLATFORM_DEFAULTS: Record<string, string[]> = {
     ...SMS_COMMANDS,
     ...SYSTEM_COMMANDS,
     ...TERMINAL_COMMANDS,
+    ...DEVTOOLS_COMMANDS,
   ],
 };
 
