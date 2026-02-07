@@ -71,7 +71,6 @@ export function resolveSendPolicy(params: {
     normalizeChatType(deriveChatTypeFromKey(params.sessionKey));
   const sessionKey = params.sessionKey ?? "";
 
-  let allowedMatch = false;
   for (const rule of policy.rules ?? []) {
     if (!rule) {
       continue;
@@ -91,15 +90,15 @@ export function resolveSendPolicy(params: {
     if (matchPrefix && !sessionKey.startsWith(matchPrefix)) {
       continue;
     }
+    // First matching rule wins - return immediately for both allow and deny
     if (action === "deny") {
       return "deny";
     }
-    allowedMatch = true;
-  }
-
-  if (allowedMatch) {
+    // Allow rule matched - return immediately (don't let later deny rules override)
     return "allow";
   }
+
+  // No matching rules - fall through to default
 
   const fallback = normalizeSendPolicy(policy.default);
   return fallback ?? "allow";
