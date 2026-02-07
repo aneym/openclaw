@@ -1,5 +1,6 @@
 import type { OpenClawApp } from "./app.ts";
 import type { SplitPaneLayout } from "./split-tree.ts";
+import type { AgentsListResult } from "./types.ts";
 import { refreshChat } from "./app-chat.ts";
 import {
   startLogsPolling,
@@ -8,6 +9,9 @@ import {
   stopDebugPolling,
 } from "./app-polling.ts";
 import { scheduleChatScroll, scheduleLogsScroll } from "./app-scroll.ts";
+import { loadAgentIdentities, loadAgentIdentity } from "./controllers/agent-identity.ts";
+import { loadAgentSkills } from "./controllers/agent-skills.ts";
+import { loadAgents } from "./controllers/agents.ts";
 import { loadChannels } from "./controllers/channels.ts";
 import { loadConfig, loadConfigSchema } from "./controllers/config.ts";
 import { loadCronJobs, loadCronStatus } from "./controllers/cron.ts";
@@ -34,6 +38,7 @@ import { resolveTheme, type ResolvedTheme, type ThemeMode } from "./theme.ts";
 
 type SettingsHost = {
   settings: UiSettings;
+  password?: string;
   theme: ThemeMode;
   themeResolved: ResolvedTheme;
   applySessionKey: string;
@@ -45,6 +50,9 @@ type SettingsHost = {
   eventLog: unknown[];
   eventLogBuffer: unknown[];
   basePath: string;
+  agentsList?: AgentsListResult | null;
+  agentsSelectedId?: string | null;
+  agentsPanel?: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
   themeMedia: MediaQueryList | null;
   themeMediaHandler: ((event: MediaQueryListEvent) => void) | null;
   pendingGatewayUrl?: string | null;
@@ -104,14 +112,17 @@ export function applySettingsFromUrl(
     urlPanes?: { paneKeys: string[]; focusIndex: number } | null;
   },
 ) {
-  if (!window.location.search) {
+  if (!window.location.search && !window.location.hash) {
     return;
   }
-  const params = new URLSearchParams(window.location.search);
-  const tokenRaw = params.get("token");
-  const passwordRaw = params.get("password");
-  const sessionRaw = params.get("session");
-  const gatewayUrlRaw = params.get("gatewayUrl");
+  const url = new URL(window.location.href);
+  const params = new URLSearchParams(url.search);
+  const hashParams = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : url.hash);
+
+  const tokenRaw = params.get("token") ?? hashParams.get("token");
+  const passwordRaw = params.get("password") ?? hashParams.get("password");
+  const sessionRaw = params.get("session") ?? hashParams.get("session");
+  const gatewayUrlRaw = params.get("gatewayUrl") ?? hashParams.get("gatewayUrl");
   let shouldCleanUrl = false;
 
   if (tokenRaw != null) {
@@ -120,6 +131,7 @@ export function applySettingsFromUrl(
       applySettings(host, { ...host.settings, token });
     }
     params.delete("token");
+    hashParams.delete("token");
     shouldCleanUrl = true;
   }
 
@@ -129,6 +141,7 @@ export function applySettingsFromUrl(
       (host as { password: string }).password = password;
     }
     params.delete("password");
+    hashParams.delete("password");
     shouldCleanUrl = true;
   }
 
@@ -145,11 +158,12 @@ export function applySettingsFromUrl(
   }
 
   if (gatewayUrlRaw != null) {
-    const gatewayUrl = normalizeGatewayUrl(gatewayUrlRaw);
-    if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl && isTopLevelWindow()) {
+    const gatewayUrl = gatewayUrlRaw.trim();
+    if (gatewayUrl && gatewayUrl !== host.settings.gatewayUrl) {
       host.pendingGatewayUrl = gatewayUrl;
     }
     params.delete("gatewayUrl");
+    hashParams.delete("gatewayUrl");
     shouldCleanUrl = true;
   }
 
@@ -159,8 +173,9 @@ export function applySettingsFromUrl(
   if (!shouldCleanUrl) {
     return;
   }
-  const url = new URL(window.location.href);
   url.search = params.toString();
+  const nextHash = hashParams.toString();
+  url.hash = nextHash ? `#${nextHash}` : "";
   window.history.replaceState({}, "", url.toString());
 }
 
@@ -217,6 +232,28 @@ export async function refreshActiveTab(host: SettingsHost) {
   }
   if (host.tab === "skills") {
     await loadSkills(host as unknown as OpenClawApp);
+  }
+  if (host.tab === "agents") {
+    await loadAgents(host as unknown as OpenClawApp);
+    await loadConfig(host as unknown as OpenClawApp);
+    const agentIds = host.agentsList?.agents?.map((entry) => entry.id) ?? [];
+    if (agentIds.length > 0) {
+      void loadAgentIdentities(host as unknown as OpenClawApp, agentIds);
+    }
+    const agentId =
+      host.agentsSelectedId ?? host.agentsList?.defaultId ?? host.agentsList?.agents?.[0]?.id;
+    if (agentId) {
+      void loadAgentIdentity(host as unknown as OpenClawApp, agentId);
+      if (host.agentsPanel === "skills") {
+        void loadAgentSkills(host as unknown as OpenClawApp, agentId);
+      }
+      if (host.agentsPanel === "channels") {
+        void loadChannels(host as unknown as OpenClawApp, false);
+      }
+      if (host.agentsPanel === "cron") {
+        void loadCron(host);
+      }
+    }
   }
   if (host.tab === "nodes") {
     await loadNodes(host as unknown as OpenClawApp);

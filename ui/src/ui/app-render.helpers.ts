@@ -7,10 +7,10 @@ import type { SessionsListResult } from "./types.ts";
 import type { ModelCatalogEntry } from "./ui-types.ts";
 import { refreshChat } from "./app-chat.ts";
 import { syncUrlWithSessionKey } from "./app-settings.ts";
-import { loadChatHistory } from "./controllers/chat.ts";
+import { OpenClawApp } from "./app.ts";
+import { ChatState, loadChatHistory } from "./controllers/chat.ts";
 import { icons } from "./icons.ts";
 import { iconForTab, pathForTab, titleForTab, type Tab } from "./navigation.ts";
-import { humanizeSessionKey } from "./views/thread-list.ts";
 
 export function renderTab(state: AppViewState, tab: Tab) {
   const href = pathForTab(tab, state.basePath);
@@ -117,18 +117,22 @@ export function renderChatControls(state: AppViewState) {
             state.sessionKey = next;
             state.chatMessage = "";
             state.chatStream = null;
-            state.chatStreamStartedAt = null;
+            (state as unknown as OpenClawApp).chatStreamStartedAt = null;
             state.chatRunId = null;
-            state.resetToolStream();
-            state.resetChatScroll();
+            (state as unknown as OpenClawApp).resetToolStream();
+            (state as unknown as OpenClawApp).resetChatScroll();
             state.applySettings({
               ...state.settings,
               sessionKey: next,
               lastActiveSessionKey: next,
             });
             void state.loadAssistantIdentity();
-            syncUrlWithSessionKey(state, next, true);
-            void loadChatHistory(state);
+            syncUrlWithSessionKey(
+              state as unknown as Parameters<typeof syncUrlWithSessionKey>[0],
+              next,
+              true,
+            );
+            void loadChatHistory(state as unknown as ChatState);
           }}
         >
           ${repeat(
@@ -136,7 +140,7 @@ export function renderChatControls(state: AppViewState) {
             (entry) => entry.key,
             (entry) =>
               html`<option value=${entry.key}>
-                ${entry.displayName || humanizeSessionKey(entry.key)}
+                ${entry.displayName ?? entry.key}
               </option>`,
           )}
         </select>
@@ -146,7 +150,7 @@ export function renderChatControls(state: AppViewState) {
         class="btn btn--sm btn--icon"
         ?disabled=${state.chatLoading || !state.connected}
         @click=${() => {
-          state.resetToolStream();
+          (state as unknown as OpenClawApp).resetToolStream();
           void refreshChat(state as unknown as Parameters<typeof refreshChat>[0]);
         }}
         title="Refresh chat data"
@@ -340,6 +344,18 @@ function resolveMainSessionKey(
   return null;
 }
 
+function resolveSessionDisplayName(key: string, row?: SessionsListResult["sessions"][number]) {
+  const label = row?.label?.trim() || "";
+  const displayName = row?.displayName?.trim() || "";
+  if (label && label !== key) {
+    return `${label} (${key})`;
+  }
+  if (displayName && displayName !== key) {
+    return `${key} (${displayName})`;
+  }
+  return key;
+}
+
 function resolveSessionOptions(
   sessionKey: string,
   sessions: SessionsListResult | null,
@@ -356,7 +372,7 @@ function resolveSessionOptions(
     seen.add(mainSessionKey);
     options.push({
       key: mainSessionKey,
-      displayName: resolvedMain?.displayName || resolvedMain?.label,
+      displayName: resolveSessionDisplayName(mainSessionKey, resolvedMain || undefined),
     });
   }
 
@@ -365,7 +381,7 @@ function resolveSessionOptions(
     seen.add(sessionKey);
     options.push({
       key: sessionKey,
-      displayName: resolvedCurrent?.displayName || resolvedCurrent?.label,
+      displayName: resolveSessionDisplayName(sessionKey, resolvedCurrent),
     });
   }
 
@@ -374,7 +390,10 @@ function resolveSessionOptions(
     for (const s of sessions.sessions) {
       if (!seen.has(s.key)) {
         seen.add(s.key);
-        options.push({ key: s.key, displayName: s.displayName || s.label });
+        options.push({
+          key: s.key,
+          displayName: resolveSessionDisplayName(s.key, s),
+        });
       }
     }
   }

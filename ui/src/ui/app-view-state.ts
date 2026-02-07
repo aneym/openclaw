@@ -1,4 +1,5 @@
 import type { EventLogEntry } from "./app-events.ts";
+import type { CompactionStatus } from "./app-tool-stream.ts";
 import type { DevicePairingList } from "./controllers/devices.ts";
 import type { ExecApprovalRequest } from "./controllers/exec-approval.ts";
 import type { ExecApprovalsFile, ExecApprovalsSnapshot } from "./controllers/exec-approvals.ts";
@@ -19,6 +20,7 @@ import type {
   ChannelsStatusSnapshot,
   ConfigSnapshot,
   ConfigUiHints,
+  CostUsageSummary,
   CronJob,
   CronRunLogEntry,
   CronStatus,
@@ -30,9 +32,12 @@ import type {
   LogLevel,
   NostrProfile,
   PresenceEntry,
+  SessionsUsageResult,
+  SessionUsageTimeSeries,
   SessionsListResult,
   SkillStatusReport,
   StatusSummary,
+  SubagentRunInfo,
 } from "./types.ts";
 import type {
   ChatAttachment,
@@ -42,6 +47,7 @@ import type {
   SlashCommandEntry,
 } from "./ui-types.ts";
 import type { NostrProfileFormState } from "./views/channels.nostr-profile-form.ts";
+import type { SessionLogEntry } from "./views/usage.ts";
 
 export type AppViewState = {
   settings: UiSettings;
@@ -79,10 +85,10 @@ export type AppViewState = {
   chatAvatarUrl: string | null;
   chatThinkingLevel: string | null;
   chatQueue: ChatQueueItem[];
-  compactionStatus: import("./app-tool-stream").CompactionStatus | null;
+  compactionStatus: CompactionStatus | null;
   slashCommands: SlashCommandEntry[];
   runningSessions: Set<string>;
-  subagentRuns: Map<string, import("./types").SubagentRunInfo[]>;
+  subagentRuns: Map<string, SubagentRunInfo[]>;
   nodesLoading: boolean;
   nodes: Array<Record<string, unknown>>;
   chatNewMessagesBelow: boolean;
@@ -113,13 +119,18 @@ export type AppViewState = {
   configSaving: boolean;
   configApplying: boolean;
   updateRunning: boolean;
+  applySessionKey: string;
   configSnapshot: ConfigSnapshot | null;
   configSchema: unknown;
+  configSchemaVersion: string | null;
   configSchemaLoading: boolean;
-  configUiHints: Record<string, unknown>;
+  configUiHints: ConfigUiHints;
   configForm: Record<string, unknown> | null;
   configFormOriginal: Record<string, unknown> | null;
   configFormMode: "form" | "raw";
+  configSearchQuery: string;
+  configActiveSection: string | null;
+  configActiveSubsection: string | null;
   channelsLoading: boolean;
   channelsSnapshot: ChannelsStatusSnapshot | null;
   channelsError: string | null;
@@ -196,6 +207,11 @@ export type AppViewState = {
   logsLevelFilters: Record<LogLevel, boolean>;
   logsAutoFollow: boolean;
   logsTruncated: boolean;
+  logsCursor: number | null;
+  logsLastFetchAt: number | null;
+  logsLimit: number;
+  logsMaxBytes: number;
+  logsAtBottom: boolean;
   gitLoading: boolean;
   gitError: string | null;
   gitBranch: string;
@@ -219,8 +235,8 @@ export type AppViewState = {
   gitReposLoading: boolean;
   // Usage / cost tracking
   usageLoading: boolean;
-  usageResult: import("./types").SessionsUsageResult | null;
-  usageCostSummary: import("./types").CostUsageSummary | null;
+  usageResult: SessionsUsageResult | null;
+  usageCostSummary: CostUsageSummary | null;
   usageError: string | null;
   usageStartDate: string;
   usageEndDate: string;
@@ -231,26 +247,28 @@ export type AppViewState = {
   usageDailyChartMode: "total" | "by-type";
   usageTimeSeriesMode: "cumulative" | "per-turn";
   usageTimeSeriesBreakdownMode: "total" | "by-type";
-  usageTimeSeries: import("./types").SessionUsageTimeSeries | null;
+  usageTimeSeries: SessionUsageTimeSeries | null;
   usageTimeSeriesLoading: boolean;
-  usageSessionLogs: import("./views/usage").SessionLogEntry[] | null;
+  usageSessionLogs: SessionLogEntry[] | null;
   usageSessionLogsLoading: boolean;
   usageSessionLogsExpanded: boolean;
   usageQuery: string;
   usageQueryDraft: string;
-  usageSessionSort: "tokens" | "cost" | "name" | "time";
+  usageQueryDebounceTimer: number | null;
+  usageSessionSort: "tokens" | "cost" | "recent" | "messages" | "errors";
   usageSessionSortDir: "asc" | "desc";
   usageRecentSessions: string[];
-  usageTimeZone: string;
+  usageTimeZone: "local" | "utc";
   usageContextExpanded: boolean;
   usageHeaderPinned: boolean;
-  usageSessionsTab: "breakdown" | "timeline" | "logs";
+  usageSessionsTab: "all" | "recent";
   usageVisibleColumns: string[];
-  usageLogFilterRoles: string[];
+  usageLogFilterRoles: SessionLogEntry["role"][];
   usageLogFilterTools: string[];
-  usageLogFilterHasTools: boolean | null;
+  usageLogFilterHasTools: boolean;
   usageLogFilterQuery: string;
   client: GatewayBrowserClient | null;
+  refreshSessionsAfterChat: Set<string>;
   connect: () => void;
   setTab: (tab: Tab) => void;
   setTheme: (theme: ThemeMode, context?: ThemeTransitionContext) => void;
