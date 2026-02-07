@@ -144,13 +144,20 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
   const connected = useGatewayStore((s) => s.connected);
   const request = useGatewayStore((s) => s.request);
 
-  // Get or create the session store
+  // Get or create the session store (keyed by chatId — stable).
+  // sessionKey is intentionally NOT a dependency: the store is keyed by chatId,
+  // and sessionKey changes are handled by updating the existing store via
+  // getChatSessionStore (which sets the new key internally). Including sessionKey
+  // here caused a split-brain bug with StrictMode: cleanup deleted store_A from
+  // the Map, another component created store_B, and when sessionKey changed the
+  // useMemo re-ran and found store_B (empty) instead of store_A (with messages).
   const store = useMemo(() => {
     if (!sessionKey || !chatId) {
       return null;
     }
     return getChatSessionStore(sessionKey, chatId);
-  }, [sessionKey, chatId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatId]);
 
   // Track previous connected state for reconnect detection
   const wasConnectedRef = useRef(false);

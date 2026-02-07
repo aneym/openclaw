@@ -46,6 +46,7 @@ export function Shell() {
   const activeProjectId = useProjectStore((s) => s.activeProjectId);
   const setActiveProject = useProjectStore((s) => s.setActiveProject);
   const initializeProjects = useProjectStore((s) => s.initialize);
+  const deleteProject = useProjectStore((s) => s.deleteProject);
   const isProjectsInitialized = useProjectStore((s) => s.isInitialized);
 
   // Settings state
@@ -449,6 +450,8 @@ export function Shell() {
         onSelectProject={handleSelectProject}
         onSettings={() => setView("settings")}
         onCreateProject={() => setCreateProjectOpen(true)}
+        onProjectSettings={(id) => setSettingsProjectId(id)}
+        onDeleteProject={(id) => deleteProject(id)}
         onOpenProfileSettings={() => setView("settings")}
       />
 

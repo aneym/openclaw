@@ -125,7 +125,7 @@ function RenderNode({
           animate="animate"
           onClick={handleFocus}
           onFocus={handleFocus}
-          className={`h-full w-full flex flex-col overflow-hidden border transition-colors ${isFocused ? "border-primary/40" : "border-transparent hover:border-border"}`}
+          className={`h-full w-full flex flex-col overflow-hidden border-2 transition-colors duration-150 ${isFocused ? "border-primary/30" : "border-transparent hover:border-border/50"}`}
         >
           <PanelTabBar
             panelId={node.panelId}
