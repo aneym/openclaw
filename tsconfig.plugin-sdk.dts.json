@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "declaration": true,
+    "declarationMap": false,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "noEmitOnError": true,
+    "outDir": "dist/plugin-sdk",
+    "rootDir": "src",
+    "tsBuildInfoFile": "dist/plugin-sdk/.tsbuildinfo"
+  },
+  "include": [
+    "src/plugin-sdk/index.ts",
+    "src/types/**/*.d.ts",
+    "src/agents/claude-sdk-runner/claude-agent-sdk.d.ts"
+  ],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts"]
+}

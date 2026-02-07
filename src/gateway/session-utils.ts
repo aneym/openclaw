@@ -222,6 +222,12 @@ export function classifySessionKey(key: string, entry?: SessionEntry): GatewaySe
   return "direct";
 }
 
+function isCronRunSessionKey(key: string): boolean {
+  const parsed = parseAgentSessionKey(key);
+  const raw = parsed?.rest ?? key;
+  return /^cron:[^:]+:run:[^:]+$/.test(raw);
+}
+
 export function parseGroupKey(
   key: string,
 ): { channel?: string; kind?: "group" | "channel"; id?: string } | null {
@@ -586,6 +592,9 @@ export function listSessionsFromStore(params: {
 
   let sessions = Object.entries(store)
     .filter(([key]) => {
+      if (isCronRunSessionKey(key)) {
+        return false;
+      }
       if (!includeGlobal && key === "global") {
         return false;
       }

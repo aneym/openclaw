@@ -19,18 +19,12 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2026.2.4</string>
+	<string>2026.2.6</string>
 	<key>CFBundleVersion</key>
-	<string>20260206</string>
-	<key>ITSAppUsesNonExemptEncryption</key>
-	<false/>
+	<string>20260202</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<key>NSAllowsArbitraryLoads</key>
-		<true/>
 		<key>NSAllowsArbitraryLoadsInWebContent</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>NSBonjourServices</key>

@@ -26,7 +26,6 @@ export default defineConfig([
     clean: false,
   },
   {
-    dts: true,
     entry: "src/plugin-sdk/index.ts",
     outDir: "dist/plugin-sdk",
     env,

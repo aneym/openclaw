@@ -42,6 +42,8 @@ export type SlackChannelConfig = {
   skills?: string[];
   /** Optional system prompt for this channel. */
   systemPrompt?: string;
+  /** Collapse thread replies into a single context message. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackReactionNotificationMode = "off" | "own" | "all" | "allowlist";
@@ -144,6 +146,8 @@ export type SlackAccountConfig = {
   heartbeat?: ChannelHeartbeatVisibilityConfig;
   /** Outbound response prefix override for this channel/account. */
   responsePrefix?: string;
+  /** Collapse thread replies into a single context message. */
+  collapseReplies?: "off" | "last";
 };
 
 export type SlackConfig = {

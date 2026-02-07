@@ -9,6 +9,8 @@ export type CronEvent = {
   status?: "ok" | "error" | "skipped";
   error?: string;
   summary?: string;
+  sessionId?: string;
+  sessionKey?: string;
   nextRunAtMs?: number;
   consecutiveFailures?: number;
 };
@@ -34,6 +36,8 @@ export type CronServiceDeps = {
     /** Last non-empty agent text output (not truncated). */
     outputText?: string;
     error?: string;
+    sessionId?: string;
+    sessionKey?: string;
   }>;
   onEvent?: (evt: CronEvent) => void;
 };
@@ -79,6 +83,7 @@ export type CronStatusSummary = {
 export type CronRunResult =
   | { ok: true; ran: true }
   | { ok: true; ran: false; reason: "not-due" }
+  | { ok: true; ran: false; reason: "already-running" }
   | { ok: false };
 
 export type CronRemoveResult = { ok: true; removed: boolean } | { ok: false; removed: false };

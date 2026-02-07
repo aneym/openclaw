@@ -11,7 +11,7 @@ import {
 } from "./jobs.js";
 import { locked } from "./locked.js";
 import { ensureLoaded, persist, warnIfDisabled } from "./store.js";
-import { armTimer, emit, executeJob, stopTimer, wake } from "./timer.js";
+import { armTimer, emit, executeJob, runMissedJobs, stopTimer, wake } from "./timer.js";
 
 export async function start(state: CronServiceState) {
   await locked(state, async () => {
@@ -19,21 +19,19 @@ export async function start(state: CronServiceState) {
       state.deps.log.info({ enabled: false }, "cron: disabled");
       return;
     }
-    // Load without recomputing so we can inspect the persisted
-    // nextRunAtMs values and detect overdue jobs before they get
-    // advanced to future slots.
     await ensureLoaded(state, { skipRecompute: true });
-
-    // Snapshot which jobs are overdue (nextRunAtMs in the past).
-    const overdueJobIds = collectOverdueJobIds(state);
-
+    const jobs = state.store?.jobs ?? [];
+    for (const job of jobs) {
+      if (typeof job.state.runningAtMs === "number") {
+        state.deps.log.warn(
+          { jobId: job.id, runningAtMs: job.state.runningAtMs },
+          "cron: clearing stale running marker on startup",
+        );
+        job.state.runningAtMs = undefined;
+      }
+    }
+    await runMissedJobs(state);
     recomputeNextRuns(state);
-
-    // Now execute overdue jobs that were missed while the gateway was
-    // down.  We identified them above before recompute advanced their
-    // nextRunAtMs.
-    await runOverdueJobsOnStartup(state, overdueJobIds);
-
     await persist(state);
     armTimer(state);
     state.deps.log.info(
@@ -47,61 +45,13 @@ export async function start(state: CronServiceState) {
   });
 }
 
-/**
- * Collect IDs of jobs whose persisted `nextRunAtMs` is in the past.
- * Must be called BEFORE `recomputeNextRuns` which advances these to
- * future slots.
- */
-function collectOverdueJobIds(state: CronServiceState): Set<string> {
-  if (!state.store) {
-    return new Set();
-  }
-  const now = state.deps.nowMs();
-  const ids = new Set<string>();
-  for (const j of state.store.jobs) {
-    if (!j.enabled) {
-      continue;
-    }
-    if (typeof j.state.runningAtMs === "number") {
-      continue;
-    }
-    const next = j.state.nextRunAtMs;
-    if (typeof next === "number" && now >= next) {
-      ids.add(j.id);
-    }
-  }
-  return ids;
-}
-
-/**
- * On startup, execute jobs that were overdue (missed while the gateway
- * was down).  The `overdueIds` set was captured before recompute so we
- * know which jobs had a past `nextRunAtMs`.  We only catch up **once
- * per job** (not all missed occurrences) to avoid flooding after a long
- * outage.
- */
-async function runOverdueJobsOnStartup(state: CronServiceState, overdueIds: Set<string>) {
-  if (!state.store || overdueIds.size === 0) {
-    return;
-  }
-  const now = state.deps.nowMs();
-  const overdue = state.store.jobs.filter((j) => overdueIds.has(j.id));
-  state.deps.log.info(
-    { count: overdue.length, jobIds: overdue.map((j) => j.id) },
-    "cron: catching up overdue jobs after startup",
-  );
-  for (const job of overdue) {
-    await executeJob(state, job, now, { forced: false });
-  }
-}
-
 export function stop(state: CronServiceState) {
   stopTimer(state);
 }
 
 export async function status(state: CronServiceState) {
   return await locked(state, async () => {
-    await ensureLoaded(state);
+    await ensureLoaded(state, { skipRecompute: true });
     return {
       enabled: state.deps.cronEnabled,
       storePath: state.deps.storePath,
@@ -113,7 +63,7 @@ export async function status(state: CronServiceState) {
 
 export async function list(state: CronServiceState, opts?: { includeDisabled?: boolean }) {
   return await locked(state, async () => {
-    await ensureLoaded(state);
+    await ensureLoaded(state, { skipRecompute: true });
     const includeDisabled = opts?.includeDisabled === true;
     const jobs = (state.store?.jobs ?? []).filter((j) => includeDisabled || j.enabled);
     return jobs.toSorted((a, b) => (a.state.nextRunAtMs ?? 0) - (b.state.nextRunAtMs ?? 0));
@@ -144,6 +94,22 @@ export async function update(state: CronServiceState, id: string, patch: CronJob
     const job = findJobOrThrow(state, id);
     const now = state.deps.nowMs();
     applyJobPatch(job, patch);
+    if (job.schedule.kind === "every") {
+      const anchor = job.schedule.anchorMs;
+      if (typeof anchor !== "number" || !Number.isFinite(anchor)) {
+        const patchSchedule = patch.schedule;
+        const fallbackAnchorMs =
+          patchSchedule?.kind === "every"
+            ? now
+            : typeof job.createdAtMs === "number" && Number.isFinite(job.createdAtMs)
+              ? job.createdAtMs
+              : now;
+        job.schedule = {
+          ...job.schedule,
+          anchorMs: Math.max(0, Math.floor(fallbackAnchorMs)),
+        };
+      }
+    }
     job.updatedAtMs = now;
     if (job.enabled) {
       job.state.nextRunAtMs = computeJobNextRunAtMs(job, now);
@@ -185,14 +151,18 @@ export async function remove(state: CronServiceState, id: string) {
 export async function run(state: CronServiceState, id: string, mode?: "due" | "force") {
   return await locked(state, async () => {
     warnIfDisabled(state, "run");
-    await ensureLoaded(state);
+    await ensureLoaded(state, { skipRecompute: true });
     const job = findJobOrThrow(state, id);
+    if (typeof job.state.runningAtMs === "number") {
+      return { ok: true, ran: false, reason: "already-running" as const };
+    }
     const now = state.deps.nowMs();
     const due = isJobDue(job, now, { forced: mode === "force" });
     if (!due) {
       return { ok: true, ran: false, reason: "not-due" as const };
     }
     await executeJob(state, job, now, { forced: mode === "force" });
+    recomputeNextRuns(state);
     await persist(state);
     armTimer(state);
     return { ok: true, ran: true } as const;
@@ -201,7 +171,7 @@ export async function run(state: CronServiceState, id: string, mode?: "due" | "f
 
 export function wakeNow(
   state: CronServiceState,
-  opts: { mode: "now" | "next-heartbeat"; text: string; sessionKey?: string },
+  opts: { mode: "now" | "next-heartbeat"; text: string },
 ) {
   return wake(state, opts);
 }
