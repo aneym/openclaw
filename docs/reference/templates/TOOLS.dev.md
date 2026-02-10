@@ -9,6 +9,7 @@ read_when:
 
 This file is for _your_ notes about external tools and conventions.
 It does not define which tools exist; OpenClaw provides built-in tools internally.
+If this file gets large, split details into `TOOLS.d/*.md` and keep this file as the index.
 
 ## Examples
 

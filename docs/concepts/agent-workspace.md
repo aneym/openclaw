@@ -155,7 +155,7 @@ workspace is not already a repo, run:
 ```bash
 cd ~/.openclaw/workspace
 git init
-git add AGENTS.md SOUL.md TOOLS.md IDENTITY.md USER.md HEARTBEAT.md memory/
+git add AGENTS.md SOUL.md TOOLS.md TOOLS.d/ IDENTITY.md USER.md HEARTBEAT.md memory/
 git commit -m "Add agent workspace"
 ```
 
