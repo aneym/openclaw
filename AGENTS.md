@@ -64,57 +64,11 @@
 
 ## Dev Environment
 
-When running `pnpm dev:all`, the gateway uses `~/.openclaw-dev/` as the state directory. Key things to know:
+`pnpm dev:all` runs the gateway + Vite UI using the main state directory (`~/.openclaw/`). Dev and prod share the same config, auth, memory, and sessions — no separate `~/.openclaw-dev/` directory.
 
-### Auth Profile Locations
-
-Auth profiles are stored per-agent:
-
-- Main agent: `~/.openclaw-dev/agents/main/agent/auth-profiles.json`
-- Dev agent: `~/.openclaw-dev/agents/dev/agent/auth-profiles.json`
-
-**Important:** The gateway uses the `main` agent by default, not `dev`. When adding/updating auth tokens for dev, update `agents/main/agent/auth-profiles.json`.
-
-### `lastGood` Controls Profile Selection
-
-The profile marked as `lastGood` in `auth-profiles.json` is used first:
-
-```json
-"lastGood": {
-  "anthropic": "anthropic:manual"
-}
-```
-
-Even with multiple profiles available, only `lastGood` is used unless it fails.
-
-### dev-all.sh Syncs Prod → Dev
-
-`scripts/dev-all.sh` syncs `~/.openclaw/openclaw.json` (prod) → `~/.openclaw-dev/openclaw.json` (dev) when prod is newer. This can overwrite dev-specific settings like:
-
-- `gateway.http.endpoints.chatCompletions.enabled`
-- Custom auth profiles in the config (not auth-profiles.json)
-
-To preserve dev auth profiles after a sync, ensure they are in `auth-profiles.json` (not inline in `openclaw.json`).
-
-### Updating Auth Tokens in Dev
-
-```bash
-# Add token to dev main agent (recommended)
-openclaw models auth paste-token --provider anthropic
-
-# Or edit directly and set lastGood
-# ~/.openclaw-dev/agents/main/agent/auth-profiles.json
-```
-
-### Testing Auth Changes
-
-Use the test gateway to verify auth works before relying on it:
-
-```bash
-OPENCLAW_STATE_DIR=~/.openclaw-dev pnpm agent:start
-# Test with curl...
-pnpm agent:stop -- <AGENT_ID>
-```
+- Channels and plugins are **not** skipped — dev runs the full stack.
+- Stop the macOS menubar app before running `pnpm dev:all` to avoid port conflicts.
+- The token for the dev UI URL is read from `~/.openclaw/openclaw.json`.
 
 ## Coding Style & Naming Conventions
 
@@ -141,6 +95,14 @@ pnpm agent:stop -- <AGENT_ID>
   - `confirm()` → use shadcn `<AlertDialog>`
   - `alert()` → use shadcn `<Dialog>` or toast notifications
 - **File/directory selection**: Use Electron's native dialog via `window.api.openDirectoryDialog()` when available, with a shadcn Dialog fallback for manual path entry.
+- **Terminology**: `kos/` is the Electron + React app; `ui/src/` is the legacy Lit.js web UI. Use `ui/src/` only for gateway protocol reference patterns, not architecture.
+- **Rules routing for kOS work**:
+  - UI styling/components: read `kos/rules/theme-colors.md` and `kos/rules/animations.md`
+  - Session key comparison logic: read `kos/rules/session-keys.md`
+  - React/component work: apply `vercel-react-best-practices` + `vercel-composition-patterns`
+- **kOS feature work**: read the relevant KOS Linear PRD and matching spec in `kos/specs/` before implementing.
+- **Electron HMR reality**: renderer (`kos/src/renderer/`) hot-reloads; main/preload changes require a full Electron restart. Keep business logic in renderer when possible and keep main/preload as a thin native bridge.
+- **Zustand selector guardrail (kOS)**: do not call store methods inside selectors (can trigger infinite re-renders). Select raw state, then derive with `useMemo`.
 - See `kos/CLAUDE.md` for full kOS-specific guidance.
 
 ## Release Channels (Naming)
