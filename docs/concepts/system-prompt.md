@@ -55,6 +55,7 @@ Bootstrap files are trimmed and appended under **Project Context** so the model 
 - `AGENTS.md`
 - `SOUL.md`
 - `TOOLS.md`
+- `TOOLS.d/**/*.md` (optional shards)
 - `IDENTITY.md`
 - `USER.md`
 - `HEARTBEAT.md`

@@ -7,6 +7,7 @@ import {
   DEFAULT_HEARTBEAT_FILENAME,
   DEFAULT_IDENTITY_FILENAME,
   DEFAULT_SOUL_FILENAME,
+  DEFAULT_TOOLS_SPLIT_DIRNAME,
   DEFAULT_TOOLS_FILENAME,
   DEFAULT_USER_FILENAME,
   ensureAgentWorkspace,
@@ -42,6 +43,20 @@ export async function ensureSandboxWorkspace(
           // ignore missing seed file
         }
       }
+    }
+
+    try {
+      await fs.cp(
+        path.join(seed, DEFAULT_TOOLS_SPLIT_DIRNAME),
+        path.join(workspaceDir, DEFAULT_TOOLS_SPLIT_DIRNAME),
+        {
+          recursive: true,
+          force: false,
+          errorOnExist: false,
+        },
+      );
+    } catch {
+      // ignore missing seed dir or copy failures
     }
   }
   await ensureAgentWorkspace({

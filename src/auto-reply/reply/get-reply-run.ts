@@ -199,7 +199,12 @@ export async function runPreparedReply(
   const isBareSessionReset =
     isNewSession &&
     ((baseBodyTrimmedRaw.length === 0 && rawBodyTrimmed.length > 0) || isBareNewOrReset);
-  const baseBodyFinal = isBareSessionReset ? BARE_SESSION_RESET_PROMPT : baseBody;
+  const hasInboundImages = (opts?.images?.length ?? 0) > 0;
+  const baseBodyFinal = isBareSessionReset
+    ? BARE_SESSION_RESET_PROMPT
+    : !baseBody.trim() && hasInboundImages
+      ? "[The user sent an image without a caption.]"
+      : baseBody;
   const baseBodyTrimmed = baseBodyFinal.trim();
   if (!baseBodyTrimmed) {
     await typing.onReplyStart();

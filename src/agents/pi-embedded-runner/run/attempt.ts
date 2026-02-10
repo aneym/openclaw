@@ -736,6 +736,18 @@ export async function runEmbeddedAttempt(
                 messageProvider: params.messageProvider ?? undefined,
               },
             );
+            if (hookResult?.systemPrompt) {
+              // Append hook-injected system prompt to the existing system prompt.
+              // This is invisible to the user in the UI.
+              const currentSystem = systemPromptText ?? "";
+              const combined = currentSystem
+                ? `${currentSystem}\n\n${hookResult.systemPrompt}`
+                : hookResult.systemPrompt;
+              activeSession.agent.setSystemPrompt(combined);
+              log.debug(
+                `hooks: appended system prompt from hook (${hookResult.systemPrompt.length} chars)`,
+              );
+            }
             if (hookResult?.prependContext) {
               effectivePrompt = `${hookResult.prependContext}\n\n${params.prompt}`;
               log.debug(

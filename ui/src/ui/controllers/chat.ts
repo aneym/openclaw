@@ -225,6 +225,18 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       }
     }
   } else if (payload.state === "final") {
+    // Append the final message text to chatMessages immediately so there's
+    // no visual gap between clearing chatStream and loadChatHistory completing.
+    const finalText = extractText(payload.message);
+    if (typeof finalText === "string" && finalText.trim()) {
+      const finalMsg = {
+        role: "assistant",
+        content: [{ type: "text", text: finalText }],
+        timestamp: Date.now(),
+        _streamFinal: true, // marker so loadChatHistory can replace it
+      };
+      state.chatMessages = [...state.chatMessages, finalMsg];
+    }
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
@@ -235,7 +247,6 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     state.chatStreamStartedAt = null;
     clearAbortPending(state.sessionKey);
   } else if (payload.state === "error") {
-    console.log('[UI-CHAT] Received error state:', payload.errorMessage);
     state.chatStream = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
@@ -278,6 +289,17 @@ export function handleChatEventForThread(
       }
     }
   } else if (payload.state === "final") {
+    // Append final message to avoid visual gap before history reload
+    const finalText = extractText(payload.message);
+    if (typeof finalText === "string" && finalText.trim()) {
+      const finalMsg = {
+        role: "assistant",
+        content: [{ type: "text", text: finalText }],
+        timestamp: Date.now(),
+        _streamFinal: true,
+      };
+      thread.chatMessages = [...(thread.chatMessages as unknown[]), finalMsg];
+    }
     thread.chatStream = null;
     thread.chatRunId = null;
     thread.chatStreamStartedAt = null;

@@ -136,7 +136,7 @@ case "$COMMAND" in
         # Read the gateway token from the existing config (--dev reuses the user's config,
         # so the real token is what the gateway will actually enforce for HTTP auth).
         gateway_token=""
-        config_path="${HOME}/.clawdbot/openclaw.json"
+        config_path="${HOME}/.openclaw/openclaw.json"
         if [ -f "$config_path" ]; then
             gateway_token=$(python3 -c "import json,sys; d=json.load(open('$config_path')); print(d.get('gateway',{}).get('auth',{}).get('token',''))" 2>/dev/null)
         fi

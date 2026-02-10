@@ -448,6 +448,15 @@ export class SessionSearchManager {
     // Begin transaction
     this.db.exec("BEGIN");
     try {
+      // Ensure session row exists before inserting chunks (FK constraint)
+      this.db
+        .prepare(
+          `INSERT INTO sessions (session_key, session_id, updated_at, indexed_at, chunk_count)
+           VALUES (?, ?, ?, ?, 0)
+           ON CONFLICT(session_key) DO UPDATE SET session_id = excluded.session_id`,
+        )
+        .run(sessionKey, sessionId, now, now);
+
       // Delete existing chunks for this session
       this.db.prepare(`DELETE FROM chunks WHERE session_key = ?`).run(sessionKey);
       this.db.prepare(`DELETE FROM ${FTS_TABLE} WHERE session_key = ?`).run(sessionKey);

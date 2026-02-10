@@ -1,3 +1,4 @@
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -21,6 +22,7 @@ export const DEFAULT_AGENT_WORKSPACE_DIR = resolveDefaultAgentWorkspaceDir();
 export const DEFAULT_AGENTS_FILENAME = "AGENTS.md";
 export const DEFAULT_SOUL_FILENAME = "SOUL.md";
 export const DEFAULT_TOOLS_FILENAME = "TOOLS.md";
+export const DEFAULT_TOOLS_SPLIT_DIRNAME = "TOOLS.d";
 export const DEFAULT_IDENTITY_FILENAME = "IDENTITY.md";
 export const DEFAULT_USER_FILENAME = "USER.md";
 export const DEFAULT_HEARTBEAT_FILENAME = "HEARTBEAT.md";
@@ -59,6 +61,7 @@ export type WorkspaceBootstrapFileName =
   | typeof DEFAULT_AGENTS_FILENAME
   | typeof DEFAULT_SOUL_FILENAME
   | typeof DEFAULT_TOOLS_FILENAME
+  | `${typeof DEFAULT_TOOLS_SPLIT_DIRNAME}/${string}.md`
   | typeof DEFAULT_IDENTITY_FILENAME
   | typeof DEFAULT_USER_FILENAME
   | typeof DEFAULT_HEARTBEAT_FILENAME
@@ -71,6 +74,11 @@ export type WorkspaceBootstrapFile = {
   path: string;
   content?: string;
   missing: boolean;
+};
+
+type WorkspaceBootstrapEntry = {
+  name: WorkspaceBootstrapFileName;
+  filePath: string;
 };
 
 async function writeFileIfMissing(filePath: string, content: string) {
@@ -199,12 +207,12 @@ export async function ensureAgentWorkspace(params?: {
 
 async function resolveMemoryBootstrapEntries(
   resolvedDir: string,
-): Promise<Array<{ name: WorkspaceBootstrapFileName; filePath: string }>> {
+): Promise<WorkspaceBootstrapEntry[]> {
   const candidates: WorkspaceBootstrapFileName[] = [
     DEFAULT_MEMORY_FILENAME,
     DEFAULT_MEMORY_ALT_FILENAME,
   ];
-  const entries: Array<{ name: WorkspaceBootstrapFileName; filePath: string }> = [];
+  const entries: WorkspaceBootstrapEntry[] = [];
   for (const name of candidates) {
     const filePath = path.join(resolvedDir, name);
     try {
@@ -219,7 +227,7 @@ async function resolveMemoryBootstrapEntries(
   }
 
   const seen = new Set<string>();
-  const deduped: Array<{ name: WorkspaceBootstrapFileName; filePath: string }> = [];
+  const deduped: WorkspaceBootstrapEntry[] = [];
   for (const entry of entries) {
     let key = entry.filePath;
     try {
@@ -234,13 +242,51 @@ async function resolveMemoryBootstrapEntries(
   return deduped;
 }
 
+async function resolveToolsSplitBootstrapEntries(
+  resolvedDir: string,
+): Promise<WorkspaceBootstrapEntry[]> {
+  const toolsSplitDir = path.join(resolvedDir, DEFAULT_TOOLS_SPLIT_DIRNAME);
+  const relativeMarkdownPaths: string[] = [];
+
+  const collectMarkdownFiles = async (dir: string): Promise<void> => {
+    let entries: Dirent[];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    entries.sort((a, b) => a.name.localeCompare(b.name));
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await collectMarkdownFiles(fullPath);
+        continue;
+      }
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
+        continue;
+      }
+      const relativePath = path.relative(resolvedDir, fullPath).replace(/\\/g, "/");
+      if (!relativePath.startsWith(`${DEFAULT_TOOLS_SPLIT_DIRNAME}/`)) {
+        continue;
+      }
+      relativeMarkdownPaths.push(relativePath);
+    }
+  };
+
+  await collectMarkdownFiles(toolsSplitDir);
+
+  return relativeMarkdownPaths
+    .sort((a, b) => a.localeCompare(b))
+    .map((relativePath) => ({
+      name: relativePath as WorkspaceBootstrapFileName,
+      filePath: path.join(resolvedDir, relativePath),
+    }));
+}
+
 export async function loadWorkspaceBootstrapFiles(dir: string): Promise<WorkspaceBootstrapFile[]> {
   const resolvedDir = resolveUserPath(dir);
 
-  const entries: Array<{
-    name: WorkspaceBootstrapFileName;
-    filePath: string;
-  }> = [
+  const entries: WorkspaceBootstrapEntry[] = [
     {
       name: DEFAULT_AGENTS_FILENAME,
       filePath: path.join(resolvedDir, DEFAULT_AGENTS_FILENAME),
@@ -271,6 +317,16 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
     },
   ];
 
+  const toolsSplitEntries = await resolveToolsSplitBootstrapEntries(resolvedDir);
+  if (toolsSplitEntries.length > 0) {
+    const toolsIndex = entries.findIndex((entry) => entry.name === DEFAULT_TOOLS_FILENAME);
+    if (toolsIndex >= 0) {
+      entries.splice(toolsIndex + 1, 0, ...toolsSplitEntries);
+    } else {
+      entries.push(...toolsSplitEntries);
+    }
+  }
+
   entries.push(...(await resolveMemoryBootstrapEntries(resolvedDir)));
 
   const result: WorkspaceBootstrapFile[] = [];
@@ -290,7 +346,10 @@ export async function loadWorkspaceBootstrapFiles(dir: string): Promise<Workspac
   return result;
 }
 
-const SUBAGENT_BOOTSTRAP_ALLOWLIST = new Set([DEFAULT_AGENTS_FILENAME, DEFAULT_TOOLS_FILENAME]);
+const SUBAGENT_BOOTSTRAP_ALLOWLIST = new Set<string>([
+  DEFAULT_AGENTS_FILENAME,
+  DEFAULT_TOOLS_FILENAME,
+]);
 
 export function filterBootstrapFilesForSession(
   files: WorkspaceBootstrapFile[],
@@ -299,5 +358,10 @@ export function filterBootstrapFilesForSession(
   if (!sessionKey || !isSubagentSessionKey(sessionKey)) {
     return files;
   }
-  return files.filter((file) => SUBAGENT_BOOTSTRAP_ALLOWLIST.has(file.name));
+  return files.filter((file) => {
+    if (SUBAGENT_BOOTSTRAP_ALLOWLIST.has(file.name)) {
+      return true;
+    }
+    return file.name.startsWith(`${DEFAULT_TOOLS_SPLIT_DIRNAME}/`);
+  });
 }

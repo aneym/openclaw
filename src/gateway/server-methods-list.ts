@@ -79,6 +79,7 @@ const BASE_METHODS = [
   "system-presence",
   "system-event",
   "send",
+  "send.trace",
   "agent",
   "agent.identity.get",
   "agent.wait",

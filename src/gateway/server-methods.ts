@@ -79,6 +79,7 @@ const READ_METHODS = new Set([
   "node.describe",
   "chat.history",
   "chat.status",
+  "send.trace",
   "subagents.list",
 ]);
 const WRITE_METHODS = new Set([

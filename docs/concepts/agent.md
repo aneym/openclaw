@@ -28,6 +28,7 @@ Inside `agents.defaults.workspace`, OpenClaw expects these user-editable files:
 - `AGENTS.md` — operating instructions + “memory”
 - `SOUL.md` — persona, boundaries, tone
 - `TOOLS.md` — user-maintained tool notes (e.g. `imsg`, `sag`, conventions)
+- `TOOLS.d/**/*.md` (optional) — split tool-note shards loaded after `TOOLS.md`
 - `BOOTSTRAP.md` — one-time first-run ritual (deleted after completion)
 - `IDENTITY.md` — agent name/vibe/emoji
 - `USER.md` — user profile + preferred address

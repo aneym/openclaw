@@ -84,6 +84,11 @@ These are the standard files OpenClaw expects inside the workspace:
   - Notes about your local tools and conventions.
   - Does not control tool availability; it is only guidance.
 
+- `TOOLS.d/**/*.md` (optional)
+  - Split tool notes into smaller topic files.
+  - Loaded in lexical order after `TOOLS.md`.
+  - Keep `TOOLS.md` as a short index and reference shards from it.
+
 - `HEARTBEAT.md`
   - Optional tiny checklist for heartbeat runs.
   - Keep it short to avoid token burn.
@@ -117,6 +122,8 @@ See [Memory](/concepts/memory) for the workflow and automatic memory flush.
 If any bootstrap file is missing, OpenClaw injects a "missing file" marker into
 the session and continues. Large bootstrap files are truncated when injected;
 adjust the limit with `agents.defaults.bootstrapMaxChars` (default: 20000).
+If `TOOLS.md` is growing large, move details into `TOOLS.d/*.md` files so each
+chunk can be injected independently.
 `openclaw setup` can recreate missing defaults without overwriting existing
 files.
 

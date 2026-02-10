@@ -107,6 +107,7 @@ By default, OpenClaw injects a fixed set of workspace files (if present):
 - `AGENTS.md`
 - `SOUL.md`
 - `TOOLS.md`
+- `TOOLS.d/**/*.md` (optional shards for splitting large tool notes)
 - `IDENTITY.md`
 - `USER.md`
 - `HEARTBEAT.md`

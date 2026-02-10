@@ -534,6 +534,15 @@ export const chatHandlers: GatewayRequestHandlers = {
           disableBlockStreaming: true,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
+            // Register the mapping so the agent event handler can route
+            // streaming deltas and the final event back to the correct
+            // session key and client run ID.  Without this, the fallback
+            // `resolveSessionKeyForRun` may return undefined and chat
+            // events are silently skipped.
+            context.addChatRun(runId, {
+              sessionKey: p.sessionKey,
+              clientRunId,
+            });
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
             const wantsToolEvents = hasGatewayClientCap(
               client?.connect?.caps,

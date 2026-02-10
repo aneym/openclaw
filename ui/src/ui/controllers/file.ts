@@ -10,11 +10,11 @@ export interface FileReadResult {
 }
 
 export async function fetchFileContent(
-  basePath: string,
+  _basePath: string,
   filePath: string,
   password: string,
 ): Promise<FileReadResult> {
-  const url = new URL(`${basePath}/api/file/read`, window.location.origin);
+  const url = new URL("/api/file/read", window.location.origin);
   url.searchParams.set("path", filePath);
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${password}` },
@@ -27,12 +27,12 @@ export async function fetchFileContent(
 }
 
 export async function writeFileContent(
-  basePath: string,
+  _basePath: string,
   filePath: string,
   content: string,
   password: string,
 ): Promise<{ ok: boolean; size: number; mtime: number }> {
-  const url = new URL(`${basePath}/api/file/write`, window.location.origin);
+  const url = new URL("/api/file/write", window.location.origin);
   const res = await fetch(url.toString(), {
     method: "POST",
     headers: {

@@ -95,6 +95,7 @@ export type ChatRunState = {
   buffers: Map<string, string>;
   deltaSentAt: Map<string, number>;
   abortedRuns: Map<string, number>;
+  flushTimers: Map<string, ReturnType<typeof setTimeout>>;
   clear: () => void;
 };
 
@@ -103,12 +104,15 @@ export function createChatRunState(): ChatRunState {
   const buffers = new Map<string, string>();
   const deltaSentAt = new Map<string, number>();
   const abortedRuns = new Map<string, number>();
+  const flushTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
   const clear = () => {
     registry.clear();
     buffers.clear();
     deltaSentAt.clear();
     abortedRuns.clear();
+    for (const timer of flushTimers.values()) clearTimeout(timer);
+    flushTimers.clear();
   };
 
   return {
@@ -116,6 +120,7 @@ export function createChatRunState(): ChatRunState {
     buffers,
     deltaSentAt,
     abortedRuns,
+    flushTimers,
     clear,
   };
 }
@@ -227,13 +232,8 @@ export function createAgentEventHandler({
   clearAgentRunContext,
   toolEventRecipients,
 }: AgentEventHandlerOptions) {
-  const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
-    chatRunState.buffers.set(clientRunId, text);
+  const sendDeltaPayload = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
     const now = Date.now();
-    const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
-    if (now - last < 150) {
-      return;
-    }
     chatRunState.deltaSentAt.set(clientRunId, now);
     const payload = {
       runId: clientRunId,
@@ -246,11 +246,42 @@ export function createAgentEventHandler({
         timestamp: now,
       },
     };
-    // Suppress webchat broadcast for heartbeat runs when showOk is false
+    // Suppress webchat broadcast for heartbeat runs when showOk is false.
+    // Chat deltas are small (~200 bytes) and must always reach the client —
+    // silently dropping them via dropIfSlow causes the UI to hang on the
+    // typing indicator indefinitely. If the socket buffer is truly full,
+    // the broadcast layer will close the slow connection (triggering
+    // auto-reconnect + state restore), which is better than silent loss.
     if (!shouldSuppressHeartbeatBroadcast(clientRunId)) {
-      broadcast("chat", payload, { dropIfSlow: true });
+      broadcast("chat", payload);
     }
     nodeSendToSession(sessionKey, "chat", payload);
+  };
+
+  const emitChatDelta = (sessionKey: string, clientRunId: string, seq: number, text: string) => {
+    chatRunState.buffers.set(clientRunId, text);
+    const now = Date.now();
+    const last = chatRunState.deltaSentAt.get(clientRunId) ?? 0;
+
+    // Cancel any existing deferred flush for this run
+    const existingTimer = chatRunState.flushTimers.get(clientRunId);
+    if (existingTimer) clearTimeout(existingTimer);
+
+    if (now - last < 150) {
+      // Throttled — schedule a deferred flush so the latest text always reaches the client.
+      // Without this, the last delta before a final event may never be sent.
+      const timer = setTimeout(() => {
+        chatRunState.flushTimers.delete(clientRunId);
+        const buffered = chatRunState.buffers.get(clientRunId);
+        if (buffered != null) {
+          sendDeltaPayload(sessionKey, clientRunId, seq, buffered);
+        }
+      }, 160);
+      chatRunState.flushTimers.set(clientRunId, timer);
+      return;
+    }
+    chatRunState.flushTimers.delete(clientRunId);
+    sendDeltaPayload(sessionKey, clientRunId, seq, text);
   };
 
   const emitChatFinal = (
@@ -260,6 +291,12 @@ export function createAgentEventHandler({
     jobState: "done" | "error",
     error?: unknown,
   ) => {
+    // Cancel any deferred delta flush — we'll include the final text in the final event
+    const pendingTimer = chatRunState.flushTimers.get(clientRunId);
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      chatRunState.flushTimers.delete(clientRunId);
+    }
     const text = chatRunState.buffers.get(clientRunId)?.trim() ?? "";
     chatRunState.buffers.delete(clientRunId);
     chatRunState.deltaSentAt.delete(clientRunId);
