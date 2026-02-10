@@ -17,6 +17,7 @@ When the agent starts a coding session via `exec` (running `claude`, `codex`, et
 In `coding-sessions-http.ts` (or a new server-side middleware), auto-register a coding session when an exec tool call matches known coding agent commands:
 
 **Detection patterns** (match against the `command` arg of `exec` tool calls):
+
 - `claude` (with any flags)
 - `codex` (with any flags)
 - `cc` / `kimi` (shell aliases)
@@ -24,6 +25,7 @@ In `coding-sessions-http.ts` (or a new server-side middleware), auto-register a 
 This should happen server-side when the exec tool is invoked, so sessions appear immediately.
 
 **In `src/agents/bash-tools.ts` or the exec handler:**
+
 - After spawning the process, if the command matches a coding agent pattern:
   - Auto-register with `/api/coding-sessions/:id` (or directly write to the state file)
   - Store: `{ id, name: <from command>, status: "running", tool: "claude-code"|"codex", execSessionId: <exec registry id>, tmuxSession: <if tmux>, startedAt, workDir, command }`
@@ -71,6 +73,7 @@ The exec tool's `command` arg is visible in the tool card. To link a tool card t
 ### 5. Tool display config
 
 In `tool-display.json`, add an `exec` entry or enhance the existing one:
+
 ```json
 {
   "exec": {

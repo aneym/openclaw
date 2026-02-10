@@ -1,13 +1,13 @@
-import { useState } from 'react'
-import { Dialog, DialogContent } from '@/components/ui/dialog'
-import { ImagePart } from '@/types/message'
+import { useState } from "react";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { ImagePart } from "@/types/message";
 
 interface ImageAttachmentProps {
-  part: ImagePart
+  part: ImagePart;
 }
 
 export function ImageAttachment({ part }: ImageAttachmentProps) {
-  const [isOpen, setIsOpen] = useState(false)
+  const [isOpen, setIsOpen] = useState(false);
 
   return (
     <>
@@ -18,7 +18,7 @@ export function ImageAttachment({ part }: ImageAttachmentProps) {
       >
         <img
           src={part.url}
-          alt={part.alt || 'Attached image'}
+          alt={part.alt || "Attached image"}
           className="max-h-80 w-auto object-contain"
           loading="lazy"
         />
@@ -28,11 +28,11 @@ export function ImageAttachment({ part }: ImageAttachmentProps) {
         <DialogContent className="max-w-[90vw] max-h-[90vh] p-2">
           <img
             src={part.url}
-            alt={part.alt || 'Attached image'}
+            alt={part.alt || "Attached image"}
             className="w-full h-full object-contain"
           />
         </DialogContent>
       </Dialog>
     </>
-  )
+  );
 }

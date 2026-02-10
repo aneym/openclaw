@@ -48,11 +48,11 @@ export class PaneContextMenu extends LitElement {
       z-index: 1100;
       pointer-events: none;
     }
-    
+
     :host([open]) {
       pointer-events: auto;
     }
-    
+
     .menu {
       position: fixed;
       min-width: 180px;
@@ -64,7 +64,7 @@ export class PaneContextMenu extends LitElement {
       box-shadow: var(--shadow-lg, 0 8px 24px rgba(0, 0, 0, 0.4));
       animation: ctx-menu-in 120ms ease-out;
     }
-    
+
     @keyframes ctx-menu-in {
       from {
         opacity: 0;
@@ -75,7 +75,7 @@ export class PaneContextMenu extends LitElement {
         transform: scale(1);
       }
     }
-    
+
     .menu-item {
       display: flex;
       align-items: center;
@@ -90,19 +90,19 @@ export class PaneContextMenu extends LitElement {
       text-align: left;
       border-radius: 0;
     }
-    
+
     .menu-item:hover {
       background: var(--accent, #007bff);
       color: var(--accent-foreground, #fff);
     }
-    
+
     .menu-item kbd {
       margin-left: auto;
       font-size: 11px;
       opacity: 0.5;
       font-family: inherit;
     }
-    
+
     .separator {
       height: 1px;
       margin: 4px 0;

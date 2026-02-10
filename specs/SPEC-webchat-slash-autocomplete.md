@@ -9,11 +9,13 @@ Add a `/`-triggered autocomplete dropdown to the webchat composer. When the user
 ### 1. Server → Client: Expose commands in hello-ok snapshot
 
 **File:** `src/gateway/protocol/schema/snapshot.ts`
+
 - Add a `SlashCommandEntrySchema` to the snapshot: `{ name: string, description: string, category?: string }`
 - Add `slashCommands: Type.Optional(Type.Array(SlashCommandEntrySchema))` to `SnapshotSchema`
 
 **File:** `src/gateway/server/health-state.ts` → `buildGatewaySnapshot()`
-- Import `listChatCommandsForConfig` and `listSkillCommandsForAgents` 
+
+- Import `listChatCommandsForConfig` and `listSkillCommandsForAgents`
 - Build a merged, deduplicated command list
 - Each entry: `{ name, description, category }` where category is "skill" or "system"
 - Add to the returned snapshot object as `slashCommands`
@@ -21,13 +23,16 @@ Add a `/`-triggered autocomplete dropdown to the webchat composer. When the user
 ### 2. Client: Store commands from snapshot
 
 **File:** `ui/src/ui/types.ts` (or wherever `StatusSummary` / UI types live)
+
 - Add `SlashCommandEntry` type: `{ name: string; description: string; category?: string }`
 
 **File:** `ui/src/ui/app-gateway.ts` → `applySnapshot()`
+
 - Read `snapshot.slashCommands` from the hello-ok payload
 - Store on host as `host.slashCommands: SlashCommandEntry[]`
 
 **File:** `ui/src/ui/app.ts`
+
 - Add `@state() slashCommands: SlashCommandEntry[] = []` to the app element
 
 ### 3. Client: Autocomplete component
@@ -47,6 +52,7 @@ type SlashAutocompleteProps = {
 ```
 
 **Rendering:**
+
 - Absolutely positioned above the textarea (inside `.chat-compose`, positioned relative)
 - Max height ~200px, scrollable
 - Each item shows: `/<name>` (bold/mono) + description (muted)
@@ -59,21 +65,24 @@ type SlashAutocompleteProps = {
 **File:** `ui/src/ui/views/chat.ts` → `renderChat()`
 
 Add autocomplete state tracking. The autocomplete is visible when:
+
 - Draft starts with `/`
 - User hasn't typed a space yet (still selecting the command name)
 - There are matching commands
 
 **Changes to the textarea:**
+
 - On `@input`: if draft starts with `/` and no space yet, set autocomplete visible + filter
-- On `@keydown`: 
+- On `@keydown`:
   - If autocomplete visible and ↑/↓: prevent default, change selected index
   - If autocomplete visible and Enter/Tab: prevent default, insert selected command
   - If Escape: close autocomplete
 - Render `renderSlashAutocomplete()` above the textarea when visible
 
-**State management approach:** Since `renderChat` is a pure function (not a component), the autocomplete state should be managed via closure or passed through ChatProps. 
+**State management approach:** Since `renderChat` is a pure function (not a component), the autocomplete state should be managed via closure or passed through ChatProps.
 
 **Recommended:** Add these to ChatProps:
+
 ```typescript
 slashCommands?: SlashCommandEntry[];
 ```
@@ -85,6 +94,7 @@ Then manage the autocomplete UI state (visible, filter, selectedIndex) locally i
 **File:** `ui/src/styles/chat/layout.css`
 
 Add styles for:
+
 - `.slash-autocomplete` — container (absolute, bottom: 100%, left: 0, width: 100%)
 - `.slash-autocomplete__item` — each row
 - `.slash-autocomplete__item--selected` — highlighted row
@@ -114,10 +124,12 @@ Match existing dark/light theme variables (`--bg`, `--panel`, `--border`, `--tex
 ## Files to modify
 
 ### Server
+
 1. `src/gateway/protocol/schema/snapshot.ts` — add SlashCommandEntry schema + extend Snapshot
 2. `src/gateway/server/health-state.ts` — populate slashCommands in buildGatewaySnapshot()
 
 ### Client
+
 3. `ui/src/ui/types.ts` — add SlashCommandEntry type
 4. `ui/src/ui/app-gateway.ts` — read slashCommands from snapshot
 5. `ui/src/ui/app.ts` — store slashCommands state

@@ -1,33 +1,33 @@
-import { useState } from 'react'
-import { ScrollArea } from '../ui/scroll-area'
-import { Card } from '../ui/card'
-import { Clock } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { useCodingSession } from './hooks/useCodingSession'
-import { SessionTimeline } from './SessionTimeline'
-import { PhaseIndicator } from './PhaseIndicator'
+import { Clock } from "lucide-react";
+import { useState } from "react";
+import { cn } from "@/lib/utils";
+import { Card } from "../ui/card";
+import { ScrollArea } from "../ui/scroll-area";
+import { useCodingSession } from "./hooks/useCodingSession";
+import { PhaseIndicator } from "./PhaseIndicator";
+import { SessionTimeline } from "./SessionTimeline";
 
 interface CodingSessionPanelProps {
-  sessionKey: string
-  className?: string
+  sessionKey: string;
+  className?: string;
 }
 
 function formatDuration(ms: number): string {
-  const seconds = Math.floor(ms / 1000)
+  const seconds = Math.floor(ms / 1000);
   if (seconds < 60) {
-    return `${seconds}s`
+    return `${seconds}s`;
   }
-  const minutes = Math.floor(seconds / 60)
-  const remainingSeconds = seconds % 60
-  return `${minutes}m ${remainingSeconds}s`
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}m ${remainingSeconds}s`;
 }
 
 export function CodingSessionPanel({ sessionKey, className }: CodingSessionPanelProps) {
-  const [sessionName] = useState('Coding Session')
-  const { events, phase, duration, loading } = useCodingSession(sessionKey)
+  const [sessionName] = useState("Coding Session");
+  const { events, phase, duration, loading } = useCodingSession(sessionKey);
 
   return (
-    <div className={cn('flex flex-col h-full bg-background', className)}>
+    <div className={cn("flex flex-col h-full bg-background", className)}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 border-b">
         <div className="flex-1 min-w-0">
@@ -55,5 +55,5 @@ export function CodingSessionPanel({ sessionKey, className }: CodingSessionPanel
         </div>
       </ScrollArea>
     </div>
-  )
+  );
 }

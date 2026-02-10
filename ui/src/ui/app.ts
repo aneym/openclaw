@@ -134,10 +134,14 @@ declare global {
 const injectedAssistantIdentity = resolveInjectedAssistantIdentity();
 
 function resolveOnboardingMode(): boolean {
-  if (!window.location.search) return false;
+  if (!window.location.search) {
+    return false;
+  }
   const params = new URLSearchParams(window.location.search);
   const raw = params.get("onboarding");
-  if (!raw) return false;
+  if (!raw) {
+    return false;
+  }
   const normalized = raw.trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
@@ -184,6 +188,7 @@ export class OpenClawApp extends LitElement {
   @state() runningSessions: Set<string> = new Set();
   /** Active sub-agent runs keyed by requester session key. */
   @state() subagentRuns: Map<string, import("./types").SubagentRunInfo[]> = new Map();
+  @state() chatManualRefreshInFlight = false;
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -515,6 +520,15 @@ export class OpenClawApp extends LitElement {
     resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
   }
 
+  scrollToBottom(opts?: { smooth?: boolean }) {
+    resetChatScrollInternal(this as unknown as Parameters<typeof resetChatScrollInternal>[0]);
+    scheduleChatScrollInternal(
+      this as unknown as Parameters<typeof scheduleChatScrollInternal>[0],
+      true,
+      undefined,
+      Boolean(opts?.smooth),
+    );
+  }
   async loadAssistantIdentity() {
     await loadAssistantIdentityInternal(this);
   }
@@ -643,7 +657,9 @@ export class OpenClawApp extends LitElement {
 
   async handleExecApprovalDecision(decision: "allow-once" | "allow-always" | "deny") {
     const active = this.execApprovalQueue[0];
-    if (!active || !this.client || this.execApprovalBusy) return;
+    if (!active || !this.client || this.execApprovalBusy) {
+      return;
+    }
     this.execApprovalBusy = true;
     this.execApprovalError = null;
     try {
@@ -681,7 +697,9 @@ export class OpenClawApp extends LitElement {
 
   handleGatewayUrlConfirm() {
     const nextGatewayUrl = this.pendingGatewayUrl;
-    if (!nextGatewayUrl) return;
+    if (!nextGatewayUrl) {
+      return;
+    }
     this.pendingGatewayUrl = null;
     applySettingsInternal(this as unknown as Parameters<typeof applySettingsInternal>[0], {
       ...this.settings,
@@ -714,7 +732,9 @@ export class OpenClawApp extends LitElement {
       window.clearTimeout(this.sidebarCloseTimer);
     }
     this.sidebarCloseTimer = window.setTimeout(() => {
-      if (this.sidebarOpen) return;
+      if (this.sidebarOpen) {
+        return;
+      }
       this.sidebarContent = null;
       this.sidebarError = null;
       this.sidebarCloseTimer = null;
@@ -839,9 +859,13 @@ export class OpenClawApp extends LitElement {
       const res = await fetch(
         `${this.codingBaseUrl}/api/coding-sessions/${id}/log?offset=${offset}&limit=200`,
       );
-      if (!res.ok) return;
+      if (!res.ok) {
+        return;
+      }
       const data = await res.json();
-      if (!data.lines && data.totalLines === 0) return;
+      if (!data.lines && data.totalLines === 0) {
+        return;
+      }
 
       // Parse new events from the raw lines
       const newEvents = parseStreamEvents(data.lines);
@@ -862,7 +886,7 @@ export class OpenClawApp extends LitElement {
 
         // Detect pending questions (AskUserQuestion tool calls)
         const lastQuestion = [...newEvents]
-          .reverse()
+          .toReversed()
           .find((e) => e.type === "question" && e.question);
         const nextQuestions = new Map(this.codingQuestions);
         if (lastQuestion?.question && lastQuestion?.toolUseId) {
@@ -897,11 +921,16 @@ export class OpenClawApp extends LitElement {
 
   handleCodingToggleExpand(id: string) {
     const next = new Set(this.codingExpanded);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+    } else {
+      next.add(id);
+    }
     this.codingExpanded = next;
     // Immediately fetch log when expanding
-    if (next.has(id)) void this.fetchCodingLog(id);
+    if (next.has(id)) {
+      void this.fetchCodingLog(id);
+    }
   }
 
   async handleCodingKill(id: string) {
@@ -2051,7 +2080,9 @@ export class OpenClawApp extends LitElement {
 
   async handleModelSelect(modelRef: string) {
     this.applySettings({ ...this.settings, selectedModel: modelRef });
-    if (!this.client || !this.connected || !this.sessionKey) return;
+    if (!this.client || !this.connected || !this.sessionKey) {
+      return;
+    }
     try {
       await this.client.request("sessions.patch", {
         key: this.sessionKey,
@@ -2063,7 +2094,9 @@ export class OpenClawApp extends LitElement {
   }
 
   async handleModelsConfigLoad() {
-    if (!this.client) return;
+    if (!this.client) {
+      return;
+    }
     this.modelsConfigLoading = true;
     this.modelsConfigError = null;
     try {
@@ -2124,11 +2157,15 @@ export class OpenClawApp extends LitElement {
         if (!providerMap.has(providerName)) {
           // This is an implicit provider (like Anthropic from auth profiles)
           // Sort models by capability: reasoning > vision > context window
-          const sortedModels = [...models].sort((a, b) => {
+          const sortedModels = [...models].toSorted((a, b) => {
             const score = (m: typeof a) => {
               let s = 0;
-              if (m.reasoning) s += 1000;
-              if (m.input?.includes("image")) s += 100;
+              if (m.reasoning) {
+                s += 1000;
+              }
+              if (m.input?.includes("image")) {
+                s += 100;
+              }
               s += (m.contextWindow ?? 0) / 10000;
               return s;
             };
@@ -2153,11 +2190,15 @@ export class OpenClawApp extends LitElement {
         } else {
           // Sort existing provider's models too
           const provider = providerMap.get(providerName)!;
-          provider.models = [...provider.models].sort((a, b) => {
+          provider.models = [...provider.models].toSorted((a, b) => {
             const score = (m: typeof a) => {
               let s = 0;
-              if (m.reasoning) s += 1000;
-              if (m.input?.includes("image")) s += 100;
+              if (m.reasoning) {
+                s += 1000;
+              }
+              if (m.input?.includes("image")) {
+                s += 100;
+              }
               s += (m.contextWindow ?? 0) / 10000;
               return s;
             };
@@ -2175,7 +2216,9 @@ export class OpenClawApp extends LitElement {
   }
 
   async handleModelsConfigSave() {
-    if (!this.client || !this.modelsConfig) return;
+    if (!this.client || !this.modelsConfig) {
+      return;
+    }
     this.modelsConfigSaving = true;
     this.modelsConfigError = null;
     try {
@@ -2192,7 +2235,9 @@ export class OpenClawApp extends LitElement {
         Omit<import("./views/models").ModelProvider, "name" | "isImplicit">
       > = {};
       for (const provider of this.modelsConfig.providers) {
-        if (provider.isImplicit) continue; // Skip auth-based providers like Anthropic
+        if (provider.isImplicit) {
+          continue;
+        } // Skip auth-based providers like Anthropic
         const { name, isImplicit, ...providerConfig } = provider;
         providersRecord[name] = providerConfig;
       }

@@ -21,6 +21,8 @@ const shared = {
 export default defineConfig([
   { entry: "src/index.ts", ...shared },
   { entry: "src/entry.ts", ...shared },
+  { entry: "src/infra/warning-filter.ts", ...shared },
   { entry: "src/plugin-sdk/index.ts", outDir: "dist/plugin-sdk", ...shared },
   { entry: "src/extensionAPI.ts", ...shared },
+  { entry: ["src/hooks/bundled/*/handler.ts", "src/hooks/llm-slug-generator.ts"], ...shared },
 ]);

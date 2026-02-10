@@ -1,11 +1,11 @@
+import { FitAddon } from "@xterm/addon-fit";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { Terminal } from "@xterm/xterm";
 /**
  * Terminal pane — renders an xterm.js terminal connected to a PTY on the gateway
  * via WebSocket.
  */
 import { html } from "lit";
-import { Terminal } from "@xterm/xterm";
-import { FitAddon } from "@xterm/addon-fit";
-import { WebLinksAddon } from "@xterm/addon-web-links";
 import type { AppViewState } from "../app-view-state";
 
 export interface TerminalPaneProps {

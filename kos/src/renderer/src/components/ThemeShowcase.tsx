@@ -1,50 +1,3 @@
-import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle
-} from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
-import { Switch } from '@/components/ui/switch'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
-import { Toggle } from '@/components/ui/toggle'
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue
-} from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
-import { Progress } from '@/components/ui/progress'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow
-} from '@/components/ui/table'
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger
-} from '@/components/ui/accordion'
 import {
   Bold,
   Italic,
@@ -58,12 +11,59 @@ import {
   Edit,
   Star,
   Heart,
-  Mail
-} from 'lucide-react'
+  Mail,
+} from "lucide-react";
+import { useState } from "react";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Toggle } from "@/components/ui/toggle";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 export function ThemeShowcase() {
-  const [progress] = useState(42)
-  const [sliderVal, setSliderVal] = useState([50])
+  const [progress] = useState(42);
+  const [sliderVal, setSliderVal] = useState([50]);
 
   return (
     <ScrollArea className="h-full">
@@ -82,14 +82,14 @@ export function ThemeShowcase() {
           <h2 className="text-2xl font-semibold">Colors</h2>
           <div className="grid grid-cols-4 gap-3">
             {[
-              ['Background', 'bg-background', 'text-foreground'],
-              ['Foreground', 'bg-foreground', 'text-background'],
-              ['Primary', 'bg-primary', 'text-primary-foreground'],
-              ['Secondary', 'bg-secondary', 'text-secondary-foreground'],
-              ['Muted', 'bg-muted', 'text-muted-foreground'],
-              ['Accent', 'bg-accent', 'text-accent-foreground'],
-              ['Destructive', 'bg-destructive', 'text-destructive-foreground'],
-              ['Card', 'bg-card', 'text-card-foreground']
+              ["Background", "bg-background", "text-foreground"],
+              ["Foreground", "bg-foreground", "text-background"],
+              ["Primary", "bg-primary", "text-primary-foreground"],
+              ["Secondary", "bg-secondary", "text-secondary-foreground"],
+              ["Muted", "bg-muted", "text-muted-foreground"],
+              ["Accent", "bg-accent", "text-accent-foreground"],
+              ["Destructive", "bg-destructive", "text-destructive-foreground"],
+              ["Card", "bg-card", "text-card-foreground"],
             ].map(([name, bg, text]) => (
               <div key={name} className={`${bg} ${text} rounded-lg p-4 text-sm font-medium border`}>
                 {name}
@@ -369,20 +369,20 @@ export function ThemeShowcase() {
               </TableHeader>
               <TableBody>
                 {[
-                  { task: 'KOS-1 Data Model', status: 'In Progress', priority: 'Urgent' },
-                  { task: 'KOS-7 UI Layout', status: 'In Progress', priority: 'High' },
-                  { task: 'KOS-2 Linear Integration', status: 'Backlog', priority: 'High' },
-                  { task: 'KOS-10 Mobile App', status: 'Backlog', priority: 'Low' }
+                  { task: "KOS-1 Data Model", status: "In Progress", priority: "Urgent" },
+                  { task: "KOS-7 UI Layout", status: "In Progress", priority: "High" },
+                  { task: "KOS-2 Linear Integration", status: "Backlog", priority: "High" },
+                  { task: "KOS-10 Mobile App", status: "Backlog", priority: "Low" },
                 ].map((row) => (
                   <TableRow key={row.task}>
                     <TableCell className="font-medium">{row.task}</TableCell>
                     <TableCell>
-                      <Badge variant={row.status === 'In Progress' ? 'default' : 'secondary'}>
+                      <Badge variant={row.status === "In Progress" ? "default" : "secondary"}>
                         {row.status}
                       </Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={row.priority === 'Urgent' ? 'destructive' : 'outline'}>
+                      <Badge variant={row.priority === "Urgent" ? "destructive" : "outline"}>
                         {row.priority}
                       </Badge>
                     </TableCell>
@@ -454,5 +454,5 @@ export function ThemeShowcase() {
         <div className="h-12" />
       </div>
     </ScrollArea>
-  )
+  );
 }

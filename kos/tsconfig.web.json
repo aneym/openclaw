@@ -14,12 +14,8 @@
     "downlevelIteration": true,
     "skipLibCheck": true,
     "paths": {
-      "@/*": [
-        "src/renderer/src/*"
-      ],
-      "@renderer/*": [
-        "src/renderer/src/*"
-      ]
+      "@/*": ["src/renderer/src/*"],
+      "@renderer/*": ["src/renderer/src/*"]
     }
   }
 }

@@ -63,6 +63,7 @@ const sessions = new Map<string, TerminalSession>();
 ```
 
 Spawn with `@lydell/node-pty`:
+
 - Shell: user's login shell (use `getShellPathFromLoginShell()` from existing `shell-env.ts`)
 - Default cwd: gateway workspace dir
 - Env: inherit `process.env` (same as existing exec tool)
@@ -71,6 +72,7 @@ Spawn with `@lydell/node-pty`:
 PTY data → WS binary frame. WS text frame → parse as JSON control message. WS binary frame → PTY stdin.
 
 Control messages (JSON over text frames):
+
 ```json
 { "type": "resize", "cols": 80, "rows": 24 }
 { "type": "ping" }
@@ -123,6 +125,7 @@ These are called by the UI before opening the WebSocket.
 ### 4. Client: `ui/src/ui/views/terminal-pane.ts` (new file)
 
 Lit component that:
+
 1. Creates an xterm.js `Terminal` instance
 2. Loads `FitAddon` and `WebLinksAddon`
 3. Connects to `ws://<gateway>/ws/terminal?id=<terminalId>`
@@ -144,17 +147,19 @@ export type PaneType = "chat" | "terminal";
 export interface SplitLeaf {
   kind: "leaf";
   id: string;
-  threadId: string;       // for chat: session key. for terminal: terminal session id
-  paneType?: PaneType;    // default: "chat" (backward compat)
+  threadId: string; // for chat: session key. for terminal: terminal session id
+  paneType?: PaneType; // default: "chat" (backward compat)
 }
 ```
 
 Update serialization to include `paneType`:
+
 ```typescript
-type SerializedLeaf = { k: "l"; id: string; t: string; pt?: "t" };  // pt:"t" = terminal
+type SerializedLeaf = { k: "l"; id: string; t: string; pt?: "t" }; // pt:"t" = terminal
 ```
 
 Add helper:
+
 ```typescript
 export function createTerminalLeaf(terminalId: string, id?: string): SplitLeaf {
   return { kind: "leaf", id: id ?? generatePaneId(), threadId: terminalId, paneType: "terminal" };
@@ -178,6 +183,7 @@ function renderLeaf(leaf: SplitLeaf, state: AppViewState) {
 ### 7. Client: App state — `app.ts` / `app-view-state.ts`
 
 Add to `AppViewState`:
+
 ```typescript
 // Terminal pane support
 openTerminalPane: (cwd?: string) => void;         // create terminal + open in new pane
@@ -187,12 +193,14 @@ terminalSessions: Map<string, { id: string; cwd: string; createdAt: number; conn
 ```
 
 In `app.ts`:
+
 - `openTerminalPane()`: POST `/api/terminals` → get id → create terminal leaf → add to split tree
 - Track terminal WebSocket connections for status display
 
 ### 8. Client: Pane context menu — `pane-context-menu.ts`
 
 Add "Open Terminal" option to the pane context menu (right-click on a pane):
+
 - "Open Terminal Here" → replace current pane with terminal
 - "Split Terminal Right" → split horizontal, new terminal pane
 - "Split Terminal Below" → split vertical, new terminal pane
@@ -200,6 +208,7 @@ Add "Open Terminal" option to the pane context menu (right-click on a pane):
 ### 9. Client: Thread list / sidebar
 
 Add a "Terminal" button in the thread list header (next to the existing "+" new thread button):
+
 - Click → opens a new terminal pane (or splits if panes exist)
 - Small terminal icon (🖥️ or use an SVG terminal icon)
 
@@ -208,11 +217,13 @@ Add a "Terminal" button in the thread list header (next to the existing "+" new 
 Add xterm.js CSS. The `xterm.js` package includes `xterm.css` — import it in the build.
 
 Terminal pane styles:
+
 - Full-height container, no padding (xterm manages its own viewport)
 - Thin header bar: shows cwd, connected status, close button
 - On process exit: semi-transparent overlay with exit code + "Restart" / "Close" buttons
 
 Theme integration:
+
 ```typescript
 const DARK_THEME = {
   background: '#1a1a2e',  // match OpenClaw dark bg
@@ -236,6 +247,7 @@ const LIGHT_THEME = { ... };
 ## Auth
 
 Terminal WebSocket must be authenticated. Reuse the same auth mechanism as the main gateway WS:
+
 - Password/token from query param or header
 - Check in the upgrade handler before accepting
 
@@ -256,20 +268,20 @@ Terminal WebSocket must be authenticated. Reuse the same auth mechanism as the m
 
 ## File Summary
 
-| File | Action |
-|------|--------|
-| `src/gateway/terminal-pty.ts` | **NEW** — PTY session manager |
-| `src/gateway/terminal-http.ts` | **NEW** — REST endpoints for terminal CRUD |
-| `src/gateway/server-http.ts` | **EDIT** — add terminal WS upgrade route + HTTP routing |
-| `ui/package.json` | **EDIT** — add xterm.js deps |
-| `ui/src/ui/views/terminal-pane.ts` | **NEW** — xterm.js Lit component |
-| `ui/src/ui/split-tree.ts` | **EDIT** — add `paneType` to SplitLeaf + serialization |
-| `ui/src/ui/views/split-pane-container.ts` | **EDIT** — route terminal leaves to terminal renderer |
-| `ui/src/ui/app-view-state.ts` | **EDIT** — add terminal state/handlers |
-| `ui/src/ui/app.ts` | **EDIT** — implement terminal handlers |
-| `ui/src/ui/components/pane-context-menu.ts` | **EDIT** — add terminal options |
-| `ui/src/ui/views/thread-list.ts` | **EDIT** — add terminal button |
-| `ui/src/styles.css` | **EDIT** — import xterm.css, terminal pane styles |
+| File                                        | Action                                                  |
+| ------------------------------------------- | ------------------------------------------------------- |
+| `src/gateway/terminal-pty.ts`               | **NEW** — PTY session manager                           |
+| `src/gateway/terminal-http.ts`              | **NEW** — REST endpoints for terminal CRUD              |
+| `src/gateway/server-http.ts`                | **EDIT** — add terminal WS upgrade route + HTTP routing |
+| `ui/package.json`                           | **EDIT** — add xterm.js deps                            |
+| `ui/src/ui/views/terminal-pane.ts`          | **NEW** — xterm.js Lit component                        |
+| `ui/src/ui/split-tree.ts`                   | **EDIT** — add `paneType` to SplitLeaf + serialization  |
+| `ui/src/ui/views/split-pane-container.ts`   | **EDIT** — route terminal leaves to terminal renderer   |
+| `ui/src/ui/app-view-state.ts`               | **EDIT** — add terminal state/handlers                  |
+| `ui/src/ui/app.ts`                          | **EDIT** — implement terminal handlers                  |
+| `ui/src/ui/components/pane-context-menu.ts` | **EDIT** — add terminal options                         |
+| `ui/src/ui/views/thread-list.ts`            | **EDIT** — add terminal button                          |
+| `ui/src/styles.css`                         | **EDIT** — import xterm.css, terminal pane styles       |
 
 ## Execution Rules
 

@@ -63,6 +63,8 @@ export type CronJobState = {
   consecutiveFailures?: number;
   /** The reason for the last failure (rate_limit, overloaded, etc.). */
   lastFailureReason?: string;
+  /** Number of consecutive execution errors (reset on success). Used for backoff. */
+  consecutiveErrors?: number;
 };
 
 export type CronJob = {

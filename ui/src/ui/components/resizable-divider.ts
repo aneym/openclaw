@@ -24,23 +24,23 @@ export class ResizableDivider extends LitElement {
       flex-shrink: 0;
       position: relative;
     }
-    
+
     :host([direction="horizontal"]),
     :host(:not([direction])) {
       width: 4px;
       cursor: col-resize;
     }
-    
+
     :host([direction="vertical"]) {
       height: 4px;
       cursor: row-resize;
     }
-    
+
     :host::before {
       content: "";
       position: absolute;
     }
-    
+
     :host([direction="horizontal"])::before,
     :host(:not([direction]))::before {
       top: 0;
@@ -48,27 +48,25 @@ export class ResizableDivider extends LitElement {
       right: -4px;
       bottom: 0;
     }
-    
+
     :host([direction="vertical"])::before {
       left: 0;
       top: -4px;
       bottom: -4px;
       right: 0;
     }
-    
+
     :host(:hover) {
       background: var(--accent, #007bff);
     }
-    
+
     :host(.dragging) {
       background: var(--accent, #007bff);
     }
   `;
 
   render() {
-    return html`
-      
-    `;
+    return html``;
   }
 
   connectedCallback() {

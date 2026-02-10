@@ -33,6 +33,7 @@ let listenerStarted = false;
 let listenerStop: (() => void) | null = null;
 // Use var to avoid TDZ when init runs across circular imports during bootstrap.
 var restoreAttempted = false;
+const SUBAGENT_ANNOUNCE_TIMEOUT_MS = 120_000;
 
 type SubagentBroadcastFn = (event: string, payload: unknown) => void;
 let broadcastFn: SubagentBroadcastFn | null = null;
@@ -93,7 +94,7 @@ function resumeSubagentRun(runId: string) {
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,
-      timeoutMs: 30_000,
+      timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
       waitForCompletion: false,
       startedAt: entry.startedAt,
@@ -256,7 +257,7 @@ function ensureListener() {
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,
-      timeoutMs: 30_000,
+      timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
       waitForCompletion: false,
       startedAt: entry.startedAt,
@@ -274,14 +275,14 @@ function finalizeSubagentCleanup(runId: string, cleanup: "delete" | "keep", didA
   if (!entry) {
     return;
   }
-  if (cleanup === "delete") {
-    subagentRuns.delete(runId);
+  if (!didAnnounce) {
+    // Allow retry on the next wake if announce was deferred or failed.
+    entry.cleanupHandled = false;
     persistSubagentRuns();
     return;
   }
-  if (!didAnnounce) {
-    // Allow retry on the next wake if the announce failed.
-    entry.cleanupHandled = false;
+  if (cleanup === "delete") {
+    subagentRuns.delete(runId);
     persistSubagentRuns();
     return;
   }
@@ -401,7 +402,7 @@ async function waitForSubagentCompletion(runId: string, waitTimeoutMs: number) {
       requesterOrigin,
       requesterDisplayKey: entry.requesterDisplayKey,
       task: entry.task,
-      timeoutMs: 30_000,
+      timeoutMs: SUBAGENT_ANNOUNCE_TIMEOUT_MS,
       cleanup: entry.cleanup,
       waitForCompletion: false,
       startedAt: entry.startedAt,

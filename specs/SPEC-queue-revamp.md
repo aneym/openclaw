@@ -15,6 +15,7 @@ The queue works functionally (enqueue, flush, persist, send-now, remove) but the
 The queue UI should match the rest of the chat UI's look and feel.
 
 **Current (problems):**
+
 - Dashed border looks provisional/debug
 - `11px` title font is too small
 - No visual hierarchy between queue title bar and items
@@ -23,6 +24,7 @@ The queue UI should match the rest of the chat UI's look and feel.
 - No transition/animation when items are added or removed
 
 **Target:**
+
 - Solid subtle border (1px solid var(--border)) with rounded corners matching chat bubbles
 - Queue header: slightly larger font (12px), includes count badge and "Clear All" action
 - Items: background `var(--surface)`, subtle hover highlight, proper padding (8px 12px)
@@ -35,12 +37,8 @@ Replace the plain "Queued (N)" text with a proper header bar:
 
 ```html
 <div class="chat-queue__header">
-  <span class="chat-queue__count">
-    <icon:list-ordered /> Queued · {N}
-  </span>
-  <button class="chat-queue__clear-all" title="Clear all queued messages">
-    Clear
-  </button>
+  <span class="chat-queue__count"> <icon:list-ordered /> Queued · {N} </span>
+  <button class="chat-queue__clear-all" title="Clear all queued messages">Clear</button>
 </div>
 ```
 
@@ -51,6 +49,7 @@ Replace the plain "Queued (N)" text with a proper header bar:
 ### 3. Queue Item Improvements
 
 Each queue item should show:
+
 - **Message text** (current, but with better truncation — show 3 lines, expandable on click)
 - **Attachment indicator** — show thumbnail or icon if attachments exist (not just "Image (N)")
 - **Timestamp** — relative time since queued ("just now", "2m ago")
@@ -61,11 +60,13 @@ Each queue item should show:
 ### 4. Icon Consistency
 
 Current icons don't match the rest of the UI:
+
 - **⚡ (zap)** for "Send Now" is misleading — it implies urgency/danger, not "send"
 - Use `arrowUp` (same as the send button) or a `play` icon for Send Now instead
 - The compose area's "Send Now" button when busy should also use the same icon treatment
 
 Replace:
+
 - Queue item send-now: `icons.zap` → `icons.arrowUp` (matches the send button, users already know what ↑ means)
 - Compose send-now: `icons.zap` → `icons.arrowUp` with a different color/style to distinguish from regular send
 - Add a subtle label or different bg color to distinguish "Queue" from "Send Now" in compose
@@ -75,6 +76,7 @@ Replace:
 Current: `[⏹ Stop] [↑ Queue (primary)] [⚡ Send Now]`
 
 Better:
+
 - **Stop** button stays as-is
 - **Send** button (primary) → when busy, becomes "Queue" with a `queue`/`list-plus` icon to indicate queuing, not immediate send
 - **Send Now** button → secondary/warning style, uses `↑` (arrowUp) icon, tooltip says "Stop current run and send now"
@@ -83,18 +85,21 @@ Better:
 ### 6. Keyboard Shortcut: Cmd+Shift+Enter for Send Now
 
 In `ui/src/ui/views/chat.ts`, the textarea `@keydown` handler:
+
 - `Enter` (no modifier) = send/queue (existing)
-- `Shift+Enter` = newline (existing)  
+- `Shift+Enter` = newline (existing)
 - `Cmd+Shift+Enter` (or `Ctrl+Shift+Enter` on non-Mac) = send immediately when busy
 
 ### 7. Abort + Send Now: Preserve Context
 
 When "Send Now" aborts the current run:
+
 1. Call `abortChatRun`
 2. **Reload chat history** before sending the new message — this ensures the partial response from the aborted run is visible in the thread
 3. Then send the new message
 
 Add a `loadChatHistory` call in `sendChatImmediately` between the abort completion and the new send:
+
 ```ts
 async function sendChatImmediately(host, message, attachments?) {
   await abortChatRun(host);

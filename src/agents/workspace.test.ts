@@ -10,7 +10,19 @@ import {
   DEFAULT_TOOLS_FILENAME,
   loadWorkspaceBootstrapFiles,
   filterBootstrapFilesForSession,
+  resolveDefaultAgentWorkspaceDir,
 } from "./workspace.js";
+
+describe("resolveDefaultAgentWorkspaceDir", () => {
+  it("uses OPENCLAW_HOME for default workspace resolution", () => {
+    const dir = resolveDefaultAgentWorkspaceDir({
+      OPENCLAW_HOME: "/srv/openclaw-home",
+      HOME: "/home/other",
+    } as NodeJS.ProcessEnv);
+
+    expect(dir).toBe(path.join(path.resolve("/srv/openclaw-home"), ".openclaw", "workspace"));
+  });
+});
 
 describe("loadWorkspaceBootstrapFiles", () => {
   it("includes MEMORY.md when present", async () => {

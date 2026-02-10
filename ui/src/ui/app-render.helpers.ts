@@ -149,9 +149,23 @@ export function renderChatControls(state: AppViewState) {
       <button
         class="btn btn--sm btn--icon"
         ?disabled=${state.chatLoading || !state.connected}
-        @click=${() => {
-          (state as unknown as OpenClawApp).resetToolStream();
-          void refreshChat(state as unknown as Parameters<typeof refreshChat>[0]);
+        @click=${async () => {
+          const app = state as unknown as OpenClawApp;
+          app.chatManualRefreshInFlight = true;
+          app.chatNewMessagesBelow = false;
+          await app.updateComplete;
+          app.resetToolStream();
+          try {
+            await refreshChat(state as unknown as Parameters<typeof refreshChat>[0], {
+              scheduleScroll: false,
+            });
+            app.scrollToBottom({ smooth: true });
+          } finally {
+            requestAnimationFrame(() => {
+              app.chatManualRefreshInFlight = false;
+              app.chatNewMessagesBelow = false;
+            });
+          }
         }}
         title="Refresh chat data"
       >
@@ -274,16 +288,24 @@ export function renderModelPicker(state: AppViewState) {
         const modelRef = `${entry.provider}/${entry.id}`;
         return defaultModelIds.some((id) => {
           // Match by exact ref or by alias value
-          if (id === modelRef) return true;
+          if (id === modelRef) {
+            return true;
+          }
           const config = defaultModels?.[id] as
             | { alias?: string; provider?: string; model?: string }
             | undefined;
-          if (!config) return false;
+          if (!config) {
+            return false;
+          }
           // Check if the alias points to this model
           const aliasRef = config.alias;
-          if (aliasRef === modelRef) return true;
+          if (aliasRef === modelRef) {
+            return true;
+          }
           // Check if provider/model matches
-          if (config.provider === entry.provider && config.model === entry.id) return true;
+          if (config.provider === entry.provider && config.model === entry.id) {
+            return true;
+          }
           return false;
         });
       })

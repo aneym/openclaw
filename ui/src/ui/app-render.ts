@@ -70,7 +70,6 @@ import { ConfigUiHints } from "./types.ts";
 import { renderAgents } from "./views/agents.ts";
 import { renderArtifactPanel } from "./views/artifact-panel.ts";
 import { renderChannels } from "./views/channels.ts";
-import { renderChat } from "./views/chat.ts";
 import { renderCodingPanel } from "./views/coding-panel.ts";
 import { renderConfig } from "./views/config.ts";
 import { renderCron } from "./views/cron.ts";
@@ -1250,11 +1249,15 @@ export function renderApp(state: AppViewState) {
                   // Sort the new provider's models by capability
                   const sortedProvider = {
                     ...provider,
-                    models: [...provider.models].sort((a, b) => {
+                    models: [...provider.models].toSorted((a, b) => {
                       const score = (m: typeof a) => {
                         let s = 0;
-                        if (m.reasoning) s += 1000;
-                        if (m.input?.includes("image")) s += 100;
+                        if (m.reasoning) {
+                          s += 1000;
+                        }
+                        if (m.input?.includes("image")) {
+                          s += 100;
+                        }
                         s += (m.contextWindow ?? 0) / 10000;
                         return s;
                       };

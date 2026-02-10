@@ -52,7 +52,9 @@ export function renderSlashAutocomplete(props: SlashAutocompleteProps) {
             <span class="slash-autocomplete__desc">${cmd.description}</span>
             ${
               cmd.category === "skill"
-                ? html`<span class="slash-autocomplete__badge">skill</span>`
+                ? html`
+                    <span class="slash-autocomplete__badge">skill</span>
+                  `
                 : nothing
             }
           </div>
@@ -70,7 +72,5 @@ export function getFilteredCommands(
   commands: SlashCommandEntry[],
   filter: string,
 ): SlashCommandEntry[] {
-  return commands.filter((cmd) =>
-    cmd.name.toLowerCase().startsWith(filter.toLowerCase()),
-  );
+  return commands.filter((cmd) => cmd.name.toLowerCase().startsWith(filter.toLowerCase()));
 }

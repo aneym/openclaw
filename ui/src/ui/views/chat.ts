@@ -112,9 +112,13 @@ function getAutocompleteState(sessionKey: string): AutocompleteState {
 }
 
 function getSlashFilter(draft: string): string | null {
-  if (!draft.startsWith("/")) return null;
+  if (!draft.startsWith("/")) {
+    return null;
+  }
   const spaceIdx = draft.indexOf(" ");
-  if (spaceIdx !== -1) return null;
+  if (spaceIdx !== -1) {
+    return null;
+  }
   return draft.slice(1);
 }
 
@@ -131,8 +135,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
   // Show "compacting..." while active
   if (status.active) {
     return html`
-      <div class="compaction-toast compaction-toast--active">
-        ${icons.loader} Compacting context…
+      <div class="compaction-indicator compaction-indicator--active" role="status" aria-live="polite">
+        ${icons.loader} Compacting context...
       </div>
     `;
   }
@@ -142,8 +146,8 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
     const elapsed = Date.now() - status.completedAt;
     if (elapsed < COMPACTION_TOAST_DURATION_MS) {
       return html`
-        <div class="compaction-toast compaction-toast--complete">
-          ${icons.check} Compacted
+        <div class="compaction-indicator compaction-indicator--complete" role="status" aria-live="polite">
+          ${icons.check} Context compacted
         </div>
       `;
     }
@@ -156,13 +160,17 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
 let subagentBannerCollapsed = false;
 
 function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undefined) {
-  if (!runs || runs.length === 0) return nothing;
+  if (!runs || runs.length === 0) {
+    return nothing;
+  }
 
   const active = runs.filter((r) => !r.endedAt);
   const justFinished = runs.filter((r) => r.endedAt && Date.now() - r.endedAt < 4000);
 
   // Nothing to show
-  if (active.length === 0 && justFinished.length === 0) return nothing;
+  if (active.length === 0 && justFinished.length === 0) {
+    return nothing;
+  }
 
   // "Done" flash for recently finished runs
   if (active.length === 0 && justFinished.length > 0) {
@@ -595,11 +603,17 @@ function renderSessionPicker(
 
 function renderAutocompleteOverlay(props: ChatProps) {
   const commands = props.slashCommands ?? [];
-  if (commands.length === 0) return nothing;
+  if (commands.length === 0) {
+    return nothing;
+  }
   const filter = getSlashFilter(props.draft);
-  if (filter === null) return nothing;
+  if (filter === null) {
+    return nothing;
+  }
   const acState = getAutocompleteState(props.sessionKey);
-  if (!acState.visible) return nothing;
+  if (!acState.visible) {
+    return nothing;
+  }
 
   return renderSlashAutocomplete({
     visible: true,
@@ -671,12 +685,18 @@ export function renderChat(props: ChatProps) {
     }
 
     const copyBtn = target.closest(".code-block__copy") as HTMLButtonElement | null;
-    if (!copyBtn) return;
+    if (!copyBtn) {
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
-    if (copyBtn.dataset.copied === "1") return;
+    if (copyBtn.dataset.copied === "1") {
+      return;
+    }
     const encoded = copyBtn.dataset.code;
-    if (!encoded) return;
+    if (!encoded) {
+      return;
+    }
     try {
       const text = decodeURIComponent(escape(atob(encoded)));
       navigator.clipboard
@@ -822,7 +842,6 @@ export function renderChat(props: ChatProps) {
       ${renderCompactionIndicator(props.compactionStatus)}
 
       ${renderSubagentBanner(props.subagentRuns)}
-
       ${
         props.focusMode
           ? html`
@@ -937,6 +956,8 @@ export function renderChat(props: ChatProps) {
           `
           : nothing
       }
+
+      ${renderCompactionIndicator(props.compactionStatus)}
 
       ${
         props.showNewMessages

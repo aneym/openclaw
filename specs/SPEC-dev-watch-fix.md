@@ -5,6 +5,7 @@
 The dev workflow needs: make code change → tsgo compiles → gateway loads new code → session resumes.
 
 Current state:
+
 - tsgo `--watch` now correctly emits to `dist/` (fixed: `--noEmit false`)
 - But the gateway process never reloads the new code
 - SIGUSR1 does in-process restart (same process, same loaded JS modules — stale code)
@@ -31,14 +32,14 @@ function startGateway() {
 
   nodeProcess.on("exit", (code, signal) => {
     if (exiting) return;
-    
+
     // Exit code 0 or SIGUSR2 = intentional restart request, respawn
     if (code === 0 || signal === "SIGUSR2") {
       console.error("[watch] gateway exited, restarting...");
-      setTimeout(() => startGateway(), 500);  // brief delay for port release
+      setTimeout(() => startGateway(), 500); // brief delay for port release
       return;
     }
-    
+
     // Non-zero exit = real crash, propagate
     cleanup(code ?? 1);
   });
@@ -48,6 +49,7 @@ startGateway();
 ```
 
 Key behaviors:
+
 - Gateway exits with code 0 → supervisor restarts it (loads fresh dist/)
 - Gateway crashes (non-zero) → supervisor propagates the exit (don't loop on crashes)
 - Ctrl+C / SIGTERM → clean shutdown of everything
@@ -65,6 +67,7 @@ Actually simplest: the `run-loop.ts` restart path already calls `server.close()`
 ### 3. Session resume flow
 
 This should work automatically:
+
 1. Session is mid-turn → `running-sessions.json` has the session entry with old PID
 2. Gateway process exits → old PID is now dead
 3. Supervisor starts new process → `consumeInterruptedSessions()` finds dead PID entries
@@ -76,7 +79,8 @@ This should work automatically:
 The gateway tool (`action: restart`) already writes a restart sentinel before triggering SIGUSR1. This sentinel contains the sessionKey and delivery context. On startup, the sentinel is consumed and used to route the "restart complete" message back to the right session.
 
 For the dev flow, this means:
-- Agent calls `gateway(action: restart)` 
+
+- Agent calls `gateway(action: restart)`
 - Sentinel is written
 - Gateway exits (dev mode)
 - Supervisor restarts gateway

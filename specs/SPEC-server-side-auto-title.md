@@ -7,6 +7,7 @@ Move session auto-titling from the web UI (client-side) to the gateway server. E
 ## Problem
 
 The current client-side implementation in `ui/src/ui/app-gateway.ts` is unreliable:
+
 - Only works when webchat UI is open and WebSocket-connected
 - Non-webchat sessions (Telegram, Signal, CLI) never get titles
 - Split-pane timing issues cause missed renames
@@ -20,6 +21,7 @@ The current client-side implementation in `ui/src/ui/app-gateway.ts` is unreliab
 **`src/auto-reply/reply/agent-runner.ts`** — the `finally` block (~line 530) where `clearSessionRunning()` is called. This is the canonical "agent turn complete" moment that fires for ALL sessions regardless of channel.
 
 The auto-title should fire:
+
 1. After the **first successful agent reply** in a session (not on errors/aborts)
 2. Only if the session has **no existing label** (user-set labels are never overwritten)
 3. Asynchronously (fire-and-forget) — never block the reply pipeline
@@ -60,7 +62,11 @@ Internal helpers (not exported, or exported for testing):
 
 ```typescript
 /** Extract the first N user and assistant messages from a session transcript. */
-function extractTitleContext(sessionId: string, storePath: string, sessionFile?: string): { userText: string; assistantText: string } | null;
+function extractTitleContext(
+  sessionId: string,
+  storePath: string,
+  sessionFile?: string,
+): { userText: string; assistantText: string } | null;
 
 /** Call the title model (Haiku) to generate a title + icon. */
 async function generateTitle(params: {
@@ -87,6 +93,7 @@ Reuse the same approach from `src/gateway/title-http.ts` but as a direct functio
 ### Session Store Update
 
 After title generation:
+
 1. Call `updateSessionStoreEntry()` to set `label` + `icon`
 2. Only write if session STILL has no label (race-condition guard — user may have manually renamed during generation)
 3. Broadcast a WebSocket event so connected UIs update their sidebar. Use the existing pattern — look at how `sessions.patch` broadcasts updates. The gateway `server-methods/sessions.ts` calls `broadcast("sessions.updated", ...)` after patches.
@@ -112,6 +119,7 @@ if (sessionKey && storePath && activeSessionEntry) {
 ### Skip Conditions (important!)
 
 Do NOT auto-title if:
+
 - Session already has a `label` set (user-renamed)
 - Session already has an `icon` set (implies it was titled)
 - Session is a heartbeat run (`isHeartbeat` flag)
@@ -123,6 +131,7 @@ Do NOT auto-title if:
 ### Removing Client-Side Auto-Rename
 
 After the server-side implementation is working and tested:
+
 1. **Remove** `maybeAutoRenameSession()` and all its call sites from `ui/src/ui/app-gateway.ts`
 2. **Remove** `batchRenameUnnamedSessions()` if it exists
 3. **Remove** the `isRenamed()` / `markRenamed()` sessionStorage helpers
@@ -134,6 +143,7 @@ After the server-side implementation is working and tested:
 When the server writes a new title, connected UIs need to know. Check how `sessions.patch` in `src/gateway/server-methods/sessions.ts` broadcasts updates. The auto-title module needs access to the broadcast function.
 
 Options (in order of preference):
+
 1. **Agent event bus** — emit a lightweight event that the gateway server-chat handler picks up and broadcasts
 2. **Direct broadcast** — pass the broadcast function into the auto-title module (dependency injection)
 3. **Session store watcher** — UI polls/watches for store changes (already happens on intervals)
@@ -141,6 +151,7 @@ Options (in order of preference):
 Option 3 is simplest and may already work — the UI refreshes sessions periodically. But for instant updates, option 1 or 2 is better.
 
 **Recommended: Use the agent event bus.** Emit a custom event like:
+
 ```typescript
 emitAgentEvent({
   runId,
@@ -204,14 +215,17 @@ Write comprehensive tests:
 ## Files to Modify
 
 ### New files:
+
 - `src/auto-reply/reply/session-auto-title.ts` — core module
 - `src/auto-reply/reply/session-auto-title.test.ts` — tests
 
 ### Modified files:
+
 - `src/auto-reply/reply/agent-runner.ts` — add fire-and-forget call in `finally` block
 - `ui/src/ui/app-gateway.ts` — remove client-side auto-rename logic
 
 ### Possibly modified:
+
 - `src/gateway/server-chat.ts` — if we need to broadcast session updates from the event bus
 - `src/gateway/title-http.ts` — mark as deprecated, refactor to use shared title generation logic
 

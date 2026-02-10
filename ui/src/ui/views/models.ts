@@ -22,7 +22,13 @@ export type ModelProvider = {
   name: string;
   baseUrl: string;
   apiKey: string;
-  api?: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai" | "github-copilot" | "bedrock-converse-stream";
+  api?:
+    | "openai-completions"
+    | "openai-responses"
+    | "anthropic-messages"
+    | "google-generative-ai"
+    | "github-copilot"
+    | "bedrock-converse-stream";
   auth?: "api-key" | "aws-sdk" | "oauth" | "token";
   headers?: Record<string, string>;
   authHeader?: boolean;
@@ -33,7 +39,13 @@ export type ModelProvider = {
 export type ModelDefinition = {
   id: string;
   name: string;
-  api?: "openai-completions" | "openai-responses" | "anthropic-messages" | "google-generative-ai" | "github-copilot" | "bedrock-converse-stream";
+  api?:
+    | "openai-completions"
+    | "openai-responses"
+    | "anthropic-messages"
+    | "google-generative-ai"
+    | "github-copilot"
+    | "bedrock-converse-stream";
   reasoning?: boolean;
   input?: Array<"text" | "image">;
   contextWindow?: number;
@@ -92,47 +104,55 @@ export function renderModels(props: ModelsProps) {
         </div>
       </div>
 
-      ${props.error
-        ? html`<div class="callout danger">${props.error}</div>`
-        : nothing}
+      ${props.error ? html`<div class="callout danger">${props.error}</div>` : nothing}
 
       <div class="providers-list">
-        ${props.providers.length === 0
-          ? html`
-              <div class="empty-state">
-                <p>No model providers configured.</p>
-                <p class="empty-hint">
-                  Add a provider below to enable AI models in your agents.
-                </p>
-              </div>
-            `
-          : props.providers.map(
-              (provider) => html`
-                <div class="provider-card ${provider.isImplicit ? 'provider-card--implicit' : ''}">
+        ${
+          props.providers.length === 0
+            ? html`
+                <div class="empty-state">
+                  <p>No model providers configured.</p>
+                  <p class="empty-hint">Add a provider below to enable AI models in your agents.</p>
+                </div>
+              `
+            : props.providers.map(
+                (provider) => html`
+                <div class="provider-card ${provider.isImplicit ? "provider-card--implicit" : ""}">
                   <div class="provider-header">
                     <div class="provider-info">
                       <h3 class="provider-name">
                         ${provider.name}
-                        ${provider.isImplicit
-                          ? html`<span class="provider-badge">from auth</span>`
-                          : nothing}
+                        ${
+                          provider.isImplicit
+                            ? html`
+                                <span class="provider-badge">from auth</span>
+                              `
+                            : nothing
+                        }
                       </h3>
-                      ${!provider.isImplicit
-                        ? html`<span class="provider-url">${provider.baseUrl}</span>`
-                        : html`<span class="provider-url">Configured via auth profiles</span>`}
+                      ${
+                        !provider.isImplicit
+                          ? html`<span class="provider-url">${provider.baseUrl}</span>`
+                          : html`
+                              <span class="provider-url">Configured via auth profiles</span>
+                            `
+                      }
                     </div>
-                    ${!provider.isImplicit
-                      ? html`<button
+                    ${
+                      !provider.isImplicit
+                        ? html`<button
                           class="btn btn--sm btn--danger"
                           @click=${() => props.onRemoveProvider(provider.name)}
                         >
                           Remove
                         </button>`
-                      : nothing}
+                        : nothing
+                    }
                   </div>
 
-                  ${!provider.isImplicit
-                    ? html`<div class="provider-fields">
+                  ${
+                    !provider.isImplicit
+                      ? html`<div class="provider-fields">
                         <label class="field">
                           <span>API Key</span>
                           <input
@@ -143,52 +163,64 @@ export function renderModels(props: ModelsProps) {
                           />
                         </label>
                       </div>`
-                    : nothing}
+                      : nothing
+                  }
 
                   <div class="models-section">
                     <h4>Models</h4>
                     <div class="models-list">
-                      ${provider.models.map(
-                        (model) => {
-                          const modelRef = `${provider.name}/${model.id}`;
-                          return html`
+                      ${provider.models.map((model) => {
+                        const modelRef = `${provider.name}/${model.id}`;
+                        return html`
                           <div class="model-item">
                             <div class="model-main">
                               <span class="model-name">${model.name}</span>
                               <span class="model-id">${model.id}</span>
                               <span class="model-badge">${model.api ?? "openai-completions"}</span>
-                              ${model.reasoning
-                                ? html`<span class="model-badge badge-reasoning"
-                                    >reasoning</span
-                                  >`
-                                : nothing}
-                              ${model.input?.includes("image")
-                                ? html`<span class="model-badge badge-vision"
-                                    >vision</span
-                                  >`
-                                : nothing}
+                              ${
+                                model.reasoning
+                                  ? html`
+                                      <span class="model-badge badge-reasoning">reasoning</span>
+                                    `
+                                  : nothing
+                              }
+                              ${
+                                model.input?.includes("image")
+                                  ? html`
+                                      <span class="model-badge badge-vision">vision</span>
+                                    `
+                                  : nothing
+                              }
                             </div>
                             <div class="model-meta">
-                              ${model.contextWindow
-                                ? html`<span class="model-meta-item"
+                              ${
+                                model.contextWindow
+                                  ? html`<span class="model-meta-item"
                                     >${(model.contextWindow / 1000).toFixed(0)}k ctx</span
                                   >`
-                                : nothing}
-                              ${model.maxTokens
-                                ? html`<span class="model-meta-item"
+                                  : nothing
+                              }
+                              ${
+                                model.maxTokens
+                                  ? html`<span class="model-meta-item"
                                     >${(model.maxTokens / 1000).toFixed(0)}k max</span
                                   >`
-                                : nothing}
-                              ${model.cost?.input
-                                ? html`<span class="model-meta-item cost"
+                                  : nothing
+                              }
+                              ${
+                                model.cost?.input
+                                  ? html`<span class="model-meta-item cost"
                                     >$${(model.cost.input / 1_000_000).toFixed(2)}/1M in</span
                                   >`
-                                : nothing}
+                                  : nothing
+                              }
                             </div>
-                            ${props.onSetDefaultModel || props.onToggleModelVisibility
-                              ? html`<div class="model-actions">
-                                  ${props.onSetDefaultModel
-                                    ? html`<label class="model-toggle">
+                            ${
+                              props.onSetDefaultModel || props.onToggleModelVisibility
+                                ? html`<div class="model-actions">
+                                  ${
+                                    props.onSetDefaultModel
+                                      ? html`<label class="model-toggle">
                                         <input
                                           type="radio"
                                           name="default-model"
@@ -198,9 +230,11 @@ export function renderModels(props: ModelsProps) {
                                         />
                                         <span>Default</span>
                                       </label>`
-                                    : nothing}
-                                  ${props.onToggleModelVisibility
-                                    ? html`<label class="model-toggle">
+                                      : nothing
+                                  }
+                                  ${
+                                    props.onToggleModelVisibility
+                                      ? html`<label class="model-toggle">
                                         <input
                                           type="checkbox"
                                           .checked=${(props.visibleModels ?? []).includes(modelRef)}
@@ -212,17 +246,20 @@ export function renderModels(props: ModelsProps) {
                                         />
                                         <span>In picker</span>
                                       </label>`
-                                    : nothing}
+                                      : nothing
+                                  }
                                 </div>`
-                              : nothing}
+                                : nothing
+                            }
                           </div>
-                        `}
-                      )}
+                        `;
+                      })}
                     </div>
                   </div>
                 </div>
-              `
-            )}
+              `,
+              )
+        }
       </div>
 
       <div class="add-provider-section">

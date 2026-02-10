@@ -42,7 +42,9 @@
   line-height: 1;
   cursor: pointer;
   border-radius: var(--radius-sm, 4px);
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
 }
 
 .terminal-header__close:hover {
@@ -106,7 +108,9 @@
   border: none;
   border-radius: var(--radius-md, 6px);
   cursor: pointer;
-  transition: background-color 0.15s ease, transform 0.1s ease;
+  transition:
+    background-color 0.15s ease,
+    transform 0.1s ease;
 }
 
 .terminal-overlay__btn:active {
@@ -139,7 +143,10 @@
 }
 
 .nav-thread-item__terminal .nav-thread-item__icon {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 14px;
 }
 

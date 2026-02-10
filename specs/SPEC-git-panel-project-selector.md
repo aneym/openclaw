@@ -24,9 +24,18 @@ Extend the webchat git panel to support selecting which repository to operate on
      {
        "repos": [
          { "path": "/Users/aneyman/clawd", "name": "clawd" },
-         { "path": "/Users/aneyman/repos/kinetic/active/payme-workspace", "name": "payme-workspace" },
-         { "path": "/Users/aneyman/repos/kinetic/active/payme-workspace/payme-backend", "name": "payme-backend" },
-         { "path": "/Users/aneyman/repos/kinetic/active/payme-workspace/payme-mobile", "name": "payme-mobile" }
+         {
+           "path": "/Users/aneyman/repos/kinetic/active/payme-workspace",
+           "name": "payme-workspace"
+         },
+         {
+           "path": "/Users/aneyman/repos/kinetic/active/payme-workspace/payme-backend",
+           "name": "payme-backend"
+         },
+         {
+           "path": "/Users/aneyman/repos/kinetic/active/payme-workspace/payme-mobile",
+           "name": "payme-mobile"
+         }
        ]
      }
      ```
@@ -44,9 +53,10 @@ Extend the webchat git panel to support selecting which repository to operate on
 #### Controller (`ui/src/ui/controllers/git.ts`)
 
 1. **New state fields:**
+
    ```ts
    gitRepos: Array<{ path: string; name: string }>;
-   gitCwd: string;         // currently selected repo path
+   gitCwd: string; // currently selected repo path
    gitReposLoading: boolean;
    ```
 
@@ -61,6 +71,7 @@ Extend the webchat git panel to support selecting which repository to operate on
 #### View (`ui/src/ui/views/git.ts`)
 
 1. **New props:**
+
    ```ts
    repos: Array<{ path: string; name: string }>;
    selectedCwd: string;
@@ -80,6 +91,7 @@ Extend the webchat git panel to support selecting which repository to operate on
 #### App View State (`ui/src/ui/app-view-state.ts`)
 
 Add new fields:
+
 ```ts
 gitRepos: Array<{ path: string; name: string }>;
 gitCwd: string;
@@ -89,12 +101,14 @@ gitReposLoading: boolean;
 #### App Render (`ui/src/ui/app-render.ts`)
 
 Wire up the new props in the `renderGit()` call:
+
 - Pass `repos`, `selectedCwd`, `reposLoading`
 - `onRepoChange` callback: sets `state.gitCwd`, clears current status/diff/log, calls `loadGitStatus`
 
 ### Type Changes (`ui/src/ui/types.ts`)
 
 Add:
+
 ```ts
 export type GitRepoEntry = {
   path: string;
@@ -129,6 +143,7 @@ export type GitRepoEntry = {
 ## Default Scan Roots
 
 For `git.repos`, use these as default scan roots:
+
 - `process.cwd()` (gateway's working directory)
 
 The UI could in the future allow configuring additional roots, but for v1, the user can pass `roots` explicitly, and we default to CWD.

@@ -6,6 +6,7 @@ import type {
 import type { ToolDefinition } from "@mariozechner/pi-coding-agent";
 import type { ClientToolDefinition } from "./pi-embedded-runner/run/params.js";
 import { logDebug, logError } from "../logger.js";
+import { isPlainObject } from "../utils.js";
 import { runBeforeToolCallHook } from "./pi-tools.before-tool-call.js";
 import { normalizeToolName } from "./tool-policy.js";
 import { jsonResult } from "./tools/common.js";
@@ -24,8 +25,8 @@ type ToolExecuteArgs = ToolDefinition["execute"] extends (...args: infer P) => u
   ? P
   : [string, unknown, ...unknown[]];
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function isAbortSignal(value: unknown): value is AbortSignal {
+  return typeof value === "object" && value !== null && "aborted" in value;
 }
 
 function describeToolExecutionError(err: unknown): {
@@ -52,7 +53,7 @@ function splitToolExecuteArgs(args: ToolExecuteArgs): {
   // Scan positions 2–4 by type (order-independent).
   for (let i = 2; i < args.length; i++) {
     const arg = args[i];
-    if (!signal && arg instanceof AbortSignal) {
+    if (!signal && isAbortSignal(arg)) {
       signal = arg;
     } else if (!onUpdate && typeof arg === "function") {
       onUpdate = arg as AgentToolUpdateCallback<unknown>;

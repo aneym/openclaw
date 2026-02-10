@@ -5,7 +5,12 @@ import { parseAgentSessionKey } from "../../../src/sessions/session-key-utils.js
 import { scheduleChatScroll, schedulePaneChatScroll } from "./app-scroll";
 import { setLastActiveSessionKey } from "./app-settings";
 import { resetToolStream } from "./app-tool-stream";
-import { abortChatRun, loadChatHistory, markAbortPending, sendChatMessage } from "./controllers/chat";
+import {
+  abortChatRun,
+  loadChatHistory,
+  markAbortPending,
+  sendChatMessage,
+} from "./controllers/chat";
 import { loadSessions } from "./controllers/sessions";
 import { clearDraft, clearAttachments, saveQueue } from "./draft-storage";
 import { normalizeBasePath } from "./navigation";
@@ -178,7 +183,11 @@ async function flushChatQueue(host: ChatHost) {
   if (!next) {
     return;
   }
-  console.log("[CHAT-QUEUE] Flushing queued message: id=%s, text=%s", next.id, next.text.substring(0, 60));
+  console.log(
+    "[CHAT-QUEUE] Flushing queued message: id=%s, text=%s",
+    next.id,
+    next.text.substring(0, 60),
+  );
   host.chatQueue = rest;
   saveQueue(host.sessionKey, host.chatQueue);
   const ok = await sendChatMessageNow(host, next.text, {
@@ -205,11 +214,10 @@ export function clearAllQueuedMessages(host: ChatHost) {
  * Poll until `host.chatRunId` clears (abort completed) or timeout.
  * Returns true if abort completed, false on timeout.
  */
-export async function waitForAbortComplete(
-  host: ChatHost,
-  timeoutMs = 5000,
-): Promise<boolean> {
-  if (!host.chatRunId) return true;
+export async function waitForAbortComplete(host: ChatHost, timeoutMs = 5000): Promise<boolean> {
+  if (!host.chatRunId) {
+    return true;
+  }
   const start = Date.now();
   return new Promise((resolve) => {
     const check = () => {
@@ -254,7 +262,9 @@ export async function sendChatImmediately(
  */
 export async function sendQueuedMessageNow(host: ChatHost, id: string) {
   const item = host.chatQueue.find((q) => q.id === id);
-  if (!item) return;
+  if (!item) {
+    return;
+  }
   host.chatQueue = host.chatQueue.filter((q) => q.id !== id);
   saveQueue(host.sessionKey, host.chatQueue);
   await sendChatImmediately(host, item.text, item.attachments);
@@ -315,7 +325,7 @@ export async function handleSendChat(
   });
 }
 
-export async function refreshChat(host: ChatHost) {
+export async function refreshChat(host: ChatHost, opts?: { scheduleScroll?: boolean }) {
   await Promise.all([
     loadChatHistory(host as unknown as OpenClawApp),
     loadSessions(host as unknown as OpenClawApp, {
@@ -323,7 +333,9 @@ export async function refreshChat(host: ChatHost) {
     }),
     refreshChatAvatar(host),
   ]);
-  scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  if (opts?.scheduleScroll !== false) {
+    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+  }
 }
 
 export const flushChatQueueForEvent = flushChatQueue;

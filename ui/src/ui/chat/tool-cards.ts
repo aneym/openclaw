@@ -83,7 +83,9 @@ export function isFileMutatingTool(card: ToolCard): boolean {
  * Extract the command string from an exec/bash tool card.
  */
 export function extractCommandFromCard(card: ToolCard): string | undefined {
-  if (!card.args || typeof card.args !== "object") return undefined;
+  if (!card.args || typeof card.args !== "object") {
+    return undefined;
+  }
   const args = card.args as Record<string, unknown>;
   const cmd = typeof args.command === "string" ? args.command.trim() : undefined;
   return cmd || undefined;
@@ -94,7 +96,9 @@ export function extractCommandFromCard(card: ToolCard): string | undefined {
  */
 export function isCodingSessionTool(card: ToolCard): boolean {
   const name = card.name.toLowerCase();
-  if (!EXEC_TOOL_NAMES.has(name)) return false;
+  if (!EXEC_TOOL_NAMES.has(name)) {
+    return false;
+  }
   const cmd = extractCommandFromCard(card);
   return cmd ? CODING_AGENT_RE.test(cmd) : false;
 }
@@ -107,7 +111,11 @@ export function renderToolCardSidebar(
 ) {
   const isCoding = isCodingSessionTool(card);
   const display = isCoding
-    ? { ...resolveToolDisplay({ name: card.name, args: card.args }), icon: "code" as const, label: "Code Session" }
+    ? {
+        ...resolveToolDisplay({ name: card.name, args: card.args }),
+        icon: "code" as const,
+        label: "Code Session",
+      }
     : resolveToolDisplay({ name: card.name, args: card.args });
   const detail = formatToolDetail(display);
   const hasText = Boolean(card.text?.trim());

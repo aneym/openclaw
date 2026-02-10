@@ -38,6 +38,7 @@ type LifecycleHost = {
   tab: Tab;
   settings: UiSettings;
   chatHasAutoScrolled: boolean;
+  chatManualRefreshInFlight: boolean;
   chatLoading: boolean;
   chatRunId: string | null;
   chatSending: boolean;
@@ -222,6 +223,9 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
         el.focus();
       }
     }, 50);
+  }
+  if (host.tab === "chat" && host.chatManualRefreshInFlight) {
+    return;
   }
   if (
     host.tab === "chat" &&
