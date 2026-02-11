@@ -3,7 +3,7 @@ import { createSubsystemLogger } from "../logging/subsystem.js";
 
 const log = createSubsystemLogger("agent/concurrency");
 
-const DEFAULT_MAX_CONCURRENT_TURNS = 6;
+const DEFAULT_MAX_CONCURRENT_TURNS = 10;
 
 type WaitingTurn = {
   resolve: (release: () => void) => void;

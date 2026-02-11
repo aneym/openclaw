@@ -200,7 +200,7 @@ export type AgentDefaultsConfig = {
   };
   /** Max concurrent agent runs across all conversations. Default: 1 (sequential). */
   maxConcurrent?: number;
-  /** Max concurrent agent turns before queueing runs in the dispatcher. Default: 6. */
+  /** Max concurrent agent turns before queueing runs in the dispatcher. Default: 10. */
   maxConcurrentTurns?: number;
   /** Sub-agent defaults (spawned via sessions_spawn). */
   subagents?: {
