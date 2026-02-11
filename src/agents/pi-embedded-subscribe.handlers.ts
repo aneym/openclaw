@@ -26,7 +26,9 @@ export function createEmbeddedPiSessionEventHandler(ctx: EmbeddedPiSubscribeCont
         handleMessageStart(ctx, evt as never);
         return;
       case "message_update":
-        handleMessageUpdate(ctx, evt as never);
+        void handleMessageUpdate(ctx, evt as never).catch((err) => {
+          ctx.log.debug(`message_update handler failed: ${String(err)}`);
+        });
         return;
       case "message_end":
         handleMessageEnd(ctx, evt as never);

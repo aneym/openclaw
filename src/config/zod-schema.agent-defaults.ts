@@ -139,6 +139,7 @@ export const AgentDefaultsSchema = z
       .optional(),
     heartbeat: HeartbeatSchema,
     maxConcurrent: z.number().int().positive().optional(),
+    maxConcurrentTurns: z.number().int().positive().optional(),
     subagents: z
       .object({
         maxConcurrent: z.number().int().positive().optional(),

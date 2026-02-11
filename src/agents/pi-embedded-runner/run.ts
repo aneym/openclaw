@@ -90,6 +90,8 @@ const createUsageAccumulator = (): UsageAccumulator => ({
   total: 0,
 });
 
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 const hasUsageValues = (
   usage: ReturnType<typeof normalizeUsage>,
 ): usage is NonNullable<ReturnType<typeof normalizeUsage>> =>
@@ -461,6 +463,12 @@ export async function runEmbeddedPiAgent(
             usageAccumulator,
             attempt.attemptUsage ?? normalizeUsage(lastAssistant?.usage as UsageLike),
           );
+          const ranTools =
+            attempt.toolMetas.length > 0 ||
+            Boolean(attempt.lastToolError || attempt.clientToolCall);
+          if (ranTools) {
+            await yieldToEventLoop();
+          }
           autoCompactionCount += Math.max(0, attempt.compactionCount ?? 0);
           const formattedAssistantErrorText = lastAssistant
             ? formatAssistantErrorText(lastAssistant, {

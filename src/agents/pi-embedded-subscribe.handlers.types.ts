@@ -35,6 +35,7 @@ export type EmbeddedPiSubscribeState = {
   streamReasoning: boolean;
 
   deltaBuffer: string;
+  streamChunkCount: number;
   blockBuffer: string;
   blockState: { thinking: boolean; final: boolean; inlineCode: InlineCodeState };
   partialBlockState: { thinking: boolean; final: boolean; inlineCode: InlineCodeState };

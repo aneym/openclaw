@@ -1,5 +1,6 @@
 import type { RunEmbeddedPiAgentParams } from "./pi-embedded-runner/run/params.js";
 import type { EmbeddedPiRunResult } from "./pi-embedded-runner/types.js";
+import { agentTurnSemaphore } from "./concurrency.js";
 import { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
 
 /**
@@ -8,12 +9,20 @@ import { runEmbeddedPiAgent } from "./pi-embedded-runner/run.js";
  * Defaults to 'pi' (the existing Pi agent runtime) when not set.
  */
 export async function runAgent(params: RunEmbeddedPiAgentParams): Promise<EmbeddedPiRunResult> {
-  const runtime = params.config?.agents?.runtime ?? "pi";
+  const releaseTurn = await agentTurnSemaphore.acquire({
+    config: params.config,
+    label: `runAgent:${params.runId}`,
+  });
+  try {
+    const runtime = params.config?.agents?.runtime ?? "pi";
 
-  if (runtime === "claude-agent-sdk") {
-    const { runClaudeAgentSDK } = await import("./claude-sdk-runner/run.js");
-    return runClaudeAgentSDK(params);
+    if (runtime === "claude-agent-sdk") {
+      const { runClaudeAgentSDK } = await import("./claude-sdk-runner/run.js");
+      return runClaudeAgentSDK(params);
+    }
+
+    return runEmbeddedPiAgent(params);
+  } finally {
+    releaseTurn();
   }
-
-  return runEmbeddedPiAgent(params);
 }

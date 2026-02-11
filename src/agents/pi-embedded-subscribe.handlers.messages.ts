@@ -29,6 +29,9 @@ const stripTrailingDirective = (text: string): string => {
   return text.slice(0, openIndex);
 };
 
+const STREAM_CHUNK_YIELD_INTERVAL = 50;
+const yieldToEventLoop = () => new Promise<void>((resolve) => setImmediate(resolve));
+
 export function handleMessageStart(
   ctx: EmbeddedPiSubscribeContext,
   evt: AgentEvent & { message: AgentMessage },
@@ -48,10 +51,10 @@ export function handleMessageStart(
   void ctx.params.onAssistantMessageStart?.();
 }
 
-export function handleMessageUpdate(
+export async function handleMessageUpdate(
   ctx: EmbeddedPiSubscribeContext,
   evt: AgentEvent & { message: AgentMessage; assistantMessageEvent?: unknown },
-) {
+): Promise<void> {
   const msg = evt.message;
   if (msg?.role !== "assistant") {
     return;
@@ -102,6 +105,7 @@ export function handleMessageUpdate(
 
   if (chunk) {
     ctx.state.deltaBuffer += chunk;
+    ctx.state.streamChunkCount += 1;
     if (ctx.blockChunker) {
       ctx.blockChunker.append(chunk);
     } else {
@@ -185,6 +189,10 @@ export function handleMessageUpdate(
       ctx.emitBlockChunk(ctx.state.blockBuffer);
       ctx.state.blockBuffer = "";
     }
+  }
+
+  if (chunk && ctx.state.streamChunkCount % STREAM_CHUNK_YIELD_INTERVAL === 0) {
+    await yieldToEventLoop();
   }
 }
 
