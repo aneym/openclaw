@@ -108,11 +108,15 @@ const logRunner = (message) => {
 };
 
 const runNode = () => {
-  const nodeProcess = spawn(process.execPath, ["openclaw.mjs", ...args], {
-    cwd,
-    env,
-    stdio: "inherit",
-  });
+  const nodeProcess = spawn(
+    process.execPath,
+    ["--max-old-space-size=16384", "openclaw.mjs", ...args],
+    {
+      cwd,
+      env,
+      stdio: "inherit",
+    },
+  );
 
   nodeProcess.on("exit", (exitCode, exitSignal) => {
     if (exitSignal) {
