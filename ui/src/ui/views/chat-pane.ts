@@ -33,6 +33,23 @@ export interface ChatPaneProps {
   isFocused: boolean;
 }
 
+export function hasNonEmptyTextSelectionInElement(container: Element): boolean {
+  const selection = window.getSelection();
+  if (!selection || selection.toString().length === 0) {
+    return false;
+  }
+
+  const { anchorNode, focusNode } = selection;
+  if (!anchorNode && !focusNode) {
+    return false;
+  }
+
+  return (
+    (anchorNode ? container.contains(anchorNode) : false) ||
+    (focusNode ? container.contains(focusNode) : false)
+  );
+}
+
 export function renderChatPane(props: ChatPaneProps) {
   const { leaf, state, isFocused } = props;
   const sessionKey = leaf.threadId;
@@ -324,9 +341,14 @@ export function renderChatPane(props: ChatPaneProps) {
       class="split-pane ${isFocused ? "split-pane--focused" : ""}"
       data-pane-id=${leaf.id}
       @click=${(e: MouseEvent) => {
+        const paneEl = e.currentTarget as HTMLElement;
         if (leaf.id !== state.focusedPaneId) {
           state.focusPane(leaf.id);
         } else {
+          if (hasNonEmptyTextSelectionInElement(paneEl)) {
+            return;
+          }
+
           // Already focused — focus the textarea on click, but only if
           // the user isn't interacting with message content (text selection)
           // or other interactive elements.
@@ -338,7 +360,6 @@ export function renderChatPane(props: ChatPaneProps) {
             ".chat-bubble, .chat-group-messages, .chat-message-images",
           );
           if (!isInteractive && !isMessageContent) {
-            const paneEl = e.currentTarget as HTMLElement;
             const textarea = paneEl.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
             if (textarea && !textarea.disabled) {
               textarea.focus();
