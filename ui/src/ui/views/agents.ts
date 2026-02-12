@@ -974,7 +974,7 @@ function renderAgentDashboard(params: {
 }) {
   const {
     agent,
-    agentIdentity,
+    agentIdentity: _agentIdentity,
     sessions,
     sessionsLoading,
     soulPreview,
