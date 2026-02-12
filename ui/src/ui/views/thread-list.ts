@@ -123,6 +123,10 @@ let searchLoading = false;
 let searchError: string | null = null;
 let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
+// New-chat picker state
+let newChatSearchQuery = "";
+let newChatSelectedAgent: string | null = null;
+
 /** Debounced server-side session search */
 function debouncedSearch(
   query: string,
@@ -514,11 +518,32 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
       const group = document.querySelector(".agent-new-session-group");
       if (group && !group.contains(e.target as Node)) {
         picker.classList.remove("agent-new-session-picker--open");
+        newChatSearchQuery = "";
+        newChatSelectedAgent = null;
       }
     };
     document.removeEventListener("click", closePickerHandler, true);
     document.addEventListener("click", closePickerHandler, true);
   }
+
+  // Build recent sessions for the new-chat picker (max 10, non-archived, non-cron)
+  const recentForPicker = sessions
+    .filter((s) => {
+      if (s.archivedAt || isCronSession(s)) {
+        return false;
+      }
+      if (newChatSelectedAgent) {
+        const parsed = parseAgentSessionKey(s.key);
+        if (!parsed || parsed.agentId !== newChatSelectedAgent) {
+          return false;
+        }
+      }
+      if (newChatSearchQuery) {
+        return matchesThreadSearch(s, newChatSearchQuery);
+      }
+      return true;
+    })
+    .slice(0, 10);
 
   return html`
     <div class="nav-threads">
@@ -547,7 +572,59 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
             <span class="nav-thread-item__new-label">New session</span>
           </button>
           <div class="agent-new-session-picker">
-            ${agents.map(
+            <div class="agent-new-session-picker__pills">
+              <button
+                class="agent-filter-pill agent-filter-pill--sm ${newChatSelectedAgent === null ? "agent-filter-pill--active" : ""}"
+                @click=${(e: Event) => {
+                  e.stopPropagation();
+                  newChatSelectedAgent = null;
+                  onRequestUpdate();
+                }}
+              >All</button>
+              ${agents.map(
+                (agent) => html`
+                  <button
+                    class="agent-filter-pill agent-filter-pill--sm ${newChatSelectedAgent === agent.id ? "agent-filter-pill--active" : ""}"
+                    @click=${(e: Event) => {
+                      e.stopPropagation();
+                      newChatSelectedAgent = agent.id;
+                      onRequestUpdate();
+                    }}
+                  >
+                    ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+                    <span>${agent.name}</span>
+                  </button>
+                `,
+              )}
+            </div>
+            <input
+              class="agent-new-session-picker__search"
+              type="text"
+              placeholder="Search recent sessions…"
+              .value=${newChatSearchQuery}
+              @input=${(e: Event) => {
+                newChatSearchQuery = (e.target as HTMLInputElement).value;
+                onRequestUpdate();
+              }}
+              @click=${(e: Event) => e.stopPropagation()}
+              @keydown=${(e: KeyboardEvent) => {
+                if (e.key === "Escape") {
+                  const el = document.querySelector(".agent-new-session-picker");
+                  if (el) {
+                    el.classList.remove("agent-new-session-picker--open");
+                  }
+                  newChatSearchQuery = "";
+                  newChatSelectedAgent = null;
+                  onRequestUpdate();
+                }
+              }}
+              aria-label="Search recent sessions"
+            />
+            <div class="agent-new-session-picker__section-label">New session</div>
+            ${(newChatSelectedAgent
+              ? agents.filter((a) => a.id === newChatSelectedAgent)
+              : agents
+            ).map(
               (agent) => html`
                 <button
                   class="agent-new-session-option"
@@ -557,6 +634,8 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                     if (el) {
                       el.classList.remove("agent-new-session-picker--open");
                     }
+                    newChatSearchQuery = "";
+                    newChatSelectedAgent = null;
                   }}
                   title="New ${agent.name} session"
                 >
@@ -565,6 +644,37 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                 </button>
               `,
             )}
+            ${
+              recentForPicker.length > 0
+                ? html`
+              <div class="agent-new-session-picker__section-label">Recent</div>
+              ${recentForPicker.map((s) => {
+                const label = sessionDisplayLabel(s);
+                const parsed = parseAgentSessionKey(s.key);
+                const agent = parsed ? agents.find((a) => a.id === parsed.agentId) : null;
+                return html`
+                    <button
+                      class="agent-new-session-option"
+                      @click=${() => {
+                        onSelect(s.key);
+                        const el = document.querySelector(".agent-new-session-picker");
+                        if (el) {
+                          el.classList.remove("agent-new-session-picker--open");
+                        }
+                        newChatSearchQuery = "";
+                        newChatSelectedAgent = null;
+                      }}
+                      title="${label}\n${s.key}"
+                    >
+                      ${agent?.emoji ? html`<span class="agent-new-session-option__emoji">${agent.emoji}</span>` : nothing}
+                      <span class="agent-new-session-option__label">${label}</span>
+                      ${s.updatedAt ? html`<span class="agent-new-session-option__time">${compactAgo(s.updatedAt)}</span>` : nothing}
+                    </button>
+                  `;
+              })}
+            `
+                : nothing
+            }
           </div>
         </div>
       `

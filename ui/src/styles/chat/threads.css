@@ -421,6 +421,59 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.agent-new-session-picker__pills {
+  display: flex;
+  gap: 4px;
+  padding: 4px 6px 2px;
+  flex-wrap: wrap;
+}
+
+.agent-filter-pill--sm {
+  font-size: 11px;
+  padding: 2px 8px;
+}
+
+.agent-new-session-picker__search {
+  margin: 4px 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: var(--input-bg, var(--panel));
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  outline: none;
+}
+
+.agent-new-session-picker__search:focus {
+  border-color: var(--accent, #4a9eff);
+}
+
+.agent-new-session-picker__section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted, #888);
+  padding: 6px 10px 2px;
+}
+
+.agent-new-session-option__label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-new-session-option__time {
+  font-size: 10px;
+  color: var(--text-muted, #888);
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .agent-new-session-option {
