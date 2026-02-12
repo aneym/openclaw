@@ -753,8 +753,7 @@ export function renderApp(state: AppViewState) {
                           return;
                         }
                         const res = await state.client.request("sessions.list", {
-                          limit: 50,
-                          activeMinutes: 0,
+                          limit: 100,
                         });
                         const sessions = (res.sessions ?? []) as Array<{
                           key: string;
@@ -1101,8 +1100,7 @@ export function renderApp(state: AppViewState) {
                         return;
                       }
                       const res = await state.client.request("sessions.list", {
-                        limit: 50,
-                        activeMinutes: 0,
+                        limit: 100,
                       });
                       const sessions = (res.sessions ?? []) as Array<{
                         key: string;
