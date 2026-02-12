@@ -25,6 +25,7 @@ import {
   resetToolStream,
   resetToolStreamForThread,
   type AgentEventPayload,
+  type CompactionStatus,
 } from "./app-tool-stream";
 import { loadAgents } from "./controllers/agents";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
@@ -82,6 +83,8 @@ type GatewayHost = {
   assistantAgentId: string | null;
   sessionKey: string;
   chatRunId: string | null;
+  compactionStatus?: CompactionStatus | null;
+  compactionClearTimer?: number | null;
   refreshSessionsAfterChat: Set<string>;
   execApprovalQueue: ExecApprovalRequest[];
   execApprovalError: string | null;
@@ -409,12 +412,21 @@ export function connectGateway(host: GatewayHost) {
         for (const thread of host.threads.values()) {
           thread.chatSending = false;
           thread.chatRunId = null;
+          if (thread.compactionClearTimer != null) {
+            window.clearTimeout(thread.compactionClearTimer);
+            thread.compactionClearTimer = null;
+          }
+          thread.compactionStatus = null;
         }
       }
 
       // 5. Clear compaction toast — the "end" event will never arrive from
       //    the old process.
-      (host as unknown as { compactionStatus: unknown }).compactionStatus = null;
+      if (host.compactionClearTimer != null) {
+        window.clearTimeout(host.compactionClearTimer);
+        host.compactionClearTimer = null;
+      }
+      host.compactionStatus = null;
 
       // 6. Clear subagent runs — will be re-fetched below.
       host.subagentRuns = new Map();
@@ -542,7 +554,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (host.onboarding) {
       return;
     }
-    const agentPayload = evt.payload as AgentEventPayload | undefined;
+    const agentPayload = evt.payload;
     const agentSessionKey = agentPayload?.sessionKey;
     const agentRunId = typeof agentPayload?.runId === "string" ? agentPayload.runId : "";
 
@@ -595,7 +607,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "chat") {
-    const payload = evt.payload as ChatEventPayload | undefined;
+    const payload = evt.payload;
     const eventSessionKey = payload?.sessionKey;
 
     // Track global running-sessions state (before any early returns)
@@ -800,7 +812,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "subagent") {
-    applySubagentEvent(host, evt.payload as SubagentEventPayload | undefined);
+    applySubagentEvent(host, evt.payload);
     return;
   }
 }

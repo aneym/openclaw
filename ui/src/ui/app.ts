@@ -160,6 +160,7 @@ export class OpenClawApp extends LitElement {
   @state() eventLog: EventLogEntry[] = [];
   private eventLogBuffer: EventLogEntry[] = [];
   toolStreamSyncTimer: number | null = null;
+  compactionClearTimer: number | null = null;
   private sidebarCloseTimer: number | null = null;
 
   @state() assistantName = injectedAssistantIdentity.name;

@@ -1,4 +1,4 @@
-import type { ToolStreamEntry } from "./app-tool-stream";
+import type { CompactionStatus, ToolStreamEntry } from "./app-tool-stream";
 import type { ChatAttachment, ChatQueueItem } from "./ui-types";
 import { generateUUID } from "./uuid";
 
@@ -19,6 +19,8 @@ export interface ThreadState {
   chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
+  compactionStatus: CompactionStatus | null;
+  compactionClearTimer: number | null;
   chatSending: boolean;
   chatMessage: string;
   chatAttachments: ChatAttachment[];
@@ -56,6 +58,8 @@ export function createThreadState(descriptor: ThreadDescriptor): ThreadState {
     chatStreamReasoning: null,
     chatStreamStartedAt: null,
     chatRunId: null,
+    compactionStatus: null,
+    compactionClearTimer: null,
     chatSending: false,
     chatMessage: "",
     chatAttachments: [],
@@ -78,6 +82,8 @@ type SnapshotHost = {
   chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
+  compactionStatus: CompactionStatus | null;
+  compactionClearTimer: number | null;
   chatSending: boolean;
   chatMessage: string;
   chatAttachments: ChatAttachment[];
@@ -99,6 +105,8 @@ export function snapshotThreadState(
     chatStreamReasoning: host.chatStreamReasoning,
     chatStreamStartedAt: host.chatStreamStartedAt,
     chatRunId: host.chatRunId,
+    compactionStatus: host.compactionStatus,
+    compactionClearTimer: null,
     chatSending: host.chatSending,
     chatMessage: host.chatMessage,
     chatAttachments: host.chatAttachments,
@@ -119,6 +127,11 @@ export function restoreThreadState(host: SnapshotHost, thread: ThreadState): voi
   host.chatStreamReasoning = thread.chatStreamReasoning;
   host.chatStreamStartedAt = thread.chatStreamStartedAt;
   host.chatRunId = thread.chatRunId;
+  if (host.compactionClearTimer != null) {
+    clearTimeout(host.compactionClearTimer);
+    host.compactionClearTimer = null;
+  }
+  host.compactionStatus = thread.compactionStatus;
   host.chatSending = thread.chatSending;
   host.chatMessage = thread.chatMessage;
   host.chatAttachments = thread.chatAttachments;

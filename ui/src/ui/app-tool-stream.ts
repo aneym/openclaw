@@ -246,13 +246,9 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     return;
   }
 
-  // Handle compaction events
-  if (payload.stream === "compaction") {
-    handleCompactionEvent(host as CompactionHost, payload);
-    return;
-  }
-
+  const isCompaction = payload.stream === "compaction";
   if (
+    !isCompaction &&
     payload.stream !== "tool" &&
     payload.stream !== "thinking" &&
     payload.stream !== "reasoning"
@@ -263,6 +259,21 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
   if (sessionKey && !sessionKeysMatch(sessionKey, host.sessionKey)) {
     return;
   }
+
+  if (isCompaction) {
+    if (!sessionKey) {
+      // Session-less compaction events are ambiguous; only accept when
+      // they clearly match the currently tracked run for this host.
+      if (!host.chatRunId || payload.runId !== host.chatRunId) {
+        return;
+      }
+    } else if (host.chatRunId && payload.runId !== host.chatRunId) {
+      return;
+    }
+    handleCompactionEvent(host as CompactionHost, payload);
+    return;
+  }
+
   // Fallback: only accept session-less events for the active run.
   if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
     return;
@@ -362,14 +373,16 @@ function applyToolEvent(
 // Thread-scoped tool stream helpers
 // ---------------------------------------------------------------------------
 
-/** Adapter that wraps a ThreadState as a ToolStreamHost for shared helpers. */
-function threadAsToolStreamHost(thread: ThreadState): ToolStreamHost {
+/** Adapter that wraps a ThreadState as a stream host for shared helpers. */
+function threadAsToolStreamHost(thread: ThreadState): CompactionHost {
   return {
     sessionKey: thread.descriptor.sessionKey,
     chatRunId: thread.chatRunId,
     chatStream: thread.chatStream,
     chatStreamReasoning: thread.chatStreamReasoning,
     chatStreamStartedAt: thread.chatStreamStartedAt,
+    compactionStatus: thread.compactionStatus,
+    compactionClearTimer: thread.compactionClearTimer,
     toolStreamById: thread.toolStreamById,
     toolStreamOrder: thread.toolStreamOrder,
     chatToolMessages: thread.chatToolMessages as Record<string, unknown>[],
@@ -378,11 +391,13 @@ function threadAsToolStreamHost(thread: ThreadState): ToolStreamHost {
 }
 
 /** Write back any scalar fields that the adapter may have replaced. */
-function syncBackFromHost(thread: ThreadState, host: ToolStreamHost) {
+function syncBackFromHost(thread: ThreadState, host: CompactionHost) {
   thread.chatRunId = host.chatRunId;
   thread.chatStream = host.chatStream;
   thread.chatStreamReasoning = host.chatStreamReasoning;
   thread.chatStreamStartedAt = host.chatStreamStartedAt;
+  thread.compactionStatus = host.compactionStatus ?? null;
+  thread.compactionClearTimer = host.compactionClearTimer ?? null;
   thread.chatToolMessages = host.chatToolMessages;
   thread.toolStreamSyncTimer = host.toolStreamSyncTimer;
 }
@@ -404,12 +419,9 @@ export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEv
     return;
   }
 
-  // Compaction events are host-level only (UI toast); skip for threads
-  if (payload.stream === "compaction") {
-    return;
-  }
-
+  const isCompaction = payload.stream === "compaction";
   if (
+    !isCompaction &&
     payload.stream !== "tool" &&
     payload.stream !== "thinking" &&
     payload.stream !== "reasoning"
@@ -422,6 +434,22 @@ export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEv
   if (sessionKey && !sessionKeysMatch(sessionKey, thread.descriptor.sessionKey)) {
     return;
   }
+
+  if (isCompaction) {
+    if (!sessionKey) {
+      // Session-less compaction events are ambiguous; only accept when this
+      // thread already owns the run.
+      if (!host.chatRunId || payload.runId !== host.chatRunId) {
+        return;
+      }
+    } else if (host.chatRunId && payload.runId !== host.chatRunId) {
+      return;
+    }
+    handleCompactionEvent(host, payload);
+    syncBackFromHost(thread, host);
+    return;
+  }
+
   if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
     return;
   }

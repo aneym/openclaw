@@ -1,18 +1,34 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  type CompactionStatus,
+  type ToolStreamEntry,
   flushToolStreamSync,
   handleAgentEvent,
   handleAgentEventForThread,
 } from "./app-tool-stream";
 import { createThreadDescriptor, createThreadState } from "./thread-state";
 
-function createHost() {
+function createHost(): {
+  sessionKey: string;
+  chatRunId: string | null;
+  chatStream: string | null;
+  chatStreamReasoning: string | null;
+  chatStreamStartedAt: number | null;
+  compactionStatus: CompactionStatus | null;
+  compactionClearTimer: number | null;
+  toolStreamById: Map<string, ToolStreamEntry>;
+  toolStreamOrder: string[];
+  chatToolMessages: unknown[];
+  toolStreamSyncTimer: number | null;
+} {
   return {
     sessionKey: "main",
     chatRunId: null,
     chatStream: null,
     chatStreamReasoning: null,
     chatStreamStartedAt: null,
+    compactionStatus: null,
+    compactionClearTimer: null,
     toolStreamById: new Map(),
     toolStreamOrder: [],
     chatToolMessages: [],
@@ -182,5 +198,63 @@ describe("app-tool-stream", () => {
 
     expect(thread.chatRunId).toBe("run-thread");
     expect(thread.chatStreamReasoning).toBe("Reasoning");
+  });
+
+  it("scopes host compaction events to the active session/run", () => {
+    const host = createHost();
+    host.chatRunId = "run-main";
+
+    handleAgentEvent(host, {
+      runId: "run-other",
+      seq: 1,
+      stream: "compaction",
+      ts: 1,
+      sessionKey: "other-session",
+      data: { phase: "start" },
+    });
+
+    expect(host.compactionStatus).toBeNull();
+
+    handleAgentEvent(host, {
+      runId: "run-main",
+      seq: 2,
+      stream: "compaction",
+      ts: 2,
+      sessionKey: "main",
+      data: { phase: "start" },
+    });
+
+    expect(host.compactionStatus?.active).toBe(true);
+  });
+
+  it("ignores session-less compaction when host has no matching run", () => {
+    const host = createHost();
+
+    handleAgentEvent(host, {
+      runId: "run-main",
+      seq: 1,
+      stream: "compaction",
+      ts: 1,
+      data: { phase: "start" },
+    });
+
+    expect(host.compactionStatus).toBeNull();
+  });
+
+  it("tracks compaction state for non-focused thread events", () => {
+    const descriptor = createThreadDescriptor("main", "Thread");
+    const thread = createThreadState(descriptor);
+    thread.chatRunId = "run-thread";
+
+    handleAgentEventForThread(thread, {
+      runId: "run-thread",
+      seq: 1,
+      stream: "compaction",
+      ts: 1,
+      sessionKey: descriptor.sessionKey,
+      data: { phase: "start" },
+    });
+
+    expect(thread.compactionStatus?.active).toBe(true);
   });
 });
