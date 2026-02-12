@@ -386,6 +386,16 @@ export function renderApp(state: AppViewState) {
                         subagentCounts: computeSubagentCounts(state),
                         openPaneKeys: computeOpenPaneKeys(state),
                         gateway: state.client,
+                        agents:
+                          state.agentsList?.agents?.map((a) => ({
+                            id: a.id,
+                            name: state.agentIdentityById?.[a.id]?.name ?? a.id,
+                            emoji: state.agentIdentityById?.[a.id]?.emoji,
+                          })) ?? [],
+                        selectedAgentFilter: state.selectedAgentFilter,
+                        onAgentFilterChange: (agentId) => {
+                          state.selectedAgentFilter = agentId;
+                        },
                         onSelect: (sessionKey) => {
                           // In split mode, also update the focused pane's leaf
                           if (state.splitLayout && state.focusedPaneId) {

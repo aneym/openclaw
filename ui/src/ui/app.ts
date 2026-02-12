@@ -434,6 +434,8 @@ export class OpenClawApp extends LitElement {
   @state() usageLogFilterHasTools: boolean | null = null;
   @state() usageLogFilterQuery = "";
 
+  @state() selectedAgentFilter: string | null = null;
+
   client: GatewayBrowserClient | null = null;
   private chatScrollFrame: number | null = null;
   private chatScrollTimeout: number | null = null;

@@ -2,6 +2,7 @@ import type { TemplateResult } from "lit";
 import { html, nothing } from "lit";
 import { repeat } from "lit/directives/repeat.js";
 import type { GatewayBrowserClient } from "../gateway.ts";
+import { parseAgentSessionKey } from "../session-keys";
 import { setDragData } from "../split-dnd";
 
 /** Search result from sessions.search RPC */
@@ -67,6 +68,12 @@ export interface NavThreadListProps {
   openPaneKeys: Set<string>;
   /** Gateway client for server-side search (optional for backward compat). */
   gateway?: GatewayBrowserClient | null;
+  /** List of agents for filter pills */
+  agents: Array<{ id: string; name: string; emoji?: string }>;
+  /** Currently selected agent filter (null = All) */
+  selectedAgentFilter: string | null;
+  /** Callback when agent filter changes */
+  onAgentFilterChange: (agentId: string | null) => void;
   onSelect: (sessionKey: string) => void;
   onRename: (sessionKey: string, label: string) => void;
   onDelete: (sessionKey: string) => void;
@@ -148,10 +155,10 @@ function debouncedSearch(
     }
 
     try {
-      const response = (await gateway.request("sessions.search", {
+      const response = await gateway.request("sessions.search", {
         query,
         limit: 20,
-      })) as { results?: SessionSearchResult[] } | undefined;
+      });
       searchResults = response?.results ?? [];
       searchError = null;
     } catch (err) {
@@ -259,22 +266,32 @@ export function cleanSessionTitle(raw: string | undefined): string {
 
 /** Check if a raw title is too noisy to be useful as a primary label. */
 function isTitleUsable(title: string | undefined): string {
-  if (!title) return "";
+  if (!title) {
+    return "";
+  }
   const cleaned = cleanTitle(title);
   // Too short after cleaning = not useful
-  if (cleaned.length < 3) return "";
+  if (cleaned.length < 3) {
+    return "";
+  }
   return cleaned;
 }
 
 function sessionDisplayLabel(entry: NavSessionEntry): string {
   // Manual label always wins
-  if (entry.label) return entry.label;
+  if (entry.label) {
+    return entry.label;
+  }
   // Try derived title (AI-generated summary), cleaned up
   const derived = isTitleUsable(entry.derivedTitle);
-  if (derived) return derived;
+  if (derived) {
+    return derived;
+  }
   // Try display name, cleaned up
   const display = isTitleUsable(entry.displayName);
-  if (display) return display;
+  if (display) {
+    return display;
+  }
   return humanizeSessionKey(entry.key);
 }
 
@@ -286,7 +303,9 @@ function sessionSubtitle(entry: NavSessionEntry): string {
   // If we have a label, show derived title as subtitle (if different)
   if (entry.label) {
     const derived = isTitleUsable(entry.derivedTitle);
-    if (derived && derived !== entry.label) return derived;
+    if (derived && derived !== entry.label) {
+      return derived;
+    }
     return channelLabel;
   }
   // Otherwise just show channel info
@@ -295,16 +314,24 @@ function sessionSubtitle(entry: NavSessionEntry): string {
 
 /** Extract channel name from session key, surface, or entry metadata. */
 function extractChannel(entry: NavSessionEntry): string | null {
-  if (entry.surface) return entry.surface;
+  if (entry.surface) {
+    return entry.surface;
+  }
   // NavSessionEntry doesn't carry channel/origin directly, so parse from key
   const parts = entry.key.split(":");
   if (parts[0] === "agent" && parts.length >= 3) {
     const ch = parts[2];
-    if (ch === "main" && parts[3] === "thread") return "thread";
-    if (ch === "cron") return "cron";
+    if (ch === "main" && parts[3] === "thread") {
+      return "thread";
+    }
+    if (ch === "cron") {
+      return "cron";
+    }
     return ch;
   }
-  if (parts.length >= 2) return parts[0];
+  if (parts.length >= 2) {
+    return parts[0];
+  }
   return null;
 }
 
@@ -363,7 +390,9 @@ export function humanizeSessionKey(key: string): string {
     const channel = parts[0];
     const name = channel.charAt(0).toUpperCase() + channel.slice(1);
     const rest = parts.slice(1).join(":");
-    if (rest.startsWith("g-") || rest.startsWith("g:")) return `${name} group`;
+    if (rest.startsWith("g-") || rest.startsWith("g:")) {
+      return `${name} group`;
+    }
     return `${name} session`;
   }
 
@@ -439,6 +468,9 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     subagentCounts,
     openPaneKeys,
     gateway,
+    agents,
+    selectedAgentFilter,
+    onAgentFilterChange,
     onSelect,
     onRename,
     onDelete,
@@ -451,13 +483,22 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
 
   // Use server search results when available, fall back to client-side filtering
   const hasServerSearch = threadSearchQuery.length >= 3 && searchResults !== null;
-  const filtered = hasServerSearch
+  let filtered = hasServerSearch
     ? sessions.filter((s) =>
         searchResults!.some((r) => r.sessionKey === s.key || r.sessionId === s.key),
       )
     : threadSearchQuery
       ? sessions.filter((s) => matchesThreadSearch(s, threadSearchQuery))
       : sessions;
+
+  // Apply agent filter
+  if (selectedAgentFilter) {
+    filtered = filtered.filter((s) => {
+      const parsed = parseAgentSessionKey(s.key);
+      return parsed && parsed.agentId === selectedAgentFilter;
+    });
+  }
+
   const groups = groupSessions(filtered, openPaneKeys);
 
   return html`
@@ -483,6 +524,33 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
           <span class="nav-thread-item__icon">⌘</span>
           <span class="nav-thread-item__new-label">Terminal</span>
         </button>
+      `
+          : nothing
+      }
+      ${
+        agents.length > 1
+          ? html`
+        <div class="agent-filter-bar">
+          <button
+            class="agent-filter-pill ${selectedAgentFilter === null ? "agent-filter-pill--active" : ""}"
+            @click=${() => onAgentFilterChange(null)}
+            title="Show all agents"
+          >
+            All
+          </button>
+          ${agents.map(
+            (agent) => html`
+              <button
+                class="agent-filter-pill ${selectedAgentFilter === agent.id ? "agent-filter-pill--active" : ""}"
+                @click=${() => onAgentFilterChange(agent.id)}
+                title="Filter by ${agent.name}"
+              >
+                ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+                <span>${agent.name}</span>
+              </button>
+            `,
+          )}
+        </div>
       `
           : nothing
       }

@@ -242,6 +242,8 @@ export function buildAgentSystemPrompt(params: {
     sessions_spawn: "Spawn a sub-agent session",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
+    agent_memory_search:
+      "Search another agent's memory files (MEMORY.md + memory/*.md) for relevant information",
     display_asset:
       "Display an asset in chat with compact previews and controls (image/video/audio/file)",
     image: "Analyze an image with the configured image model",
@@ -272,6 +274,7 @@ export function buildAgentSystemPrompt(params: {
     "sessions_history",
     "sessions_send",
     "session_status",
+    "agent_memory_search",
     "display_asset",
     "image",
     "display_image",

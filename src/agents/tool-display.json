@@ -276,6 +276,11 @@
       "title": "Session Status",
       "detailKeys": ["sessionKey", "model"]
     },
+    "agent_memory_search": {
+      "emoji": "🔍",
+      "title": "Agent Memory Search",
+      "detailKeys": ["agentId", "query"]
+    },
     "memory_search": {
       "emoji": "🧠",
       "title": "Memory Search",

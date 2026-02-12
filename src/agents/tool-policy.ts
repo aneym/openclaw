@@ -52,6 +52,7 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "sessions_send",
     "sessions_spawn",
     "session_status",
+    "agent_memory_search",
     "memory_search",
     "memory_get",
     "web_search",
