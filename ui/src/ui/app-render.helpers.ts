@@ -117,6 +117,7 @@ export function renderChatControls(state: AppViewState) {
             state.sessionKey = next;
             state.chatMessage = "";
             state.chatStream = null;
+            state.chatStreamReasoning = null;
             (state as unknown as OpenClawApp).chatStreamStartedAt = null;
             state.chatRunId = null;
             (state as unknown as OpenClawApp).resetToolStream();

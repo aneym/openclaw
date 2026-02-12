@@ -71,7 +71,10 @@ export async function persistInlineDirectives(params: {
       (sessionEntry.elevatedLevel as ElevatedLevel | undefined) ??
       (agentCfg?.elevatedDefault as ElevatedLevel | undefined) ??
       (elevatedAllowed ? ("on" as ElevatedLevel) : ("off" as ElevatedLevel));
-    const prevReasoningLevel = (sessionEntry.reasoningLevel as ReasoningLevel | undefined) ?? "off";
+    const prevReasoningLevel =
+      (sessionEntry.reasoningLevel as ReasoningLevel | undefined) ??
+      (agentCfg?.reasoningDefault as ReasoningLevel | undefined) ??
+      "off";
     let elevatedChanged =
       directives.hasElevatedDirective &&
       directives.elevatedLevel !== undefined &&
@@ -90,11 +93,8 @@ export async function persistInlineDirectives(params: {
       updated = true;
     }
     if (directives.hasReasoningDirective && directives.reasoningLevel) {
-      if (directives.reasoningLevel === "off") {
-        delete sessionEntry.reasoningLevel;
-      } else {
-        sessionEntry.reasoningLevel = directives.reasoningLevel;
-      }
+      // Persist "off" explicitly so inline `/reasoning off` can override reasoningDefault.
+      sessionEntry.reasoningLevel = directives.reasoningLevel;
       reasoningChanged =
         reasoningChanged ||
         (directives.reasoningLevel !== prevReasoningLevel &&
@@ -207,7 +207,9 @@ export async function persistInlineDirectives(params: {
         });
       }
       if (reasoningChanged) {
-        const nextReasoning = (sessionEntry.reasoningLevel ?? "off") as ReasoningLevel;
+        const nextReasoning = (sessionEntry.reasoningLevel ??
+          (agentCfg?.reasoningDefault as ReasoningLevel | undefined) ??
+          "off") as ReasoningLevel;
         enqueueSystemEvent(formatReasoningEvent(nextReasoning), {
           sessionKey,
           contextKey: "mode:reasoning",

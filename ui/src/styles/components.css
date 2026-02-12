@@ -1264,24 +1264,13 @@
   background: var(--bg-muted);
 }
 
-@keyframes chatStreamPulse {
-  0%,
-  100% {
-    border-color: var(--border);
-  }
-  50% {
-    border-color: var(--accent);
-  }
-}
-
 .chat-bubble.streaming {
-  animation: chatStreamPulse 1.5s ease-in-out infinite;
+  animation: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .chat-bubble.streaming {
     animation: none;
-    border-color: var(--accent);
   }
 }
 

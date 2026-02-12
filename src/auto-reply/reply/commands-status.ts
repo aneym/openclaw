@@ -220,6 +220,7 @@ export async function buildStatusReply(params: {
       contextTokens,
       thinkingDefault: agentDefaults.thinkingDefault,
       verboseDefault: agentDefaults.verboseDefault,
+      reasoningDefault: agentDefaults.reasoningDefault,
       elevatedDefault: agentDefaults.elevatedDefault,
     },
     sessionEntry,

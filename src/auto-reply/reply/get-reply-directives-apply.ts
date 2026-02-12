@@ -154,7 +154,9 @@ export async function applyInlineDirectiveOverrides(params: {
       (sessionEntry?.verboseLevel as VerboseLevel | undefined) ??
       (agentCfg?.verboseDefault as VerboseLevel | undefined);
     const currentReasoningLevel =
-      (sessionEntry?.reasoningLevel as ReasoningLevel | undefined) ?? "off";
+      (sessionEntry?.reasoningLevel as ReasoningLevel | undefined) ??
+      (agentCfg?.reasoningDefault as ReasoningLevel | undefined) ??
+      "off";
     const currentElevatedLevel =
       (sessionEntry?.elevatedLevel as ElevatedLevel | undefined) ??
       (agentCfg?.elevatedDefault as ElevatedLevel | undefined);
@@ -198,7 +200,10 @@ export async function applyInlineDirectiveOverrides(params: {
         contextTokens,
         resolvedThinkLevel: resolvedDefaultThinkLevel,
         resolvedVerboseLevel: currentVerboseLevel ?? "off",
-        resolvedReasoningLevel: currentReasoningLevel ?? "off",
+        resolvedReasoningLevel:
+          currentReasoningLevel ??
+          (agentCfg?.reasoningDefault as ReasoningLevel | undefined) ??
+          "off",
         resolvedElevatedLevel,
         resolveDefaultThinkingLevel: async () => resolvedDefaultThinkLevel,
         isGroup,

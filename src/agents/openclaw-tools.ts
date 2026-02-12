@@ -7,6 +7,8 @@ import { createAgentsListTool } from "./tools/agents-list-tool.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
 import { createCanvasTool } from "./tools/canvas-tool.js";
 import { createCronTool } from "./tools/cron-tool.js";
+import { createDisplayAssetTool } from "./tools/display-asset-tool.js";
+import { createDisplayImageTool } from "./tools/display-image-tool.js";
 import { createGatewayTool } from "./tools/gateway-tool.js";
 import { createImageTool } from "./tools/image-tool.js";
 import { createKosDevtoolsTool } from "./tools/kos-devtools-tool.js";
@@ -60,6 +62,8 @@ export function createOpenClawTools(options?: {
   /** If true, omit the message tool from the tool list. */
   disableMessageTool?: boolean;
 }): AnyAgentTool[] {
+  const displayAssetTool = createDisplayAssetTool();
+  const displayImageTool = createDisplayImageTool();
   const imageTool = options?.agentDir?.trim()
     ? createImageTool({
         config: options?.config,
@@ -108,6 +112,8 @@ export function createOpenClawTools(options?: {
       agentChannel: options?.agentChannel,
       config: options?.config,
     }),
+    displayAssetTool,
+    displayImageTool,
     createGatewayTool({
       agentSessionKey: options?.agentSessionKey,
       config: options?.config,

@@ -49,6 +49,8 @@
     "check:loc": "node --import tsx scripts/check-ts-max-loc.ts --max 500",
     "dev": "node scripts/run-node.mjs",
     "dev:all": "bash scripts/dev-all.sh",
+    "dev:all:gateway:restart": "bash scripts/dev-all-gateway-restart.sh",
+    "dev:all:watch": "OPENCLAW_DEV_ALL_GATEWAY_MODE=watch bash scripts/dev-all.sh",
     "docs:bin": "node scripts/build-docs-list.mjs",
     "docs:check-links": "node scripts/docs-link-audit.mjs",
     "docs:dev": "cd docs && mint dev",

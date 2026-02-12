@@ -6,7 +6,7 @@
 export type ChatItem =
   | { kind: "message"; key: string; message: unknown }
   | { kind: "divider"; key: string; label: string; timestamp: number }
-  | { kind: "stream"; key: string; text: string; startedAt: number }
+  | { kind: "stream"; key: string; text: string; reasoning?: string; startedAt: number }
   | { kind: "reading-indicator"; key: string }
   | { kind: "load-more"; key: string; remaining: number; onLoadMore: () => void };
 

@@ -318,11 +318,8 @@ export async function handleDirectiveOnly(params: {
     applyVerboseOverride(sessionEntry, directives.verboseLevel);
   }
   if (directives.hasReasoningDirective && directives.reasoningLevel) {
-    if (directives.reasoningLevel === "off") {
-      delete sessionEntry.reasoningLevel;
-    } else {
-      sessionEntry.reasoningLevel = directives.reasoningLevel;
-    }
+    // Persist "off" explicitly so /reasoning off can override reasoningDefault.
+    sessionEntry.reasoningLevel = directives.reasoningLevel;
     reasoningChanged =
       directives.reasoningLevel !== prevReasoningLevel && directives.reasoningLevel !== undefined;
   }
@@ -398,7 +395,9 @@ export async function handleDirectiveOnly(params: {
     });
   }
   if (reasoningChanged) {
-    const nextReasoning = (sessionEntry.reasoningLevel ?? "off") as ReasoningLevel;
+    const nextReasoning = (sessionEntry.reasoningLevel ??
+      currentReasoningLevel ??
+      "off") as ReasoningLevel;
     enqueueSystemEvent(formatReasoningEvent(nextReasoning), {
       sessionKey,
       contextKey: "mode:reasoning",
@@ -427,7 +426,7 @@ export async function handleDirectiveOnly(params: {
       directives.reasoningLevel === "off"
         ? formatDirectiveAck("Reasoning visibility disabled.")
         : directives.reasoningLevel === "stream"
-          ? formatDirectiveAck("Reasoning stream enabled (Telegram only).")
+          ? formatDirectiveAck("Reasoning stream enabled.")
           : formatDirectiveAck("Reasoning visibility enabled."),
     );
   }

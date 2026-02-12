@@ -57,8 +57,10 @@ function broadcastChatAborted(
   const { runId, sessionKey, stopReason } = params;
   const payload = {
     runId,
+    sourceRunId: runId,
     sessionKey,
     seq: (ops.agentRunSeq.get(runId) ?? 0) + 1,
+    updatedAtMs: Date.now(),
     state: "aborted" as const,
     stopReason,
   };

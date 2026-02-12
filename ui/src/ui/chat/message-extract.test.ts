@@ -4,6 +4,7 @@ import {
   extractTextCached,
   extractThinking,
   extractThinkingCached,
+  normalizeReasoningText,
 } from "./message-extract.ts";
 
 describe("extractTextCached", () => {
@@ -41,5 +42,15 @@ describe("extractThinkingCached", () => {
     };
     expect(extractThinkingCached(message)).toBe("Plan A");
     expect(extractThinkingCached(message)).toBe("Plan A");
+  });
+});
+
+describe("normalizeReasoningText", () => {
+  it("strips duplicated reasoning headers when content exists", () => {
+    expect(normalizeReasoningText("Reasoning:\nReasoning:\nPlan next step")).toBe("Plan next step");
+  });
+
+  it("keeps terse reasoning payloads that are only a header token", () => {
+    expect(normalizeReasoningText("Reasoning")).toBe("Reasoning");
   });
 });

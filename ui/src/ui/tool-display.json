@@ -45,6 +45,16 @@
       "title": "Read",
       "detailKeys": ["path"]
     },
+    "display_image": {
+      "icon": "image",
+      "title": "Display Image",
+      "detailKeys": ["path", "caption"]
+    },
+    "display_asset": {
+      "icon": "image",
+      "title": "Display Asset",
+      "detailKeys": ["path", "kind", "caption"]
+    },
     "write": {
       "icon": "edit",
       "title": "Write",

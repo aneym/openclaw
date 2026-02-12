@@ -42,6 +42,12 @@ export function stripEnvelope(text: string): string {
 }
 
 export function extractText(message: unknown): string | null {
+  if (typeof message === "string") {
+    return stripThinkingTags(message);
+  }
+  if (!message || typeof message !== "object") {
+    return null;
+  }
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "";
   const content = m.content;
@@ -86,6 +92,9 @@ export function extractTextCached(message: unknown): string | null {
 }
 
 export function extractThinking(message: unknown): string | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
   const m = message as Record<string, unknown>;
   const content = m.content;
   const parts: string[] = [];
@@ -130,6 +139,12 @@ export function extractThinkingCached(message: unknown): string | null {
 }
 
 export function extractRawText(message: unknown): string | null {
+  if (typeof message === "string") {
+    return message;
+  }
+  if (!message || typeof message !== "object") {
+    return null;
+  }
   const m = message as Record<string, unknown>;
   const content = m.content;
   if (typeof content === "string") {
@@ -155,8 +170,66 @@ export function extractRawText(message: unknown): string | null {
   return null;
 }
 
+/**
+ * Separate <think>/<thinking> blocks from visible text during streaming.
+ * Keeps text channel and reasoning channel monotonic and independent.
+ */
+export function separateThinkingFromText(text: string): { cleanText: string; reasoning: string } {
+  const thinkRegex = /<\s*think(?:ing)?\s*>([\s\S]*?)<\s*\/\s*think(?:ing)?\s*>/gi;
+  const parts: string[] = [];
+  const clean = text.replace(thinkRegex, (_, content) => {
+    const extracted = (content as string).trim();
+    if (extracted) {
+      parts.push(extracted);
+    }
+    return "";
+  });
+  // Handle partial/unclosed thinking tags while a response is still streaming.
+  const cleanText = clean.replace(/<\s*think(?:ing)?\s*>[\s\S]*$/i, "").trim();
+  return { cleanText, reasoning: parts.join("\n") };
+}
+
+function isReasoningHeaderLine(line: string): boolean {
+  const normalized = line
+    .trim()
+    .replace(/^[`*_>#\-\s]+/, "")
+    .replace(/[`*_\s]+$/, "");
+  return /^reasoning:?$/i.test(normalized);
+}
+
+export function normalizeReasoningText(text: string): string {
+  const originalTrimmed = text.trim();
+  if (!originalTrimmed) {
+    return "";
+  }
+
+  const lines = originalTrimmed.split(/\r?\n/);
+  let removedHeader = false;
+  while (lines.length > 0 && isReasoningHeaderLine(lines[0])) {
+    lines.shift();
+    removedHeader = true;
+  }
+  if (lines.length > 0) {
+    const next = lines[0].replace(/^\s*(?:[`*_>#\-\s]+)?reasoning\s*:\s*/i, "").trimStart();
+    if (next !== lines[0]) {
+      removedHeader = true;
+    }
+    lines[0] = next;
+    if (!lines[0]) {
+      lines.shift();
+    }
+  }
+  const normalized = lines.join("\n").trim();
+  // If normalization stripped everything, keep original text to avoid dropping
+  // terse reasoning payloads like a single "Reasoning" token.
+  if (!normalized && removedHeader) {
+    return originalTrimmed;
+  }
+  return normalized;
+}
+
 export function formatReasoningMarkdown(text: string): string {
-  const trimmed = text.trim();
+  const trimmed = normalizeReasoningText(text);
   if (!trimmed) {
     return "";
   }

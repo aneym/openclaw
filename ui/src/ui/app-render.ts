@@ -154,6 +154,7 @@ function startNewSession(state: AppViewState) {
   state.sessionKey = desc.sessionKey;
   state.chatMessage = "";
   state.chatStream = null;
+  state.chatStreamReasoning = null;
   state.chatStreamStartedAt = null;
   state.chatRunId = null;
   state.chatMessages = [];
@@ -396,6 +397,7 @@ export function renderApp(state: AppViewState) {
                           state.chatMessages = [];
                           state.chatToolMessages = [];
                           state.chatStream = null;
+                          state.chatStreamReasoning = null;
                           state.chatStreamStartedAt = null;
                           state.chatRunId = null;
                           state.resetToolStream();

@@ -89,6 +89,8 @@ const BASE_METHODS = [
   "browser.request",
   // WebChat WebSocket-native chat methods
   "chat.history",
+  "chat.status",
+  "chat.statusMany",
   "chat.abort",
   "chat.send",
   // Subagent status

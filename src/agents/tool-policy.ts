@@ -43,6 +43,8 @@ export const TOOL_GROUPS: Record<string, string[]> = {
     "nodes",
     "cron",
     "message",
+    "display_asset",
+    "display_image",
     "gateway",
     "agents_list",
     "sessions_list",
@@ -65,7 +67,15 @@ const TOOL_PROFILES: Record<ToolProfileId, ToolProfilePolicy> = {
     allow: ["session_status"],
   },
   coding: {
-    allow: ["group:fs", "group:runtime", "group:sessions", "group:memory", "image"],
+    allow: [
+      "group:fs",
+      "group:runtime",
+      "group:sessions",
+      "group:memory",
+      "image",
+      "display_asset",
+      "display_image",
+    ],
   },
   messaging: {
     allow: [

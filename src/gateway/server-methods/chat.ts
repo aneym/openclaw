@@ -28,6 +28,8 @@ import {
   validateChatHistoryParams,
   validateChatInjectParams,
   validateChatSendParams,
+  validateChatStatusManyParams,
+  validateChatStatusParams,
 } from "../protocol/index.js";
 import { getMaxChatHistoryMessagesBytes } from "../server-constants.js";
 import {
@@ -170,10 +172,13 @@ function broadcastChatFinal(params: {
   message?: Record<string, unknown>;
 }) {
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
+  const updatedAtMs = Date.now();
   const payload = {
     runId: params.runId,
+    sourceRunId: params.runId,
     sessionKey: params.sessionKey,
     seq,
+    updatedAtMs,
     state: "final" as const,
     message: params.message,
   };
@@ -188,10 +193,13 @@ function broadcastChatError(params: {
   errorMessage?: string;
 }) {
   const seq = nextChatSeq({ agentRunSeq: params.context.agentRunSeq }, params.runId);
+  const updatedAtMs = Date.now();
   const payload = {
     runId: params.runId,
+    sourceRunId: params.runId,
     sessionKey: params.sessionKey,
     seq,
+    updatedAtMs,
     state: "error" as const,
     errorMessage: params.errorMessage,
   };
@@ -199,29 +207,93 @@ function broadcastChatError(params: {
   params.context.nodeSendToSession(params.sessionKey, "chat", payload);
 }
 
+function resolveActiveRunForSession(
+  context: Pick<GatewayRequestContext, "chatAbortControllers" | "chatRunBuffers">,
+  sessionKey: string,
+) {
+  for (const [runId, entry] of context.chatAbortControllers) {
+    if (entry.sessionKey !== sessionKey) {
+      continue;
+    }
+    return {
+      runId,
+      streamText: context.chatRunBuffers.get(runId) ?? null,
+    };
+  }
+  return null;
+}
+
+function maybeRegisterToolEventRecipientForRun(params: {
+  context: Pick<GatewayRequestContext, "registerToolEventRecipient">;
+  client: { connId?: string; connect?: { caps?: string[] | null } } | null;
+  runId: string | null | undefined;
+}) {
+  const runId = typeof params.runId === "string" ? params.runId : "";
+  if (!runId) {
+    return;
+  }
+  const connId = typeof params.client?.connId === "string" ? params.client.connId : "";
+  if (!connId) {
+    return;
+  }
+  const wantsToolEvents = hasGatewayClientCap(
+    params.client?.connect?.caps,
+    GATEWAY_CLIENT_CAPS.TOOL_EVENTS,
+  );
+  if (!wantsToolEvents) {
+    return;
+  }
+  params.context.registerToolEventRecipient(runId, connId);
+}
+
 export const chatHandlers: GatewayRequestHandlers = {
-  "chat.status": ({ params, respond, context }) => {
-    const sessionKey =
-      typeof (params as Record<string, unknown>).sessionKey === "string"
-        ? ((params as Record<string, unknown>).sessionKey as string)
-        : undefined;
-    if (!sessionKey) {
+  "chat.status": ({ params, respond, context, client }) => {
+    if (!validateChatStatusParams(params)) {
       respond(
         false,
         undefined,
-        errorShape(ErrorCodes.INVALID_REQUEST, "missing required param: sessionKey"),
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid chat.status params: ${formatValidationErrors(validateChatStatusParams.errors)}`,
+        ),
       );
       return;
     }
-    // Find active run for this session
-    for (const [runId, entry] of context.chatAbortControllers) {
-      if (entry.sessionKey === sessionKey) {
-        const streamText = context.chatRunBuffers.get(runId) ?? null;
-        respond(true, { activeRun: { runId, streamText } });
-        return;
-      }
+    const { sessionKey } = params as { sessionKey: string };
+    const activeRun = resolveActiveRunForSession(context, sessionKey);
+    maybeRegisterToolEventRecipientForRun({
+      context,
+      client,
+      runId: activeRun?.runId,
+    });
+    respond(true, { activeRun });
+  },
+  "chat.statusMany": ({ params, respond, context, client }) => {
+    if (!validateChatStatusManyParams(params)) {
+      respond(
+        false,
+        undefined,
+        errorShape(
+          ErrorCodes.INVALID_REQUEST,
+          `invalid chat.statusMany params: ${formatValidationErrors(validateChatStatusManyParams.errors)}`,
+        ),
+      );
+      return;
     }
-    respond(true, { activeRun: null });
+    const { sessionKeys } = params as { sessionKeys: string[] };
+    const statuses = sessionKeys.map((sessionKey) => {
+      const activeRun = resolveActiveRunForSession(context, sessionKey);
+      maybeRegisterToolEventRecipientForRun({
+        context,
+        client,
+        runId: activeRun?.runId,
+      });
+      return {
+        sessionKey,
+        activeRun,
+      };
+    });
+    respond(true, { statuses });
   },
   "chat.history": async ({ params, respond, context }) => {
     if (!validateChatHistoryParams(params)) {
@@ -268,12 +340,14 @@ export const chatHandlers: GatewayRequestHandlers = {
       }
     }
     const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
+    const reasoningLevel = entry?.reasoningLevel ?? cfg.agents?.defaults?.reasoningDefault ?? "off";
     respond(true, {
       sessionKey,
       sessionId,
       messages: capped,
       thinkingLevel,
       verboseLevel,
+      reasoningLevel,
     });
   },
   "chat.abort": ({ params, respond, context }) => {
@@ -315,7 +389,13 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     const active = context.chatAbortControllers.get(runId);
     if (!active) {
-      respond(true, { ok: true, aborted: false, runIds: [] });
+      // Client run IDs can drift after reconnect/provider remap. If a specific
+      // runId is unknown, fall back to aborting any active run in the session.
+      const res = abortChatRunsForSessionKey(ops, {
+        sessionKey,
+        stopReason: "rpc",
+      });
+      respond(true, { ok: true, aborted: res.aborted, runIds: res.runIds });
       return;
     }
     if (active.sessionKey !== sessionKey) {
@@ -409,6 +489,26 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const rawSessionKey = p.sessionKey;
     const { cfg, entry, canonicalKey: sessionKey } = loadSessionEntry(rawSessionKey);
+    const hasSessionReasoningOverride =
+      typeof entry?.reasoningLevel === "string" && entry.reasoningLevel.trim().length > 0;
+    const hasConfiguredReasoningDefault =
+      typeof cfg.agents?.defaults?.reasoningDefault === "string" &&
+      cfg.agents.defaults.reasoningDefault.trim().length > 0;
+    // Webchat relies on live reasoning deltas for the thinking panel. When neither the
+    // session nor config specifies reasoning behavior, default this chat.send turn to stream.
+    const cfgForDispatch =
+      hasSessionReasoningOverride || hasConfiguredReasoningDefault
+        ? cfg
+        : {
+            ...cfg,
+            agents: {
+              ...cfg.agents,
+              defaults: {
+                ...cfg.agents?.defaults,
+                reasoningDefault: "stream",
+              },
+            },
+          };
     const timeoutMs = resolveAgentTimeoutMs({
       cfg,
       overrideMs: p.timeoutMs,
@@ -542,13 +642,16 @@ export const chatHandlers: GatewayRequestHandlers = {
       let agentRunStarted = false;
       void dispatchInboundMessage({
         ctx,
-        cfg,
+        cfg: cfgForDispatch,
         dispatcher,
         replyOptions: {
           runId: clientRunId,
           abortSignal: abortController.signal,
           images: parsedImages.length > 0 ? parsedImages : undefined,
           disableBlockStreaming: true,
+          // Keep reasoning callbacks wired for webchat turns so `/reasoning stream`
+          // (or session-level reasoning=stream) can emit live thinking deltas.
+          onReasoningStream: (payload) => void payload,
           onAgentRunStart: (runId) => {
             agentRunStarted = true;
             // Register the mapping so the agent event handler can route
@@ -721,8 +824,10 @@ export const chatHandlers: GatewayRequestHandlers = {
     // Broadcast to webchat for immediate UI update
     const chatPayload = {
       runId: `inject-${appended.messageId}`,
+      sourceRunId: `inject-${appended.messageId}`,
       sessionKey: rawSessionKey,
       seq: 0,
+      updatedAtMs: Date.now(),
       state: "final" as const,
       message: appended.message,
     };

@@ -242,7 +242,11 @@ export function buildAgentSystemPrompt(params: {
     sessions_spawn: "Spawn a sub-agent session",
     session_status:
       "Show a /status-equivalent status card (usage + time + Reasoning/Verbose/Elevated); use for model-use questions (📊 session_status); optional per-session model override",
+    display_asset:
+      "Display an asset in chat with compact previews and controls (image/video/audio/file)",
     image: "Analyze an image with the configured image model",
+    display_image:
+      "Display an image in chat with hover controls (copy/download/copy path) and click-to-expand lightbox",
   };
 
   const toolOrder = [
@@ -268,7 +272,9 @@ export function buildAgentSystemPrompt(params: {
     "sessions_history",
     "sessions_send",
     "session_status",
+    "display_asset",
     "image",
+    "display_image",
   ];
 
   const rawToolNames = (params.toolNames ?? []).map((tool) => tool.trim());

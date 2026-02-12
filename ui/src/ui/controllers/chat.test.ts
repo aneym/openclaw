@@ -10,6 +10,7 @@ function createState(overrides: Partial<ChatState> = {}): ChatState {
     chatRunId: null,
     chatSending: false,
     chatStream: null,
+    chatStreamReasoning: null,
     chatStreamStartedAt: null,
     chatThinkingLevel: null,
     client: null,
@@ -34,6 +35,22 @@ describe("handleChatEvent", () => {
       state: "final",
     };
     expect(handleChatEvent(state, payload)).toBe(null);
+  });
+
+  it("matches canonical and alias session keys", () => {
+    const state = createState({
+      sessionKey: "main",
+      chatRunId: "run-1",
+      chatStream: "Reply",
+      chatStreamStartedAt: 100,
+    });
+    const payload: ChatEventPayload = {
+      runId: "run-1",
+      sessionKey: "agent:main:main",
+      state: "final",
+    };
+    expect(handleChatEvent(state, payload)).toBe("final");
+    expect(state.chatRunId).toBe(null);
   });
 
   it("returns null for delta from another run", () => {

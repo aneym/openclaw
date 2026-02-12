@@ -99,6 +99,7 @@ import {
   ChatInjectParamsSchema,
   ChatSendParamsSchema,
   ChatStatusParamsSchema,
+  ChatStatusManyParamsSchema,
   LogsTailParamsSchema,
   LogsTailResultSchema,
 } from "./logs-chat.js";
@@ -253,6 +254,7 @@ export const ProtocolSchemas: Record<string, TSchema> = {
   ChatAbortParams: ChatAbortParamsSchema,
   ChatInjectParams: ChatInjectParamsSchema,
   ChatStatusParams: ChatStatusParamsSchema,
+  ChatStatusManyParams: ChatStatusManyParamsSchema,
   ChatEvent: ChatEventSchema,
   UpdateRunParams: UpdateRunParamsSchema,
   TickEvent: TickEventSchema,

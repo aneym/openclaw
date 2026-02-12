@@ -1,7 +1,13 @@
 import type { GatewayBrowserClient } from "../gateway";
 import type { ThreadState } from "../thread-state";
 import type { ChatAttachment } from "../ui-types";
-import { extractText } from "../chat/message-extract";
+import {
+  extractRawText,
+  extractText,
+  normalizeReasoningText,
+  separateThinkingFromText,
+} from "../chat/message-extract";
+import { sessionKeysMatch } from "../session-keys";
 import { generateUUID } from "../uuid";
 
 // ── Pending abort tracking ──────────────────────────────────────────
@@ -34,6 +40,7 @@ export type ChatState = {
   chatAttachments: ChatAttachment[];
   chatRunId: string | null;
   chatStream: string | null;
+  chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   lastError: string | null;
 };
@@ -119,6 +126,7 @@ export async function sendChatMessage(
   const runId = generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
+  state.chatStreamReasoning = "";
   state.chatStreamStartedAt = now;
 
   // Convert attachments to API format
@@ -151,6 +159,7 @@ export async function sendChatMessage(
     const error = String(err);
     state.chatRunId = null;
     state.chatStream = null;
+    state.chatStreamReasoning = null;
     state.chatStreamStartedAt = null;
     state.lastError = error;
     state.chatMessages = [
@@ -193,7 +202,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
   if (!payload) {
     return null;
   }
-  if (payload.sessionKey !== state.sessionKey) {
+  if (!sessionKeysMatch(payload.sessionKey, state.sessionKey)) {
     return null;
   }
 
@@ -217,11 +226,22 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
         state.chatStreamStartedAt = Date.now();
       }
     }
-    const next = extractText(payload.message);
+    const raw = extractRawText(payload.message);
+    const separated = raw != null ? separateThinkingFromText(raw) : null;
+    const next = separated ? separated.cleanText : extractText(payload.message);
     if (typeof next === "string") {
       const current = state.chatStream ?? "";
       if (!current || next.length >= current.length) {
         state.chatStream = next;
+      }
+    }
+    const nextReasoning = separated?.reasoning
+      ? normalizeReasoningText(separated.reasoning)
+      : undefined;
+    if (nextReasoning) {
+      const currentReasoning = state.chatStreamReasoning ?? "";
+      if (!currentReasoning || nextReasoning.length >= currentReasoning.length) {
+        state.chatStreamReasoning = nextReasoning;
       }
     }
   } else if (payload.state === "final") {
@@ -238,16 +258,19 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
       state.chatMessages = [...state.chatMessages, finalMsg];
     }
     state.chatStream = null;
+    state.chatStreamReasoning = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     clearAbortPending(state.sessionKey);
   } else if (payload.state === "aborted") {
     state.chatStream = null;
+    state.chatStreamReasoning = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     clearAbortPending(state.sessionKey);
   } else if (payload.state === "error") {
     state.chatStream = null;
+    state.chatStreamReasoning = null;
     state.chatRunId = null;
     state.chatStreamStartedAt = null;
     state.lastError = payload.errorMessage ?? "chat error";
@@ -281,11 +304,22 @@ export function handleChatEventForThread(
         thread.chatStreamStartedAt = Date.now();
       }
     }
-    const next = extractText(payload.message);
+    const raw = extractRawText(payload.message);
+    const separated = raw != null ? separateThinkingFromText(raw) : null;
+    const next = separated ? separated.cleanText : extractText(payload.message);
     if (typeof next === "string") {
       const current = thread.chatStream ?? "";
       if (!current || next.length >= current.length) {
         thread.chatStream = next;
+      }
+    }
+    const nextReasoning = separated?.reasoning
+      ? normalizeReasoningText(separated.reasoning)
+      : undefined;
+    if (nextReasoning) {
+      const currentReasoning = thread.chatStreamReasoning ?? "";
+      if (!currentReasoning || nextReasoning.length >= currentReasoning.length) {
+        thread.chatStreamReasoning = nextReasoning;
       }
     }
   } else if (payload.state === "final") {
@@ -301,14 +335,17 @@ export function handleChatEventForThread(
       thread.chatMessages = [...(thread.chatMessages as unknown[]), finalMsg];
     }
     thread.chatStream = null;
+    thread.chatStreamReasoning = null;
     thread.chatRunId = null;
     thread.chatStreamStartedAt = null;
   } else if (payload.state === "aborted") {
     thread.chatStream = null;
+    thread.chatStreamReasoning = null;
     thread.chatRunId = null;
     thread.chatStreamStartedAt = null;
   } else if (payload.state === "error") {
     thread.chatStream = null;
+    thread.chatStreamReasoning = null;
     thread.chatRunId = null;
     thread.chatStreamStartedAt = null;
   }

@@ -9,12 +9,14 @@ import {
   renderReadingIndicatorGroup,
   renderStreamingGroup,
 } from "../chat/grouped-render";
+import { openImageLightbox } from "../chat/image-lightbox";
 import {
   isToolResultMessage,
   normalizeMessage,
   normalizeRoleForGrouping,
 } from "../chat/message-normalizer";
 import { extractToolCards } from "../chat/tool-cards";
+import { useFileUrl } from "../chat/use-file-url";
 import { icons } from "../icons";
 import { renderMarkdownSidebar } from "./markdown-sidebar";
 import { renderSlashAutocomplete, getFilteredCommands } from "./slash-autocomplete";
@@ -39,6 +41,7 @@ export type ChatProps = {
   messages: unknown[];
   toolMessages: unknown[];
   stream: string | null;
+  streamReasoning: string | null;
   streamStartedAt: number | null;
   assistantAvatarUrl?: string | null;
   draft: string;
@@ -57,6 +60,9 @@ export type ChatProps = {
   splitRatio?: number;
   assistantName: string;
   assistantAvatar: string | null;
+  gatewayUrl?: string;
+  gatewayToken?: string;
+  gatewayPassword?: string;
   // Image attachments
   attachments?: ChatAttachment[];
   onAttachmentsChange?: (attachments: ChatAttachment[]) => void;
@@ -630,15 +636,22 @@ function renderAutocompleteOverlay(props: ChatProps) {
 
 export function renderChat(props: ChatProps) {
   const canCompose = props.connected;
-  const isBusy = props.sending || props.stream !== null;
+  const isBusy = props.sending || props.stream !== null || Boolean(props.streamReasoning?.trim());
   const canAbort = Boolean(props.canAbort && props.onAbort);
   const activeSession = props.sessions?.sessions?.find((row) => row.key === props.sessionKey);
   const reasoningLevel = activeSession?.reasoningLevel ?? "off";
-  const showReasoning = props.showThinking && reasoningLevel !== "off";
+  const hasStreamingReasoning = Boolean(props.streamReasoning?.trim());
+  const showReasoning = props.showThinking && (reasoningLevel !== "off" || hasStreamingReasoning);
   const assistantIdentity = {
     name: props.assistantName,
     avatar: props.assistantAvatar ?? props.assistantAvatarUrl ?? null,
   };
+  const resolveFileUrl = (filePath: string) =>
+    useFileUrl(filePath, {
+      gatewayUrl: props.gatewayUrl,
+      token: props.gatewayToken,
+      password: props.gatewayPassword,
+    });
 
   const hasAttachments = (props.attachments?.length ?? 0) > 0;
   const composePlaceholder = hasAttachments
@@ -668,23 +681,27 @@ export function renderChat(props: ChatProps) {
   };
 
   // Show session picker when pane is empty and in split mode
-  const isEmpty = !props.loading && props.messages.length === 0 && props.stream === null;
+  const isEmpty =
+    !props.loading &&
+    props.messages.length === 0 &&
+    props.stream === null &&
+    !props.streamReasoning?.trim();
   const showPicker = isEmpty && props.openSessionKeys && props.sessions?.sessions;
 
   const handleThreadClick = (e: Event) => {
     const target = e.target as HTMLElement;
 
-    // Click on a markdown-rendered image → open in new tab
+    // Click on a markdown-rendered image → open in app lightbox
     if (target instanceof HTMLImageElement && target.closest(".chat-text")) {
       const src = target.getAttribute("src");
       if (src) {
         e.preventDefault();
-        window.open(src, "_blank");
+        openImageLightbox(src, target.alt || "Image preview");
         return;
       }
     }
 
-    const copyBtn = target.closest(".code-block__copy") as HTMLButtonElement | null;
+    const copyBtn = target.closest<HTMLButtonElement>(".code-block__copy");
     if (!copyBtn) {
       return;
     }
@@ -799,11 +816,14 @@ export function renderChat(props: ChatProps) {
           if (item.kind === "stream") {
             return renderStreamingGroup(
               item.text,
+              item.reasoning,
               item.startedAt,
+              showReasoning,
               props.onOpenSidebar,
               assistantIdentity,
               props.onOpenFilePreview,
               props.onOpenCodingSession,
+              resolveFileUrl,
             );
           }
 
@@ -812,6 +832,7 @@ export function renderChat(props: ChatProps) {
               onOpenSidebar: props.onOpenSidebar,
               onOpenFilePreview: props.onOpenFilePreview,
               onOpenCodingSession: props.onOpenCodingSession,
+              resolveFileUrl,
               showReasoning,
               assistantName: props.assistantName,
               assistantAvatar: assistantIdentity.avatar,
@@ -1284,7 +1305,9 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
   }
   // Always show tool activity chips during an active run (stream non-null).
   // When not streaming, only show if showThinking is enabled.
-  const showTools = props.showThinking || (props.stream !== null && tools.length > 0);
+  const showTools =
+    props.showThinking ||
+    ((props.stream !== null || Boolean(props.streamReasoning?.trim())) && tools.length > 0);
   if (showTools) {
     for (let i = 0; i < tools.length; i++) {
       items.push({
@@ -1297,11 +1320,17 @@ function buildChatItems(props: ChatProps): Array<ChatItem | MessageGroup> {
 
   if (props.stream !== null) {
     const key = `stream:${props.sessionKey}:${props.streamStartedAt ?? "live"}`;
-    if (props.stream.trim().length > 0) {
+    const streamText = props.stream;
+    const streamReasoning =
+      typeof props.streamReasoning === "string" && props.streamReasoning.trim().length > 0
+        ? props.streamReasoning
+        : undefined;
+    if (streamText.trim().length > 0 || streamReasoning) {
       items.push({
         kind: "stream",
         key,
-        text: props.stream,
+        text: streamText,
+        reasoning: streamReasoning,
         startedAt: props.streamStartedAt ?? Date.now(),
       });
     } else {

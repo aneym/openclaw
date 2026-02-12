@@ -178,11 +178,8 @@ export async function applySessionsPatchToStore(params: {
       if (!normalized) {
         return invalid('invalid reasoningLevel (use "on"|"off"|"stream")');
       }
-      if (normalized === "off") {
-        delete next.reasoningLevel;
-      } else {
-        next.reasoningLevel = normalized;
-      }
+      // Persist "off" explicitly so per-session patches can override reasoning defaults.
+      next.reasoningLevel = normalized;
     }
   }
 

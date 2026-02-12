@@ -109,6 +109,31 @@ describe("directive behavior", () => {
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });
+  it("shows configured reasoning default when /reasoning has no argument", async () => {
+    await withTempHome(async (home) => {
+      vi.mocked(runEmbeddedPiAgent).mockReset();
+
+      const res = await getReplyFromConfig(
+        { Body: "/reasoning", From: "+1222", To: "+1222", CommandAuthorized: true },
+        {},
+        {
+          agents: {
+            defaults: {
+              model: "anthropic/claude-opus-4-5",
+              workspace: path.join(home, "openclaw"),
+              reasoningDefault: "stream",
+            },
+          },
+          session: { store: path.join(home, "sessions.json") },
+        },
+      );
+
+      const text = Array.isArray(res) ? res[0]?.text : res?.text;
+      expect(text).toContain("Current reasoning level: stream");
+      expect(text).toContain("Options: on, off, stream.");
+      expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
+    });
+  });
   it("shows current elevated level when /elevated has no argument", async () => {
     await withTempHome(async (home) => {
       vi.mocked(runEmbeddedPiAgent).mockReset();
@@ -229,6 +254,42 @@ describe("directive behavior", () => {
 
       const store = loadSessionStore(storePath);
       expect(store["agent:main:main"]?.elevatedLevel).toBe("off");
+      expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
+    });
+  });
+  it("persists reasoning off and reflects it in /status (even when default is stream)", async () => {
+    await withTempHome(async (home) => {
+      vi.mocked(runEmbeddedPiAgent).mockReset();
+      const storePath = path.join(home, "sessions.json");
+
+      const res = await getReplyFromConfig(
+        {
+          Body: "/reasoning off\n/status",
+          From: "+1222",
+          To: "+1222",
+          CommandAuthorized: true,
+        },
+        {},
+        {
+          agents: {
+            defaults: {
+              model: "anthropic/claude-opus-4-5",
+              workspace: path.join(home, "openclaw"),
+              reasoningDefault: "stream",
+            },
+          },
+          session: { store: storePath },
+        },
+      );
+
+      const text = Array.isArray(res) ? res[0]?.text : res?.text;
+      expect(text).toContain("Reasoning visibility disabled.");
+      const optionsLine = text?.split("\n").find((line) => line.trim().startsWith("⚙️"));
+      expect(optionsLine).toBeTruthy();
+      expect(optionsLine).not.toContain("Reasoning:");
+
+      const store = loadSessionStore(storePath);
+      expect(store["agent:main:main"]?.reasoningLevel).toBe("off");
       expect(runEmbeddedPiAgent).not.toHaveBeenCalled();
     });
   });

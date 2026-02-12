@@ -239,8 +239,10 @@ export function createAgentEventHandler({
     chatRunState.deltaSentAt.set(clientRunId, now);
     const payload = {
       runId: clientRunId,
+      sourceRunId: clientRunId,
       sessionKey,
       seq,
+      updatedAtMs: now,
       state: "delta" as const,
       message: {
         role: "assistant",
@@ -307,8 +309,10 @@ export function createAgentEventHandler({
     if (jobState === "done") {
       const payload = {
         runId: clientRunId,
+        sourceRunId: clientRunId,
         sessionKey,
         seq,
+        updatedAtMs: Date.now(),
         state: "final" as const,
         message: text
           ? {
@@ -327,8 +331,10 @@ export function createAgentEventHandler({
     }
     const payload = {
       runId: clientRunId,
+      sourceRunId: clientRunId,
       sessionKey,
       seq,
+      updatedAtMs: Date.now(),
       state: "error" as const,
       errorMessage: error ? formatForLog(error) : undefined,
     };

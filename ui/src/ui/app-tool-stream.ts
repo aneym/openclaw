@@ -1,5 +1,7 @@
 import type { ThreadState } from "./thread-state";
+import { normalizeReasoningText } from "./chat/message-extract";
 import { truncateText } from "./format";
+import { sessionKeysMatch } from "./session-keys";
 
 const TOOL_STREAM_LIMIT = 50;
 const TOOL_STREAM_THROTTLE_MS = 80;
@@ -29,6 +31,9 @@ export type ToolStreamEntry = {
 type ToolStreamHost = {
   sessionKey: string;
   chatRunId: string | null;
+  chatStream: string | null;
+  chatStreamReasoning: string | null;
+  chatStreamStartedAt: number | null;
   toolStreamById: Map<string, ToolStreamEntry>;
   toolStreamOrder: string[];
   chatToolMessages: Record<string, unknown>[];
@@ -204,6 +209,38 @@ export function handleCompactionEvent(host: CompactionHost, payload: AgentEventP
   }
 }
 
+function applyThinkingStream(host: ToolStreamHost, payload: AgentEventPayload): boolean {
+  const data = payload.data ?? {};
+  const fullText = typeof data.text === "string" ? normalizeReasoningText(data.text) : "";
+  const rawDelta = typeof data.delta === "string" ? data.delta : "";
+  const current = host.chatStreamReasoning ?? "";
+  const delta = !current ? normalizeReasoningText(rawDelta) : rawDelta;
+  if (!fullText && !delta) {
+    return false;
+  }
+  if (fullText) {
+    if (!current || fullText.length >= current.length) {
+      host.chatStreamReasoning = fullText;
+      return true;
+    }
+    return false;
+  }
+
+  if (!current) {
+    host.chatStreamReasoning = delta;
+    return true;
+  }
+  if (delta.startsWith(current)) {
+    host.chatStreamReasoning = delta;
+    return true;
+  }
+  if (current.includes(delta)) {
+    return false;
+  }
+  host.chatStreamReasoning = `${current}${delta}`;
+  return true;
+}
+
 export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPayload) {
   if (!payload) {
     return;
@@ -215,11 +252,15 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     return;
   }
 
-  if (payload.stream !== "tool") {
+  if (
+    payload.stream !== "tool" &&
+    payload.stream !== "thinking" &&
+    payload.stream !== "reasoning"
+  ) {
     return;
   }
   const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
-  if (sessionKey && sessionKey !== host.sessionKey) {
+  if (sessionKey && !sessionKeysMatch(sessionKey, host.sessionKey)) {
     return;
   }
   // Fallback: only accept session-less events for the active run.
@@ -230,6 +271,17 @@ export function handleAgentEvent(host: ToolStreamHost, payload?: AgentEventPaylo
     return;
   }
   if (!host.chatRunId) {
+    host.chatRunId = payload.runId;
+    if (host.chatStream == null) {
+      host.chatStream = "";
+    }
+    if (!host.chatStreamStartedAt) {
+      host.chatStreamStartedAt = typeof payload.ts === "number" ? payload.ts : Date.now();
+    }
+  }
+
+  if (payload.stream === "thinking" || payload.stream === "reasoning") {
+    void applyThinkingStream(host, payload);
     return;
   }
 
@@ -315,6 +367,9 @@ function threadAsToolStreamHost(thread: ThreadState): ToolStreamHost {
   return {
     sessionKey: thread.descriptor.sessionKey,
     chatRunId: thread.chatRunId,
+    chatStream: thread.chatStream,
+    chatStreamReasoning: thread.chatStreamReasoning,
+    chatStreamStartedAt: thread.chatStreamStartedAt,
     toolStreamById: thread.toolStreamById,
     toolStreamOrder: thread.toolStreamOrder,
     chatToolMessages: thread.chatToolMessages as Record<string, unknown>[],
@@ -324,6 +379,10 @@ function threadAsToolStreamHost(thread: ThreadState): ToolStreamHost {
 
 /** Write back any scalar fields that the adapter may have replaced. */
 function syncBackFromHost(thread: ThreadState, host: ToolStreamHost) {
+  thread.chatRunId = host.chatRunId;
+  thread.chatStream = host.chatStream;
+  thread.chatStreamReasoning = host.chatStreamReasoning;
+  thread.chatStreamStartedAt = host.chatStreamStartedAt;
   thread.chatToolMessages = host.chatToolMessages;
   thread.toolStreamSyncTimer = host.toolStreamSyncTimer;
 }
@@ -350,21 +409,38 @@ export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEv
     return;
   }
 
-  if (payload.stream !== "tool") {
+  if (
+    payload.stream !== "tool" &&
+    payload.stream !== "thinking" &&
+    payload.stream !== "reasoning"
+  ) {
     return;
   }
+  const host = threadAsToolStreamHost(thread);
   const sessionKey = typeof payload.sessionKey === "string" ? payload.sessionKey : undefined;
   // Only accept events for this thread's session (or session-less for active run)
-  if (sessionKey && sessionKey !== thread.descriptor.sessionKey) {
+  if (sessionKey && !sessionKeysMatch(sessionKey, thread.descriptor.sessionKey)) {
     return;
   }
-  if (!sessionKey && thread.chatRunId && payload.runId !== thread.chatRunId) {
+  if (!sessionKey && host.chatRunId && payload.runId !== host.chatRunId) {
     return;
   }
-  if (thread.chatRunId && payload.runId !== thread.chatRunId) {
+  if (host.chatRunId && payload.runId !== host.chatRunId) {
     return;
   }
-  if (!thread.chatRunId) {
+  if (!host.chatRunId) {
+    host.chatRunId = payload.runId;
+    if (host.chatStream == null) {
+      host.chatStream = "";
+    }
+    if (!host.chatStreamStartedAt) {
+      host.chatStreamStartedAt = typeof payload.ts === "number" ? payload.ts : Date.now();
+    }
+  }
+
+  if (payload.stream === "thinking" || payload.stream === "reasoning") {
+    void applyThinkingStream(host, payload);
+    syncBackFromHost(thread, host);
     return;
   }
 
@@ -383,7 +459,6 @@ export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEv
         ? (formatToolOutput(data.result) ?? undefined)
         : undefined;
 
-  const host = threadAsToolStreamHost(thread);
   applyToolEvent(host, {
     toolCallId,
     runId: payload.runId,
@@ -394,5 +469,6 @@ export function handleAgentEventForThread(thread: ThreadState, payload?: AgentEv
     ts: payload.ts,
     phase,
   });
+  flushToolStreamSync(host);
   syncBackFromHost(thread, host);
 }

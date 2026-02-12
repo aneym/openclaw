@@ -56,6 +56,7 @@ import {
 } from "./controllers/tool-approval";
 import { GatewayBrowserClient } from "./gateway";
 import { playNotificationSound, shouldPlaySound } from "./notification-sound";
+import { sessionKeysMatch, sessionKeyVariants } from "./session-keys";
 import { allLeaves } from "./split-tree";
 
 type GatewayHost = {
@@ -109,14 +110,219 @@ type SessionDefaultsSnapshot = {
   scope?: string;
 };
 
+type ChatStatusActiveRun = {
+  runId: string;
+  streamText: string;
+};
+
+const statusManySupportByHost = new WeakMap<GatewayHost, boolean>();
+
+function collectVisibleSessionKeys(host: GatewayHost): string[] {
+  const keys = new Set<string>([host.sessionKey]);
+  if (host.splitLayout) {
+    for (const leaf of allLeaves(host.splitLayout.root)) {
+      if (leaf.threadId === host.sessionKey || host.sessionKeyToThreadId?.has(leaf.threadId)) {
+        keys.add(leaf.threadId);
+      }
+    }
+  }
+  return [...keys];
+}
+
+function resolveThreadIdBySessionKey(host: GatewayHost, sessionKey: string): string | null {
+  const id = host.sessionKeyToThreadId?.get(sessionKey);
+  if (id && host.threads?.has(id)) {
+    return id;
+  }
+  if (!host.sessionKeyToThreadId || !host.threads) {
+    return null;
+  }
+  for (const [mappedKey, mappedThreadId] of host.sessionKeyToThreadId) {
+    if (!sessionKeysMatch(mappedKey, sessionKey)) {
+      continue;
+    }
+    if (host.threads.has(mappedThreadId)) {
+      return mappedThreadId;
+    }
+  }
+  return null;
+}
+
+function addRunningSession(host: GatewayHost, sessionKey: string) {
+  const next = new Set(host.runningSessions);
+  for (const variant of sessionKeyVariants(sessionKey)) {
+    next.add(variant);
+  }
+  host.runningSessions = next;
+}
+
+function removeRunningSession(host: GatewayHost, sessionKey: string) {
+  const next = new Set(host.runningSessions);
+  for (const variant of sessionKeyVariants(sessionKey)) {
+    next.delete(variant);
+  }
+  host.runningSessions = next;
+}
+
+function isVisibleSession(
+  visibleSessionKeys: string[] | null,
+  sessionKey: string | undefined,
+): boolean {
+  if (!visibleSessionKeys || !sessionKey) {
+    return false;
+  }
+  return visibleSessionKeys.some((key) => sessionKeysMatch(key, sessionKey));
+}
+
+function resolveThreadIdByRunId(host: GatewayHost, runId: string): string | null {
+  if (!runId || !host.threads) {
+    return null;
+  }
+  for (const [threadId, thread] of host.threads) {
+    if (thread.chatRunId === runId) {
+      return threadId;
+    }
+  }
+  return null;
+}
+
+function applyActiveRunStateToMainSession(
+  host: GatewayHost,
+  activeRun: ChatStatusActiveRun | null,
+) {
+  if (activeRun) {
+    host.chatRunId = activeRun.runId;
+    const hostState = host as unknown as {
+      chatStream: string | null;
+      chatStreamReasoning: string | null;
+      chatStreamStartedAt: number | null;
+    };
+    const current = hostState.chatStream ?? "";
+    if (activeRun.streamText.length >= current.length) {
+      hostState.chatStream = activeRun.streamText;
+    } else if (hostState.chatStream == null) {
+      hostState.chatStream = "";
+    }
+    if (!hostState.chatStreamStartedAt) {
+      hostState.chatStreamStartedAt = Date.now();
+    }
+    return;
+  }
+  host.chatRunId = null;
+  const hostState = host as unknown as {
+    chatStream: string | null;
+    chatStreamReasoning: string | null;
+    chatStreamStartedAt: number | null;
+  };
+  hostState.chatStream = null;
+  hostState.chatStreamReasoning = null;
+  hostState.chatStreamStartedAt = null;
+}
+
+function applyActiveRunStateToThread(
+  thread: ThreadState,
+  activeRun: ChatStatusActiveRun | null,
+): void {
+  if (activeRun) {
+    thread.chatRunId = activeRun.runId;
+    const current = thread.chatStream ?? "";
+    if (activeRun.streamText.length >= current.length) {
+      thread.chatStream = activeRun.streamText;
+    } else if (thread.chatStream == null) {
+      thread.chatStream = "";
+    }
+    if (!thread.chatStreamStartedAt) {
+      thread.chatStreamStartedAt = Date.now();
+    }
+    return;
+  }
+  thread.chatRunId = null;
+  thread.chatStream = null;
+  thread.chatStreamReasoning = null;
+  thread.chatStreamStartedAt = null;
+}
+
+async function requestChatStatuses(
+  host: GatewayHost,
+  sessionKeys: string[],
+): Promise<Map<string, ChatStatusActiveRun | null>> {
+  const statuses = new Map<string, ChatStatusActiveRun | null>();
+  const canUseStatusMany = statusManySupportByHost.get(host) !== false;
+
+  if (!host.client) {
+    return statuses;
+  }
+
+  if (canUseStatusMany) {
+    try {
+      const res = (await host.client.request("chat.statusMany", {
+        sessionKeys,
+      })) as {
+        statuses?: Array<{
+          sessionKey?: unknown;
+          activeRun?: { runId?: unknown; streamText?: unknown } | null;
+        }>;
+      };
+      const rows = Array.isArray(res?.statuses) ? res.statuses : [];
+      for (const row of rows) {
+        if (typeof row?.sessionKey !== "string") {
+          continue;
+        }
+        const runId =
+          row.activeRun && typeof row.activeRun.runId === "string" ? row.activeRun.runId : "";
+        if (!runId) {
+          statuses.set(row.sessionKey, null);
+          continue;
+        }
+        const streamText =
+          row.activeRun && typeof row.activeRun.streamText === "string"
+            ? row.activeRun.streamText
+            : "";
+        statuses.set(row.sessionKey, { runId, streamText });
+      }
+      statusManySupportByHost.set(host, true);
+      return statuses;
+    } catch {
+      statusManySupportByHost.set(host, false);
+    }
+  }
+
+  for (const sessionKey of sessionKeys) {
+    try {
+      const res = (await host.client.request("chat.status", { sessionKey })) as {
+        activeRun?: { runId?: unknown; streamText?: unknown } | null;
+      };
+      const runId =
+        res?.activeRun && typeof res.activeRun.runId === "string" ? res.activeRun.runId : "";
+      if (!runId) {
+        statuses.set(sessionKey, null);
+        continue;
+      }
+      const streamText =
+        res.activeRun && typeof res.activeRun.streamText === "string"
+          ? res.activeRun.streamText
+          : "";
+      statuses.set(sessionKey, { runId, streamText });
+    } catch {
+      // Older/unstable gateways may fail per-session status calls.
+      statuses.set(sessionKey, null);
+    }
+  }
+  return statuses;
+}
+
 function normalizeSessionKeyForDefaults(
   value: string | undefined,
   defaults: SessionDefaultsSnapshot,
 ): string {
   const raw = (value ?? "").trim();
   const mainSessionKey = defaults.mainSessionKey?.trim();
-  if (!mainSessionKey) return raw;
-  if (!raw) return mainSessionKey;
+  if (!mainSessionKey) {
+    return raw;
+  }
+  if (!raw) {
+    return mainSessionKey;
+  }
   const mainKey = defaults.mainKey?.trim() || "main";
   const defaultAgentId = defaults.defaultAgentId?.trim();
   const isAlias =
@@ -128,7 +334,9 @@ function normalizeSessionKeyForDefaults(
 }
 
 function applySessionDefaults(host: GatewayHost, defaults?: SessionDefaultsSnapshot) {
-  if (!defaults?.mainSessionKey) return;
+  if (!defaults?.mainSessionKey) {
+    return;
+  }
   const resolvedSessionKey = normalizeSessionKeyForDefaults(host.sessionKey, defaults);
   const resolvedSettingsSessionKey = normalizeSessionKeyForDefaults(
     host.settings.sessionKey,
@@ -221,6 +429,7 @@ export function connectGateway(host: GatewayHost) {
         // Clear main session stream/tool state only if no active run was restored
         if (!host.chatRunId) {
           (host as unknown as { chatStream: string | null }).chatStream = null;
+          (host as unknown as { chatStreamReasoning: string | null }).chatStreamReasoning = null;
           (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt = null;
           resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
         }
@@ -229,6 +438,7 @@ export function connectGateway(host: GatewayHost) {
           for (const thread of host.threads.values()) {
             if (!thread.chatRunId) {
               thread.chatStream = null;
+              thread.chatStreamReasoning = null;
               thread.chatStreamStartedAt = null;
               resetToolStreamForThread(thread);
             }
@@ -303,9 +513,9 @@ export function connectGateway(host: GatewayHost) {
     },
     onEvent: (evt) => handleGatewayEvent(host, evt),
     onGap: ({ expected, received }) => {
-      // Seq gaps are harmless for chat events (keyed by runId, not global seq).
-      // Log for debugging but don't surface to the user.
       console.warn(`[gateway] seq gap: expected ${expected}, got ${received}`);
+      // Silent self-heal: reconcile active runs/history for visible sessions.
+      void queryChatStatus(host, { reloadTerminalHistory: true, reason: "seq-gap" });
     },
   });
   host.client.start();
@@ -329,24 +539,41 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
   }
 
   if (evt.event === "agent") {
-    if (host.onboarding) return;
+    if (host.onboarding) {
+      return;
+    }
     const agentPayload = evt.payload as AgentEventPayload | undefined;
     const agentSessionKey = agentPayload?.sessionKey;
+    const agentRunId = typeof agentPayload?.runId === "string" ? agentPayload.runId : "";
+
+    // Fallback routing when upstream omits sessionKey on agent events.
+    // Match by known runId so visible/background thread panes keep updating.
+    if (!agentSessionKey && agentRunId) {
+      const threadIdByRun = resolveThreadIdByRunId(host, agentRunId);
+      const runThread = threadIdByRun ? host.threads?.get(threadIdByRun) : null;
+      if (
+        runThread &&
+        !sessionKeysMatch(runThread.descriptor.sessionKey, host.sessionKey) &&
+        host.threads
+      ) {
+        handleAgentEventForThread(runThread, agentPayload);
+        host.threads = new Map(host.threads);
+        return;
+      }
+    }
 
     // In split-pane mode, check if any visible pane matches the session key
     if (host.splitLayout && agentSessionKey) {
-      const visibleKeys = new Set(
-        allLeaves(host.splitLayout.root).map((l: { threadId: string }) => l.threadId),
-      );
-      if (!visibleKeys.has(agentSessionKey)) {
+      const visibleKeys = collectVisibleSessionKeys(host);
+      if (!isVisibleSession(visibleKeys, agentSessionKey)) {
         // Route to background thread: skip tool stream processing
-        const bgThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
+        const bgThreadId = resolveThreadIdBySessionKey(host, agentSessionKey);
         if (bgThreadId && bgThreadId !== host.activeThreadId) {
           return;
         }
-      } else if (agentSessionKey !== host.sessionKey) {
+      } else if (!sessionKeysMatch(agentSessionKey, host.sessionKey)) {
         // Visible-but-not-focused pane: route to per-thread tool stream
-        const paneThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
+        const paneThreadId = resolveThreadIdBySessionKey(host, agentSessionKey);
         const paneThread = paneThreadId ? host.threads?.get(paneThreadId) : null;
         if (paneThread && host.threads) {
           handleAgentEventForThread(paneThread, agentPayload);
@@ -354,9 +581,9 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         }
         return;
       }
-    } else if (agentSessionKey && agentSessionKey !== host.sessionKey) {
+    } else if (agentSessionKey && !sessionKeysMatch(agentSessionKey, host.sessionKey)) {
       // Single pane mode: existing background thread logic
-      const bgThreadId = host.sessionKeyToThreadId?.get(agentSessionKey);
+      const bgThreadId = resolveThreadIdBySessionKey(host, agentSessionKey);
       if (bgThreadId && bgThreadId !== host.activeThreadId) {
         return;
       }
@@ -374,31 +601,27 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     // Track global running-sessions state (before any early returns)
     if (eventSessionKey && payload) {
       if (payload.state === "delta") {
-        if (!host.runningSessions.has(eventSessionKey)) {
-          host.runningSessions = new Set([...host.runningSessions, eventSessionKey]);
-        }
+        addRunningSession(host, eventSessionKey);
       } else if (
         payload.state === "final" ||
         payload.state === "error" ||
         payload.state === "aborted"
       ) {
-        if (host.runningSessions.has(eventSessionKey)) {
-          const next = new Set(host.runningSessions);
-          next.delete(eventSessionKey);
-          host.runningSessions = next;
-        }
+        removeRunningSession(host, eventSessionKey);
       }
     }
 
     // In split-pane mode, visible pane sessions should not be treated as background
-    const visibleSessionKeys = host.splitLayout
-      ? new Set(allLeaves(host.splitLayout.root).map((l: { threadId: string }) => l.threadId))
-      : null;
+    const visibleSessionKeys = host.splitLayout ? collectVisibleSessionKeys(host) : null;
 
     // Check if this event is for a background thread
-    const isVisibleInPane = visibleSessionKeys?.has(eventSessionKey ?? "");
-    if (eventSessionKey && eventSessionKey !== host.sessionKey && !isVisibleInPane) {
-      const bgThreadId = host.sessionKeyToThreadId?.get(eventSessionKey);
+    const isVisibleInPane = isVisibleSession(visibleSessionKeys, eventSessionKey);
+    if (
+      eventSessionKey &&
+      !sessionKeysMatch(eventSessionKey, host.sessionKey) &&
+      !isVisibleInPane
+    ) {
+      const bgThreadId = resolveThreadIdBySessionKey(host, eventSessionKey);
       if (bgThreadId && bgThreadId !== host.activeThreadId) {
         const bgThread = host.threads?.get(bgThreadId);
         if (bgThread) {
@@ -412,6 +635,7 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           ) {
             bgThread.chatRunId = null;
             bgThread.chatStream = null;
+            bgThread.chatStreamReasoning = null;
             bgThread.chatStreamStartedAt = null;
           }
           // Trigger re-render for thread list unread dots
@@ -423,8 +647,8 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
 
     // Route chat events for visible-but-not-focused panes to their thread state.
     // Full lifecycle: state machine, tool stream reset, queue flush, auto-rename.
-    if (eventSessionKey && eventSessionKey !== host.sessionKey && isVisibleInPane) {
-      const paneThreadId = host.sessionKeyToThreadId?.get(eventSessionKey);
+    if (eventSessionKey && !sessionKeysMatch(eventSessionKey, host.sessionKey) && isVisibleInPane) {
+      const paneThreadId = resolveThreadIdBySessionKey(host, eventSessionKey);
       const paneThread = paneThreadId ? host.threads?.get(paneThreadId) : null;
       if (paneThread && payload) {
         const threadState = handleChatEventForThread(paneThread, payload);
@@ -613,74 +837,99 @@ async function loadChatHistoryForThread(host: GatewayHost, sessionKey: string, t
  * Query chat.status for the current session (and visible split panes)
  * to restore the stop button after reconnect.
  */
-async function queryChatStatus(host: GatewayHost) {
+async function queryChatStatus(
+  host: GatewayHost,
+  opts?: { reloadTerminalHistory?: boolean; reason?: string },
+) {
   if (!host.connected || !host.client) {
     return;
   }
 
-  // Collect session keys that have an active run so we can rebuild runningSessions
-  const activeSessionKeys: string[] = [];
+  const sessionKeys = collectVisibleSessionKeys(host);
+  const statuses = await requestChatStatuses(host, sessionKeys);
+  const activeSessionKeys = new Set<string>();
+  const becameTerminalSessionKeys: string[] = [];
+  let threadsChanged = false;
 
-  try {
-    const res = await host.client.request("chat.status", {
-      sessionKey: host.sessionKey,
-    });
-    if (res?.activeRun?.runId) {
-      host.chatRunId = res.activeRun.runId;
-      activeSessionKeys.push(host.sessionKey);
-      // Restore stream state so the UI shows the correct visual:
-      // - If streamText has content → show the streamed text
-      // - If streamText is empty/null → show the three-dot reading indicator
-      // Either way, chatStream must be non-null to signal "active run".
-      const streamText =
-        typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
-      (host as unknown as { chatStream: string | null }).chatStream = streamText;
-      if (!(host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt) {
-        (host as unknown as { chatStreamStartedAt: number | null }).chatStreamStartedAt =
-          Date.now();
-      }
+  const previousMainRunId = host.chatRunId;
+  const previousThreadRunIdBySession = new Map<string, string | null>();
+  if (host.threads) {
+    for (const thread of host.threads.values()) {
+      previousThreadRunIdBySession.set(thread.descriptor.sessionKey, thread.chatRunId);
     }
-  } catch {
-    // Graceful degradation: older gateways may not support chat.status
   }
-  // Also check visible split panes
-  if (host.splitLayout) {
-    const leaves = allLeaves(host.splitLayout.root);
-    for (const leaf of leaves) {
-      if (leaf.threadId === host.sessionKey) {
-        continue;
+
+  for (const sessionKey of sessionKeys) {
+    const activeRun = statuses.get(sessionKey) ?? null;
+    if (activeRun?.runId) {
+      activeSessionKeys.add(sessionKey);
+    }
+    if (sessionKey === host.sessionKey) {
+      const wasActive = Boolean(previousMainRunId);
+      applyActiveRunStateToMainSession(host, activeRun);
+      const isActive = Boolean(host.chatRunId);
+      if (wasActive && !isActive) {
+        becameTerminalSessionKeys.push(sessionKey);
+        resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       }
+      continue;
+    }
+
+    const threadId = resolveThreadIdBySessionKey(host, sessionKey);
+    if (!threadId) {
+      continue;
+    }
+    const thread = host.threads?.get(threadId);
+    if (!thread) {
+      continue;
+    }
+    const wasActive = Boolean(previousThreadRunIdBySession.get(sessionKey));
+    applyActiveRunStateToThread(thread, activeRun);
+    const isActive = Boolean(thread.chatRunId);
+    if (wasActive && !isActive) {
+      becameTerminalSessionKeys.push(sessionKey);
+      resetToolStreamForThread(thread);
+    }
+    thread.descriptor.lastActivityAt = Date.now();
+    threadsChanged = true;
+  }
+
+  const activeSessionVariants = new Set<string>();
+  for (const key of activeSessionKeys) {
+    for (const variant of sessionKeyVariants(key)) {
+      activeSessionVariants.add(variant);
+    }
+  }
+  host.runningSessions = activeSessionVariants;
+  if (threadsChanged && host.threads) {
+    host.threads = new Map(host.threads);
+  }
+
+  if (!opts?.reloadTerminalHistory || becameTerminalSessionKeys.length === 0) {
+    return;
+  }
+
+  console.log(
+    "[gateway] chat status resync reason=%s terminalSessions=%d",
+    opts.reason ?? "manual",
+    becameTerminalSessionKeys.length,
+  );
+  for (const sessionKey of becameTerminalSessionKeys) {
+    if (sessionKey === host.sessionKey) {
       try {
-        const res = await host.client.request("chat.status", {
-          sessionKey: leaf.threadId,
-        });
-        if (res?.activeRun?.runId) {
-          activeSessionKeys.push(leaf.threadId);
-          const threadMapId = host.sessionKeyToThreadId?.get(leaf.threadId);
-          const thread = threadMapId ? host.threads?.get(threadMapId) : null;
-          if (thread && host.threads) {
-            thread.chatRunId = res.activeRun.runId;
-            // Restore stream state: non-null chatStream signals "active run"
-            const paneStreamText =
-              typeof res.activeRun.streamText === "string" ? res.activeRun.streamText : "";
-            thread.chatStream = paneStreamText;
-            if (!thread.chatStreamStartedAt) {
-              thread.chatStreamStartedAt = Date.now();
-            }
-            host.threads = new Map(host.threads);
-          }
-        }
+        await loadChatHistory(host as unknown as OpenClawApp);
       } catch {
-        // Ignore per-pane failures
+        // non-critical
       }
+      continue;
     }
+    const threadId = resolveThreadIdBySessionKey(host, sessionKey);
+    if (!threadId) {
+      continue;
+    }
+    await loadChatHistoryForThread(host, sessionKey, threadId);
   }
-
-  // Rebuild runningSessions from verified active runs.
-  // We cleared runningSessions on reconnect; now restore only confirmed-active ones.
-  if (activeSessionKeys.length > 0) {
-    host.runningSessions = new Set(activeSessionKeys);
-  }
+  void flushChatQueueForEvent(host as unknown as Parameters<typeof flushChatQueueForEvent>[0]);
 }
 
 export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
@@ -712,11 +961,15 @@ export function applySnapshot(host: GatewayHost, hello: GatewayHelloOk) {
 const SUBAGENT_DONE_LINGER_MS = 5_000;
 
 async function fetchSubagentRuns(host: GatewayHost) {
-  if (!host.connected || !host.client) return;
+  if (!host.connected || !host.client) {
+    return;
+  }
   try {
     const res = await host.client.request("subagents.list", {});
     const runs = (res as { runs?: SubagentRunInfo[] }).runs;
-    if (!Array.isArray(runs)) return;
+    if (!Array.isArray(runs)) {
+      return;
+    }
     const map = new Map<string, SubagentRunInfo[]>();
     for (const r of runs) {
       const key = r.requesterSessionKey;
@@ -731,7 +984,9 @@ async function fetchSubagentRuns(host: GatewayHost) {
 }
 
 function applySubagentEvent(host: GatewayHost, payload: SubagentEventPayload | undefined) {
-  if (!payload?.runId || !payload.requesterSessionKey) return;
+  if (!payload?.runId || !payload.requesterSessionKey) {
+    return;
+  }
 
   const map = new Map(host.subagentRuns);
   const key = payload.requesterSessionKey;

@@ -1,5 +1,6 @@
 import { buildDeviceAuthPayload } from "../../../src/gateway/device-auth.js";
 import {
+  GATEWAY_CLIENT_CAPS,
   GATEWAY_CLIENT_MODES,
   GATEWAY_CLIENT_NAMES,
   type GatewayClientMode,
@@ -67,6 +68,9 @@ export class GatewayBrowserClient {
   private pending = new Map<string, Pending>();
   private closed = false;
   private lastSeq: number | null = null;
+  private lastTickAt: number | null = null;
+  private tickIntervalMs = 30_000;
+  private tickWatchTimer: number | null = null;
   private connectNonce: string | null = null;
   private connectSent = false;
   private connectTimer: number | null = null;
@@ -82,6 +86,7 @@ export class GatewayBrowserClient {
 
   stop() {
     this.closed = true;
+    this.stopTickWatch();
     this.ws?.close();
     this.ws = null;
     this.flushPending(new Error("gateway client stopped"));
@@ -96,6 +101,9 @@ export class GatewayBrowserClient {
       return;
     }
     console.log("[gateway] connect() → opening WebSocket to", this.opts.url);
+    // Each socket has its own event sequence domain. Reset on reconnect to avoid
+    // false-positive gap reports from the previous connection's tail sequence.
+    this.lastSeq = null;
     this.ws = new WebSocket(this.opts.url);
     this.ws.addEventListener("open", () => {
       console.log("[gateway] WebSocket open");
@@ -105,6 +113,7 @@ export class GatewayBrowserClient {
     this.ws.addEventListener("close", (ev) => {
       const reason = String(ev.reason ?? "");
       console.log("[gateway] WebSocket closed code=%d reason=%s", ev.code, reason || "(none)");
+      this.stopTickWatch();
       this.ws = null;
       this.flushPending(new Error(`gateway closed (${ev.code}): ${reason}`));
       this.opts.onClose?.({ code: ev.code, reason });
@@ -123,6 +132,41 @@ export class GatewayBrowserClient {
     this.backoffMs = Math.min(this.backoffMs * 1.7, 15_000);
     console.log("[gateway] scheduling reconnect in %dms", delay);
     window.setTimeout(() => this.connect(), delay);
+  }
+
+  private stopTickWatch() {
+    if (this.tickWatchTimer !== null) {
+      window.clearInterval(this.tickWatchTimer);
+      this.tickWatchTimer = null;
+    }
+    this.lastTickAt = null;
+  }
+
+  private startTickWatch(intervalMs: number) {
+    this.stopTickWatch();
+    this.tickIntervalMs = Math.max(1000, Math.floor(intervalMs));
+    this.lastTickAt = Date.now();
+    this.tickWatchTimer = window.setInterval(() => {
+      if (this.closed || !this.ws) {
+        return;
+      }
+      if (this.lastTickAt == null) {
+        return;
+      }
+      const gapMs = Date.now() - this.lastTickAt;
+      if (gapMs > this.tickIntervalMs * 2) {
+        console.warn(
+          "[gateway] tick timeout: last tick %dms ago (interval=%dms), reconnecting",
+          gapMs,
+          this.tickIntervalMs,
+        );
+        try {
+          this.ws.close(4000, "tick timeout");
+        } catch {
+          // no-op
+        }
+      }
+    }, this.tickIntervalMs);
   }
 
   private flushPending(err: Error) {
@@ -256,7 +300,7 @@ export class GatewayBrowserClient {
       role,
       scopes,
       device,
-      caps: [],
+      caps: [GATEWAY_CLIENT_CAPS.TOOL_EVENTS],
       auth,
       userAgent: navigator.userAgent,
       locale: navigator.language,
@@ -286,6 +330,9 @@ export class GatewayBrowserClient {
           console.log("[gateway] stored device token for future connections");
         }
         this.backoffMs = 800;
+        const configuredTickInterval =
+          typeof hello?.policy?.tickIntervalMs === "number" ? hello.policy.tickIntervalMs : 30_000;
+        this.startTickWatch(configuredTickInterval);
         try {
           this.opts.onHello?.(hello);
           console.log("[gateway] onHello callback completed OK");
@@ -337,6 +384,9 @@ export class GatewayBrowserClient {
           this.opts.onGap?.({ expected: this.lastSeq + 1, received: seq });
         }
         this.lastSeq = seq;
+      }
+      if (evt.event === "tick") {
+        this.lastTickAt = Date.now();
       }
       try {
         this.opts.onEvent?.(evt);

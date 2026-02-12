@@ -33,6 +33,18 @@ export interface ChatPaneProps {
   isFocused: boolean;
 }
 
+export function isPaneStreamingState(params: {
+  sessionKey: string;
+  isActiveSession: boolean;
+  state: { chatRunId: string | null; runningSessions: Set<string> };
+  thread: { chatRunId: string | null } | null;
+}): boolean {
+  if (params.isActiveSession) {
+    return Boolean(params.state.chatRunId) || params.state.runningSessions.has(params.sessionKey);
+  }
+  return Boolean(params.thread?.chatRunId) || params.state.runningSessions.has(params.sessionKey);
+}
+
 export function hasNonEmptyTextSelectionInElement(container: Element): boolean {
   const selection = window.getSelection();
   if (!selection || selection.toString().length === 0) {
@@ -86,6 +98,9 @@ export function renderChatPane(props: ChatPaneProps) {
     messages: isActiveSession ? state.chatMessages : (thread?.chatMessages ?? []),
     toolMessages: isActiveSession ? state.chatToolMessages : (thread?.chatToolMessages ?? []),
     stream: isActiveSession ? state.chatStream : (thread?.chatStream ?? null),
+    streamReasoning: isActiveSession
+      ? state.chatStreamReasoning
+      : (thread?.chatStreamReasoning ?? null),
     streamStartedAt: isActiveSession
       ? state.chatStreamStartedAt
       : (thread?.chatStreamStartedAt ?? null),
@@ -97,6 +112,11 @@ export function renderChatPane(props: ChatPaneProps) {
     error: isActiveSession ? state.lastError : null,
     sessions: state.sessionsResult,
     focusMode: chatFocus,
+    showNewMessages:
+      isActiveSession && isFocused
+        ? state.chatNewMessagesBelow && !state.chatManualRefreshInFlight
+        : false,
+    onScrollToBottom: () => state.scrollToBottom({ smooth: true }),
     onRefresh: () => {
       state.resetToolStream();
     },
@@ -128,15 +148,21 @@ export function renderChatPane(props: ChatPaneProps) {
       saveAttachments(sessionKey, next);
     },
     onSend: () => void state.handleSendChat(),
-    canAbort: isActiveSession ? Boolean(state.chatRunId) : Boolean(thread?.chatRunId),
+    canAbort: isActiveSession
+      ? Boolean(state.chatRunId) || state.runningSessions.has(sessionKey)
+      : Boolean(thread?.chatRunId) || state.runningSessions.has(sessionKey),
     onAbort: () => {
       if (isActiveSession) {
         void state.handleAbortChat();
-      } else if (thread?.chatRunId) {
+      } else if (thread) {
         // Abort a run in a visible-but-not-focused pane
-        void state.abortThreadRun(sessionKey, thread.chatRunId).then(() => {
+        void state.abortThreadRun(sessionKey, thread.chatRunId ?? undefined).then((aborted) => {
+          if (!aborted) {
+            return;
+          }
           thread.chatRunId = null;
           thread.chatStream = null;
+          thread.chatStreamReasoning = null;
           thread.chatStreamStartedAt = null;
           state.threads = new Map(state.threads);
         });
@@ -171,6 +197,9 @@ export function renderChatPane(props: ChatPaneProps) {
     onOpenCodingSession: () => state.handleOpenCodingSession(),
     assistantName: state.assistantName,
     assistantAvatar: state.assistantAvatar,
+    gatewayUrl: state.settings.gatewayUrl,
+    gatewayToken: state.settings.token,
+    gatewayPassword: state.password,
     openSessionKeys,
     slashCommands: state.slashCommands,
     onInteractiveSubmit: (payload) => {
@@ -333,7 +362,12 @@ export function renderChatPane(props: ChatPaneProps) {
   const sessionEntry = state.sessionsResult?.sessions?.find((s) => s.key === sessionKey);
   const paneTitle =
     sessionEntry?.displayName || sessionEntry?.label || humanizeSessionKey(sessionKey);
-  const isStreaming = isActiveSession ? Boolean(state.chatStream) : Boolean(thread?.chatStream);
+  const isStreaming = isPaneStreamingState({
+    sessionKey,
+    isActiveSession,
+    state,
+    thread,
+  });
   const msgCount = isActiveSession ? state.chatMessages.length : (thread?.chatMessages.length ?? 0);
 
   return html`

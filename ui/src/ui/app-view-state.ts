@@ -80,6 +80,7 @@ export type AppViewState = {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string | null;
+  chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
   chatAvatarUrl: string | null;
@@ -357,7 +358,7 @@ export type AppViewState = {
   handleSendChatImmediately: () => Promise<void>;
   handleQueueSendNow: (id: string) => Promise<void>;
   handleAbortChat: () => Promise<void>;
-  abortThreadRun: (sessionKey: string, runId: string) => Promise<boolean>;
+  abortThreadRun: (sessionKey: string, runId?: string) => Promise<boolean>;
   removeQueuedMessage: (id: string) => void;
   clearAllQueuedMessages: () => void;
   resetToolStream: () => void;

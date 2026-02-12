@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { hasNonEmptyTextSelectionInElement } from "./chat-pane";
+import { hasNonEmptyTextSelectionInElement, isPaneStreamingState } from "./chat-pane";
 
 function clearSelection() {
   window.getSelection()?.removeAllRanges();
@@ -56,5 +56,40 @@ describe("chat pane selection guard", () => {
     selectContents(external);
 
     expect(hasNonEmptyTextSelectionInElement(pane)).toBe(false);
+  });
+});
+
+describe("isPaneStreamingState", () => {
+  it("returns true for active pane when chatRunId is set even with empty stream text", () => {
+    const runningSessions = new Set<string>();
+    const streaming = isPaneStreamingState({
+      sessionKey: "main",
+      isActiveSession: true,
+      state: { chatRunId: "run-1", runningSessions },
+      thread: null,
+    });
+    expect(streaming).toBe(true);
+  });
+
+  it("returns true for non-focused pane when runningSessions marks the session active", () => {
+    const runningSessions = new Set<string>(["agent:main:thread:123"]);
+    const streaming = isPaneStreamingState({
+      sessionKey: "agent:main:thread:123",
+      isActiveSession: false,
+      state: { chatRunId: null, runningSessions },
+      thread: { chatRunId: null },
+    });
+    expect(streaming).toBe(true);
+  });
+
+  it("returns false when neither run state nor runningSessions indicate activity", () => {
+    const runningSessions = new Set<string>();
+    const streaming = isPaneStreamingState({
+      sessionKey: "main",
+      isActiveSession: false,
+      state: { chatRunId: null, runningSessions },
+      thread: { chatRunId: null },
+    });
+    expect(streaming).toBe(false);
   });
 });

@@ -18,6 +18,52 @@
   background: rgba(16, 24, 40, 0.04);
 }
 
+.chat-reasoning {
+  margin: 0 0 10px 0;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.chat-reasoning__summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 8px 12px;
+}
+
+.chat-reasoning__summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-reasoning__summary-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chat-reasoning__body {
+  margin: 0 8px 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  max-height: min(42vh, 440px);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme="light"] .chat-reasoning {
+  border-color: rgba(16, 24, 40, 0.25);
+  background: rgba(16, 24, 40, 0.04);
+}
+
+:root[data-theme="light"] .chat-reasoning__body {
+  background: rgba(16, 24, 40, 0.04);
+}
+
 .chat-text {
   font-size: 14px;
   line-height: 1.5;

@@ -16,6 +16,7 @@ export interface ThreadState {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string | null;
+  chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
   chatSending: boolean;
@@ -52,6 +53,7 @@ export function createThreadState(descriptor: ThreadDescriptor): ThreadState {
     chatMessages: [],
     chatToolMessages: [],
     chatStream: null,
+    chatStreamReasoning: null,
     chatStreamStartedAt: null,
     chatRunId: null,
     chatSending: false,
@@ -73,6 +75,7 @@ type SnapshotHost = {
   chatMessages: unknown[];
   chatToolMessages: unknown[];
   chatStream: string | null;
+  chatStreamReasoning: string | null;
   chatStreamStartedAt: number | null;
   chatRunId: string | null;
   chatSending: boolean;
@@ -93,6 +96,7 @@ export function snapshotThreadState(
     chatMessages: host.chatMessages,
     chatToolMessages: host.chatToolMessages,
     chatStream: host.chatStream,
+    chatStreamReasoning: host.chatStreamReasoning,
     chatStreamStartedAt: host.chatStreamStartedAt,
     chatRunId: host.chatRunId,
     chatSending: host.chatSending,
@@ -112,6 +116,7 @@ export function restoreThreadState(host: SnapshotHost, thread: ThreadState): voi
   host.chatMessages = thread.chatMessages;
   host.chatToolMessages = thread.chatToolMessages;
   host.chatStream = thread.chatStream;
+  host.chatStreamReasoning = thread.chatStreamReasoning;
   host.chatStreamStartedAt = thread.chatStreamStartedAt;
   host.chatRunId = thread.chatRunId;
   host.chatSending = thread.chatSending;

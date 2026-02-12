@@ -257,6 +257,8 @@ describe("createOpenClawCodingTools", () => {
       "nodes",
       "cron",
       "message",
+      "display_asset",
+      "display_image",
       "gateway",
       "agents_list",
       "sessions_list",

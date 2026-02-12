@@ -85,7 +85,7 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
-import { loadChatHistory, markAbortPending } from "./controllers/chat.ts";
+import { clearAbortPending, loadChatHistory, markAbortPending } from "./controllers/chat.ts";
 import { fetchFileContent } from "./controllers/file.ts";
 import { patchSession } from "./controllers/sessions.ts";
 import { loadDraft, loadAttachments, loadQueue } from "./draft-storage.ts";
@@ -176,6 +176,7 @@ export class OpenClawApp extends LitElement {
   @state() chatMessages: unknown[] = [];
   @state() chatToolMessages: unknown[] = [];
   @state() chatStream: string | null = null;
+  @state() chatStreamReasoning: string | null = null;
   @state() chatStreamStartedAt: number | null = null;
   @state() chatRunId: string | null = null;
   @state() compactionStatus: CompactionStatus | null = null;
@@ -572,13 +573,14 @@ export class OpenClawApp extends LitElement {
     );
   }
 
-  async abortThreadRun(sessionKey: string, runId: string): Promise<boolean> {
+  async abortThreadRun(sessionKey: string, runId?: string): Promise<boolean> {
     if (!this.client || !this.connected) {
       markAbortPending(sessionKey);
       return false;
     }
     try {
-      await this.client.request("chat.abort", { sessionKey, runId });
+      await this.client.request("chat.abort", runId ? { sessionKey, runId } : { sessionKey });
+      clearAbortPending(sessionKey);
       return true;
     } catch (err) {
       this.lastError = String(err);
@@ -1663,6 +1665,41 @@ export class OpenClawApp extends LitElement {
     this.syncPaneStatesFromLayout();
     this.persistSplitLayout();
     this.syncUrlWithPanes(false);
+
+    // Keep the live chat state aligned with the focused pane.
+    // Without this, changing the focused pane's thread can leave `sessionKey`
+    // pointing at the old thread, so sends read the wrong draft/run state.
+    if (this.focusedPaneId === paneId && threadId !== this.sessionKey) {
+      let prevThreadId = this.sessionKeyToThreadId.get(this.sessionKey);
+      if (!prevThreadId) {
+        const desc: ThreadDescriptor = {
+          id: `pane-snap-${Date.now()}`,
+          sessionKey: this.sessionKey,
+          label: "",
+          createdAt: Date.now(),
+          lastActivityAt: Date.now(),
+          parentSessionKey: this.sessionKey.split(":thread:")[0] || this.sessionKey,
+        };
+        const newThread = createThreadState(desc);
+        this.threads.set(desc.id, newThread);
+        this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+        prevThreadId = desc.id;
+      }
+
+      const prevThread = this.threads.get(prevThreadId);
+      if (prevThread) {
+        Object.assign(prevThread, snapshotThreadState(this));
+      }
+
+      this.sessionKey = threadId;
+      const nextThreadId = this.sessionKeyToThreadId.get(threadId);
+      if (nextThreadId) {
+        const nextThread = this.threads.get(nextThreadId);
+        if (nextThread) {
+          restoreThreadState(this, nextThread);
+        }
+      }
+    }
 
     // Load history for the newly assigned session so the pane isn't left empty
     const mapId = this.sessionKeyToThreadId.get(threadId);

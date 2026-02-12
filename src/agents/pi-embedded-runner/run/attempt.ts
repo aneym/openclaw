@@ -745,7 +745,9 @@ export async function runEmbeddedAttempt(
               const combined = currentSystem
                 ? `${currentSystem}\n\n${hookResult.systemPrompt}`
                 : hookResult.systemPrompt;
-              activeSession.agent.setSystemPrompt(combined);
+              // Keep the session's internal prompt cache in sync so prompt()
+              // doesn't reset back to the pre-hook base prompt.
+              applySystemPromptOverrideToSession(activeSession, combined);
               log.debug(
                 `hooks: appended system prompt from hook (${hookResult.systemPrompt.length} chars)`,
               );

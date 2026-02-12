@@ -5,6 +5,7 @@ import type { MessageGroup } from "../types/chat-types";
 import { icons } from "../icons";
 import { toSanitizedMarkdownHtml } from "../markdown";
 import { renderCopyAsMarkdownButton } from "./copy-as-markdown";
+import { openImageLightbox } from "./image-lightbox";
 import {
   extractInteractiveBlocks,
   formatButtonPayload,
@@ -17,10 +18,11 @@ import {
   type InteractiveBlock,
   type InteractiveElement,
 } from "./interactive-types";
+import { extractMediaLines, isImagePath } from "./media-paths";
 import {
   extractTextCached,
   extractThinkingCached,
-  formatReasoningMarkdown,
+  normalizeReasoningText,
 } from "./message-extract";
 import { isToolResultMessage, normalizeRoleForGrouping } from "./message-normalizer";
 import {
@@ -29,6 +31,7 @@ import {
   extractFilePathFromCard,
   isFileMutatingTool,
 } from "./tool-cards";
+import { messageHasRichToolPreview, renderToolResultEntries } from "./tool-renderers";
 
 /** Track which file paths have already been auto-opened to avoid re-render loops. */
 const autoOpenedPaths = new Set<string>();
@@ -41,6 +44,7 @@ export function resetAutoOpenedPaths() {
 type ImageBlock = {
   url: string;
   alt?: string;
+  path?: string;
 };
 
 function extractImages(message: unknown): ImageBlock[] {
@@ -50,14 +54,16 @@ function extractImages(message: unknown): ImageBlock[] {
 
   if (Array.isArray(content)) {
     for (const block of content) {
-      if (typeof block !== "object" || block === null) continue;
+      if (typeof block !== "object" || block === null) {
+        continue;
+      }
       const b = block as Record<string, unknown>;
 
       if (b.type === "image") {
         // Handle source object format (from sendChatMessage)
         const source = b.source as Record<string, unknown> | undefined;
         if (source?.type === "base64" && typeof source.data === "string") {
-          const data = source.data as string;
+          const data = source.data;
           const mediaType = (source.media_type as string) || "image/png";
           // If data is already a data URL, use it directly
           const url = data.startsWith("data:") ? data : `data:${mediaType};base64,${data}`;
@@ -210,7 +216,9 @@ function renderButtonElement(
   const styleClass = el.style ? `interactive-button--${el.style}` : "";
 
   const handleClick = (e: Event) => {
-    if (disabled) return;
+    if (disabled) {
+      return;
+    }
     const payload = formatButtonPayload(block.id, el.id);
     dispatchInteractiveSubmit(e.target as EventTarget, payload);
   };
@@ -344,22 +352,28 @@ export function renderReadingIndicatorGroup(assistant?: AssistantIdentity) {
 
 export function renderStreamingGroup(
   text: string,
+  reasoning: string | undefined,
   startedAt: number,
+  showReasoning: boolean,
   onOpenSidebar?: (content: string) => void,
   assistant?: AssistantIdentity,
   onOpenFilePreview?: (filePath: string) => void,
   onOpenCodingSession?: () => void,
+  resolveFileUrl?: (filePath: string) => string,
 ) {
   const timestamp = new Date(startedAt).toLocaleTimeString([], {
     hour: "numeric",
     minute: "2-digit",
   });
   const name = assistant?.name ?? "Assistant";
+  const streamingReasoning =
+    showReasoning && typeof reasoning === "string" ? normalizeReasoningText(reasoning) : "";
 
   return html`
     <div class="chat-group assistant">
       ${renderAvatar("assistant", assistant)}
       <div class="chat-group-messages">
+        ${streamingReasoning ? renderReasoningPanel(streamingReasoning) : nothing}
         ${renderGroupedMessage(
           {
             role: "assistant",
@@ -370,7 +384,11 @@ export function renderStreamingGroup(
           onOpenSidebar,
           onOpenFilePreview,
           onOpenCodingSession,
+          resolveFileUrl,
         )}
+        <div class="chat-streaming-indicator" aria-hidden="true">
+          <span class="chat-streaming-indicator__dots"><span></span><span></span><span></span></span>
+        </div>
         <div class="chat-group-footer">
           <span class="chat-sender-name">${name}</span>
           <span class="chat-group-timestamp">${timestamp}</span>
@@ -380,12 +398,48 @@ export function renderStreamingGroup(
   `;
 }
 
+function renderReasoningPanel(reasoning: string) {
+  const text = normalizeReasoningText(reasoning);
+  if (!text) {
+    return nothing;
+  }
+  return html`
+    <details class="chat-reasoning">
+      <summary class="chat-reasoning__summary">
+        <span class="chat-reasoning__summary-label">Reasoning</span>
+      </summary>
+      <div class="chat-reasoning__body">${text}</div>
+    </details>
+  `;
+}
+
+function collectGroupReasoning(group: MessageGroup, showReasoning: boolean): string | null {
+  if (!showReasoning || normalizeRoleForGrouping(group.role) !== "assistant") {
+    return null;
+  }
+  const blocks: string[] = [];
+  for (const item of group.messages) {
+    const m = item.message as Record<string, unknown>;
+    const role = normalizeRoleForGrouping(typeof m.role === "string" ? m.role : "unknown");
+    if (role !== "assistant") {
+      continue;
+    }
+    const extracted = extractThinkingCached(item.message);
+    const normalized = extracted ? normalizeReasoningText(extracted) : "";
+    if (normalized) {
+      blocks.push(normalized);
+    }
+  }
+  return blocks.length > 0 ? blocks.join("\n\n") : null;
+}
+
 export function renderMessageGroup(
   group: MessageGroup,
   opts: {
     onOpenSidebar?: (content: string) => void;
     onOpenFilePreview?: (filePath: string) => void;
     onOpenCodingSession?: () => void;
+    resolveFileUrl?: (filePath: string) => string;
     showReasoning: boolean;
     assistantName?: string;
     assistantAvatar?: string | null;
@@ -405,6 +459,7 @@ export function renderMessageGroup(
     hour: "numeric",
     minute: "2-digit",
   });
+  const groupReasoning = collectGroupReasoning(group, opts.showReasoning);
 
   // Auto-open: scan for completed Write/Edit tool results with file paths
   // Only opens each path once per session (until resetAutoOpenedPaths is called)
@@ -432,6 +487,7 @@ export function renderMessageGroup(
         avatar: opts.assistantAvatar ?? null,
       })}
       <div class="chat-group-messages">
+        ${groupReasoning ? renderReasoningPanel(groupReasoning) : nothing}
         ${renderGroupedMessages(group, opts)}
         <div class="chat-group-footer">
           <span class="chat-sender-name">${who}</span>
@@ -479,25 +535,138 @@ function renderAvatar(role: string, assistant?: Pick<AssistantIdentity, "name" |
 
 function isAvatarUrl(value: string): boolean {
   return (
-    /^https?:\/\//i.test(value) || /^data:image\//i.test(value) || /^\//.test(value) // Relative paths from avatar endpoint
+    /^https?:\/\//i.test(value) || /^data:image\//i.test(value) || value.startsWith("/") // Relative paths from avatar endpoint
   );
 }
 
 function renderMessageImages(images: ImageBlock[]) {
-  if (images.length === 0) return nothing;
+  if (images.length === 0) {
+    return nothing;
+  }
+
+  const copyImageToClipboard = async (imageUrl: string, fallbackText: string) => {
+    try {
+      const blob = await fetch(imageUrl).then((res) => res.blob());
+      const clipboardItemCtor = (globalThis as { ClipboardItem?: typeof ClipboardItem })
+        .ClipboardItem;
+      if (!navigator.clipboard || !clipboardItemCtor) {
+        await navigator.clipboard.writeText(fallbackText);
+        return;
+      }
+      await navigator.clipboard.write([new clipboardItemCtor({ [blob.type]: blob })]);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(fallbackText);
+      } catch {
+        // no-op
+      }
+    }
+  };
+
+  const resolveFilename = (image: ImageBlock, index: number): string => {
+    const fromPath = image.path?.replace(/\\/g, "/").split("/").pop();
+    if (fromPath && fromPath.trim().length > 0) {
+      return fromPath;
+    }
+    try {
+      const parsed = new URL(image.url);
+      const fromUrl = parsed.pathname.split("/").pop();
+      if (fromUrl && fromUrl.trim().length > 0) {
+        return fromUrl;
+      }
+    } catch {
+      // ignore parse errors for relative/data URLs
+    }
+    return `image-${index + 1}.png`;
+  };
+
+  const downloadImage = (imageUrl: string, filename: string) => {
+    const anchor = document.createElement("a");
+    anchor.href = imageUrl;
+    anchor.download = filename;
+    anchor.rel = "noopener";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+  };
 
   return html`
     <div class="chat-message-images">
-      ${images.map(
-        (img) => html`
-          <img
-            src=${img.url}
-            alt=${img.alt ?? "Attached image"}
-            class="chat-message-image"
-            @click=${() => window.open(img.url, "_blank")}
-          />
-        `,
-      )}
+      ${images.map((img, index) => {
+        const filename = resolveFilename(img, index);
+        const copyLabel = img.path ? "Copy path" : "Copy link";
+        const copyValue = img.path ?? img.url;
+        return html`
+          <figure class="chat-inline-image">
+            <div
+              class="chat-inline-image__thumb"
+              tabindex="0"
+              title="Image preview (double-click to expand)"
+            >
+              <img
+                src=${img.url}
+                alt=${img.alt ?? filename}
+                class="chat-message-image"
+                @dblclick=${() => openImageLightbox(img.url, filename)}
+              />
+            </div>
+            <figcaption class="chat-inline-image__actions">
+              <button
+                type="button"
+                class="chat-inline-image__action"
+                @click=${(event: Event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  openImageLightbox(img.url, filename);
+                }}
+                title="Expand image"
+              >
+                ${icons.image}
+                <span>Expand</span>
+              </button>
+              <button
+                type="button"
+                class="chat-inline-image__action"
+                @click=${(event: Event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void copyImageToClipboard(img.url, copyValue);
+                }}
+                title="Copy image"
+              >
+                ${icons.copy}
+                <span>Copy</span>
+              </button>
+              <button
+                type="button"
+                class="chat-inline-image__action"
+                @click=${(event: Event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  downloadImage(img.url, filename);
+                }}
+                title="Download image"
+              >
+                ${icons.fileText}
+                <span>Download</span>
+              </button>
+              <button
+                type="button"
+                class="chat-inline-image__action"
+                @click=${(event: Event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void navigator.clipboard.writeText(copyValue);
+                }}
+                title=${copyLabel}
+              >
+                ${icons.link}
+                <span>${copyLabel}</span>
+              </button>
+            </figcaption>
+          </figure>
+        `;
+      })}
     </div>
   `;
 }
@@ -520,6 +689,9 @@ function isChipOnlyMessage(message: unknown): boolean {
     typeof m.toolCallId === "string" ||
     typeof m.tool_call_id === "string";
   if (isToolResult) {
+    if (messageHasRichToolPreview(message)) {
+      return false;
+    }
     return true;
   }
 
@@ -532,6 +704,19 @@ function isChipOnlyMessage(message: unknown): boolean {
   return false;
 }
 
+function isAssistantCallOnlyMessage(message: unknown): boolean {
+  const m = message as Record<string, unknown>;
+  if ((typeof m.role === "string" ? m.role : "").toLowerCase() !== "assistant") {
+    return false;
+  }
+  const cards = extractToolCards(message);
+  if (cards.length === 0 || cards.some((card) => card.kind !== "call")) {
+    return false;
+  }
+  const text = extractTextCached(message);
+  return !text?.trim();
+}
+
 /**
  * Render all messages in a group, batching consecutive chip-only messages
  * into a single flex row so they display inline.
@@ -542,12 +727,14 @@ function renderGroupedMessages(
     onOpenSidebar?: (content: string) => void;
     onOpenFilePreview?: (filePath: string) => void;
     onOpenCodingSession?: () => void;
+    resolveFileUrl?: (filePath: string) => string;
     showReasoning: boolean;
   },
 ) {
   const results: unknown[] = [];
   let chipBatch: unknown[] = [];
   let chipCount = 0;
+  let batchHasImagePreview = false;
 
   /** Collect file paths from Write/Edit results in the current chip batch */
   let batchFilePaths: string[] = [];
@@ -560,7 +747,7 @@ function renderGroupedMessages(
     const chips = chipBatch;
     const filePaths = [...batchFilePaths];
     results.push(
-      html`<details class="chat-tool-collapse">
+      html`<details class="chat-tool-collapse" ?open=${batchHasImagePreview}>
         <summary class="chat-tool-collapse__summary">
           ${icons.wrench}
           <span>${count} tool call${count !== 1 ? "s" : ""}</span>
@@ -593,13 +780,25 @@ function renderGroupedMessages(
     chipBatch = [];
     chipCount = 0;
     batchFilePaths = [];
+    batchHasImagePreview = false;
   };
 
   for (let i = 0; i < group.messages.length; i++) {
     const item = group.messages[i];
+    const nextMessage = group.messages[i + 1]?.message;
+    if (
+      isAssistantCallOnlyMessage(item.message) &&
+      nextMessage &&
+      messageHasRichToolPreview(nextMessage)
+    ) {
+      continue;
+    }
     if (isChipOnlyMessage(item.message)) {
       const cards = extractToolCards(item.message);
       chipCount += cards.length;
+      if (messageHasRichToolPreview(item.message)) {
+        batchHasImagePreview = true;
+      }
       // Track .md file paths from Write/Edit tool calls
       for (const card of cards) {
         if (isFileMutatingTool(card)) {
@@ -614,11 +813,13 @@ function renderGroupedMessages(
           item.message,
           {
             isStreaming: group.isStreaming && i === group.messages.length - 1,
-            showReasoning: opts.showReasoning,
+            // Reasoning is rendered once at the group level.
+            showReasoning: false,
           },
           opts.onOpenSidebar,
           opts.onOpenFilePreview,
           opts.onOpenCodingSession,
+          opts.resolveFileUrl,
         ),
       );
     } else {
@@ -628,11 +829,13 @@ function renderGroupedMessages(
           item.message,
           {
             isStreaming: group.isStreaming && i === group.messages.length - 1,
-            showReasoning: opts.showReasoning,
+            // Reasoning is rendered once at the group level.
+            showReasoning: false,
           },
           opts.onOpenSidebar,
           opts.onOpenFilePreview,
           opts.onOpenCodingSession,
+          opts.resolveFileUrl,
         ),
       );
     }
@@ -648,6 +851,7 @@ function renderGroupedMessage(
   onOpenSidebar?: (content: string) => void,
   onOpenFilePreview?: (filePath: string) => void,
   onOpenCodingSession?: () => void,
+  resolveFileUrl?: (filePath: string) => string,
 ) {
   const m = message as Record<string, unknown>;
   const role = typeof m.role === "string" ? m.role : "unknown";
@@ -660,6 +864,9 @@ function renderGroupedMessage(
 
   const toolCards = extractToolCards(message);
   const hasToolCards = toolCards.length > 0;
+  const renderedToolResults = isToolResult
+    ? renderToolResultEntries(message, { resolveFileUrl })
+    : [];
   const images = extractImages(message);
   const hasImages = images.length > 0;
   const interactiveBlocks = extractInteractiveBlocks(message);
@@ -675,8 +882,23 @@ function renderGroupedMessage(
   const hasAudio = audioFiles.length > 0;
   const textAfterAudio = hasAudio ? audioExtraction!.cleanedText : extractedText;
 
-  const markdownBase = textAfterAudio?.trim() ? textAfterAudio : null;
-  const reasoningMarkdown = extractedThinking ? formatReasoningMarkdown(extractedThinking) : null;
+  const mediaExtract = textAfterAudio ? extractMediaLines(textAfterAudio) : null;
+  const textMediaPaths = (mediaExtract?.mediaPaths ?? []).filter((value) => isImagePath(value));
+  const textMediaImages = textMediaPaths.map((filePath) => ({
+    url:
+      filePath.startsWith("http://") ||
+      filePath.startsWith("https://") ||
+      filePath.startsWith("data:image/")
+        ? filePath
+        : resolveFileUrl
+          ? resolveFileUrl(filePath)
+          : `/api/files?path=${encodeURIComponent(filePath)}`,
+    alt: filePath,
+    path: filePath,
+  }));
+
+  const markdownBase = mediaExtract?.cleanedText?.trim() ? mediaExtract.cleanedText : null;
+  const reasoningText = extractedThinking ? normalizeReasoningText(extractedThinking) : null;
   const markdown = markdownBase;
   const canCopyMarkdown = role === "assistant" && Boolean(markdown?.trim());
 
@@ -689,11 +911,26 @@ function renderGroupedMessage(
     .filter(Boolean)
     .join(" ");
 
-  // Tool-result messages always render as compact chips (text via sidebar)
+  // Tool-result messages render compact chips plus a rich renderer block.
   if (hasToolCards && isToolResult) {
-    return html`${toolCards.map((card) =>
-      renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
-    )}`;
+    const hasMediaPreview = renderedToolResults.some((entry) => entry.hasMediaPreview);
+    if (hasMediaPreview) {
+      return html`<div class="chat-tool-results chat-tool-results--image-only">
+        ${renderedToolResults.map((entry) => entry.content)}
+      </div>`;
+    }
+    return html`
+      <div class="chat-tool-result">
+        <div class="chat-tool-chips">
+          ${toolCards.map((card) =>
+            renderToolCardSidebar(card, onOpenSidebar, onOpenFilePreview, onOpenCodingSession),
+          )}
+        </div>
+        <div class="chat-tool-results">
+          ${renderedToolResults.map((entry) => entry.content)}
+        </div>
+      </div>
+    `;
   }
 
   // Assistant messages with text: suppress tool_call chips (result chips follow).
@@ -706,20 +943,24 @@ function renderGroupedMessage(
   }
   const showInlineChips = hasToolCards && role !== "assistant";
 
-  if (!markdown && !showInlineChips && !hasImages && !hasAudio && !hasInteractive) return nothing;
+  if (
+    !markdown &&
+    !reasoningText &&
+    !showInlineChips &&
+    !hasImages &&
+    textMediaImages.length === 0 &&
+    !hasAudio &&
+    !hasInteractive
+  ) {
+    return nothing;
+  }
 
   return html`
-    <div class="${bubbleClasses}">
-      ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown!) : nothing}
-      ${renderMessageImages(images)}
+      <div class="${bubbleClasses}">
+        ${canCopyMarkdown ? renderCopyAsMarkdownButton(markdown) : nothing}
+      ${renderMessageImages([...images, ...textMediaImages])}
       ${renderAudioPlayers(audioFiles)}
-      ${
-        reasoningMarkdown
-          ? html`<div class="chat-thinking">${unsafeHTML(
-              toSanitizedMarkdownHtml(reasoningMarkdown),
-            )}</div>`
-          : nothing
-      }
+      ${reasoningText ? renderReasoningPanel(reasoningText) : nothing}
       ${
         markdown
           ? html`<div class="chat-text">${unsafeHTML(toSanitizedMarkdownHtml(markdown))}</div>`

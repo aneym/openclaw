@@ -68,11 +68,20 @@ export const ChatStatusParamsSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const ChatStatusManyParamsSchema = Type.Object(
+  {
+    sessionKeys: Type.Array(NonEmptyString, { minItems: 1, maxItems: 64 }),
+  },
+  { additionalProperties: false },
+);
+
 export const ChatEventSchema = Type.Object(
   {
     runId: NonEmptyString,
+    sourceRunId: Type.Optional(NonEmptyString),
     sessionKey: NonEmptyString,
     seq: Type.Integer({ minimum: 0 }),
+    updatedAtMs: Type.Optional(Type.Integer({ minimum: 0 })),
     state: Type.Union([
       Type.Literal("delta"),
       Type.Literal("final"),
