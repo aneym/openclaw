@@ -289,8 +289,14 @@ export class OpenClawApp extends LitElement {
   @state() agentsList: AgentsListResult | null = null;
   @state() agentsError: string | null = null;
   @state() agentsSelectedId: string | null = null;
-  @state() agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron" =
-    "overview";
+  @state() agentsPanel:
+    | "overview"
+    | "dashboard"
+    | "files"
+    | "tools"
+    | "skills"
+    | "channels"
+    | "cron" = "overview";
   @state() agentFilesLoading = false;
   @state() agentFilesError: string | null = null;
   @state() agentFilesList: AgentsFilesListResult | null = null;
@@ -435,6 +441,14 @@ export class OpenClawApp extends LitElement {
   @state() usageLogFilterQuery = "";
 
   @state() selectedAgentFilter: string | null = null;
+  @state() dashboardSessions: Array<{
+    key: string;
+    label?: string;
+    updatedAt?: number;
+    kind?: string;
+  }> = [];
+  @state() dashboardSessionsLoading = false;
+  @state() dashboardSoulPreview: string | null = null;
 
   client: GatewayBrowserClient | null = null;
   private chatScrollFrame: number | null = null;

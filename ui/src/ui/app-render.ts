@@ -137,8 +137,13 @@ function focusComposer() {
  * Create a fresh thread/session and navigate to it.
  * Used by the sidebar "New session" button and the chat compose "New session" button.
  */
-function startNewSession(state: AppViewState) {
-  const base = state.sessionKey.split(":thread:")[0];
+function startNewSession(state: AppViewState, agentId?: string) {
+  let base: string;
+  if (agentId) {
+    base = `agent:${agentId}:webchat`;
+  } else {
+    base = state.sessionKey.split(":thread:")[0];
+  }
   const desc = createThreadDescriptor(base);
   const thread = createThreadState(desc);
   state.threads.set(desc.id, thread);
@@ -450,6 +455,7 @@ export function renderApp(state: AppViewState) {
                           void patchSession(state, sessionKey, { archived: false });
                         },
                         onNewSession: () => startNewSession(state),
+                        onNewSessionForAgent: (agentId) => startNewSession(state, agentId),
                         onOpenTerminal: () => state.openTerminalPane(),
                         onRequestUpdate: () => {
                           // Force re-render by touching a reactive property
@@ -738,6 +744,35 @@ export function renderApp(state: AppViewState) {
                 },
                 onSelectPanel: (panel) => {
                   state.agentsPanel = panel;
+                  if (panel === "dashboard" && resolvedAgentId) {
+                    // Auto-load dashboard data
+                    void (async () => {
+                      state.dashboardSessionsLoading = true;
+                      try {
+                        if (!state.client) {
+                          return;
+                        }
+                        const res = await state.client.request("sessions.list", {
+                          limit: 50,
+                          activeMinutes: 0,
+                        });
+                        const sessions = (res.sessions ?? []) as Array<{
+                          key: string;
+                          label?: string;
+                          updatedAt?: number;
+                          kind?: string;
+                        }>;
+                        state.dashboardSessions = sessions.filter((s) => {
+                          const parts = s.key.split(":");
+                          return parts[0] === "agent" && parts[1] === resolvedAgentId;
+                        });
+                      } catch {
+                        state.dashboardSessions = [];
+                      } finally {
+                        state.dashboardSessionsLoading = false;
+                      }
+                    })();
+                  }
                   if (panel === "files" && resolvedAgentId) {
                     if (state.agentFilesList?.agentId !== resolvedAgentId) {
                       state.agentFilesList = null;
@@ -1054,6 +1089,61 @@ export function renderApp(state: AppViewState) {
                     ? { primary, fallbacks: normalized }
                     : { fallbacks: normalized };
                   updateConfigFormValue(state as unknown as ConfigState, basePath, next);
+                },
+                dashboardSessions: state.dashboardSessions,
+                dashboardSessionsLoading: state.dashboardSessionsLoading,
+                dashboardSoulPreview: state.dashboardSoulPreview,
+                onDashboardLoadSessions: (agentId) => {
+                  void (async () => {
+                    state.dashboardSessionsLoading = true;
+                    try {
+                      if (!state.client) {
+                        return;
+                      }
+                      const res = await state.client.request("sessions.list", {
+                        limit: 50,
+                        activeMinutes: 0,
+                      });
+                      const sessions = (res.sessions ?? []) as Array<{
+                        key: string;
+                        label?: string;
+                        updatedAt?: number;
+                        kind?: string;
+                      }>;
+                      // Filter sessions for this agent
+                      state.dashboardSessions = sessions.filter((s) => {
+                        const parts = s.key.split(":");
+                        return parts[0] === "agent" && parts[1] === agentId;
+                      });
+                      // Try to load SOUL.md preview
+                      try {
+                        const filesRes = await state.client.request("agent.files.list", {
+                          agentId,
+                        });
+                        const soulFile = (filesRes.files ?? []).find((f) => f.name === "SOUL.md");
+                        if (soulFile) {
+                          const contentRes = await state.client.request("agent.files.read", {
+                            agentId,
+                            name: "SOUL.md",
+                          });
+                          state.dashboardSoulPreview =
+                            typeof contentRes.content === "string"
+                              ? contentRes.content.slice(0, 500)
+                              : null;
+                        }
+                      } catch {
+                        // SOUL.md is optional
+                      }
+                    } catch {
+                      state.dashboardSessions = [];
+                    } finally {
+                      state.dashboardSessionsLoading = false;
+                    }
+                  })();
+                },
+                onDashboardSelectSession: (sessionKey) => {
+                  state.sessionKey = sessionKey;
+                  state.tab = "chat";
                 },
               })
             : nothing

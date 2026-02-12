@@ -80,6 +80,8 @@ export interface NavThreadListProps {
   onArchive: (sessionKey: string) => void;
   onUnarchive: (sessionKey: string) => void;
   onNewSession: () => void;
+  /** Start a new session targeting a specific agent */
+  onNewSessionForAgent: (agentId: string) => void;
   onOpenTerminal?: () => void;
   onRequestUpdate: () => void;
 }
@@ -477,6 +479,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
     onArchive,
     onUnarchive,
     onNewSession,
+    onNewSessionForAgent,
     onOpenTerminal,
     onRequestUpdate,
   } = props;
@@ -501,17 +504,82 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
 
   const groups = groupSessions(filtered, openPaneKeys);
 
+  // Close agent picker on outside click
+  if (agents.length > 1) {
+    const closePickerHandler = (e: Event) => {
+      const picker = document.querySelector(".agent-new-session-picker");
+      if (!picker?.classList.contains("agent-new-session-picker--open")) {
+        return;
+      }
+      const group = document.querySelector(".agent-new-session-group");
+      if (group && !group.contains(e.target as Node)) {
+        picker.classList.remove("agent-new-session-picker--open");
+      }
+    };
+    document.removeEventListener("click", closePickerHandler, true);
+    document.addEventListener("click", closePickerHandler, true);
+  }
+
   return html`
     <div class="nav-threads">
-      <button
-        class="nav-thread-item nav-thread-item__new"
-        @click=${onNewSession}
-        title="Start a new session"
-        aria-label="New session"
-      >
-        <span class="nav-thread-item__icon">+</span>
-        <span class="nav-thread-item__new-label">New session</span>
-      </button>
+      ${
+        agents.length > 1
+          ? html`
+        <div class="agent-new-session-group">
+          <button
+            class="nav-thread-item nav-thread-item__new"
+            @click=${() => {
+              // If an agent filter is active, create session for that agent
+              if (selectedAgentFilter) {
+                onNewSessionForAgent(selectedAgentFilter);
+              } else {
+                // Toggle agent picker popover
+                const el = document.querySelector(".agent-new-session-picker");
+                if (el) {
+                  el.classList.toggle("agent-new-session-picker--open");
+                }
+              }
+            }}
+            title="${selectedAgentFilter ? `New ${agents.find((a) => a.id === selectedAgentFilter)?.name ?? ""} session` : "Start a new session"}"
+            aria-label="New session"
+          >
+            <span class="nav-thread-item__icon">+</span>
+            <span class="nav-thread-item__new-label">New session</span>
+          </button>
+          <div class="agent-new-session-picker">
+            ${agents.map(
+              (agent) => html`
+                <button
+                  class="agent-new-session-option"
+                  @click=${() => {
+                    onNewSessionForAgent(agent.id);
+                    const el = document.querySelector(".agent-new-session-picker");
+                    if (el) {
+                      el.classList.remove("agent-new-session-picker--open");
+                    }
+                  }}
+                  title="New ${agent.name} session"
+                >
+                  ${agent.emoji ? html`<span class="agent-new-session-option__emoji">${agent.emoji}</span>` : nothing}
+                  <span>${agent.name}</span>
+                </button>
+              `,
+            )}
+          </div>
+        </div>
+      `
+          : html`
+        <button
+          class="nav-thread-item nav-thread-item__new"
+          @click=${onNewSession}
+          title="Start a new session"
+          aria-label="New session"
+        >
+          <span class="nav-thread-item__icon">+</span>
+          <span class="nav-thread-item__new-label">New session</span>
+        </button>
+      `
+      }
       ${
         onOpenTerminal
           ? html`
@@ -662,6 +730,20 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                         title="${label}\n${s.key}"
                       >
                         <div class="nav-thread-item__content">
+                        ${(() => {
+                          if (agents.length <= 1) {
+                            return nothing;
+                          }
+                          const parsed = parseAgentSessionKey(s.key);
+                          if (!parsed) {
+                            return nothing;
+                          }
+                          const agent = agents.find((a) => a.id === parsed.agentId);
+                          if (!agent) {
+                            return nothing;
+                          }
+                          return html`<span class="nav-thread-item__agent-badge" title="${agent.name}">${agent.emoji ?? agent.name.charAt(0)}</span>`;
+                        })()}
                         ${
                           isRenaming
                             ? html`<input

@@ -24,7 +24,14 @@ import {
   formatNextRun,
 } from "../presenter.ts";
 
-export type AgentsPanel = "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+export type AgentsPanel =
+  | "overview"
+  | "dashboard"
+  | "files"
+  | "tools"
+  | "skills"
+  | "channels"
+  | "cron";
 
 export type AgentsProps = {
   loading: boolean;
@@ -80,6 +87,13 @@ export type AgentsProps = {
   onAgentSkillToggle: (agentId: string, skillName: string, enabled: boolean) => void;
   onAgentSkillsClear: (agentId: string) => void;
   onAgentSkillsDisableAll: (agentId: string) => void;
+  /** Dashboard: sessions list per agent */
+  dashboardSessions: Array<{ key: string; label?: string; updatedAt?: number; kind?: string }>;
+  dashboardSessionsLoading: boolean;
+  /** Dashboard: SOUL.md preview text */
+  dashboardSoulPreview: string | null;
+  onDashboardLoadSessions: (agentId: string) => void;
+  onDashboardSelectSession: (sessionKey: string) => void;
 };
 
 const TOOL_SECTIONS = [
@@ -625,6 +639,21 @@ export function renderAgents(props: AgentsProps) {
                   : nothing
               }
               ${
+                props.activePanel === "dashboard"
+                  ? renderAgentDashboard({
+                      agent: selectedAgent,
+                      agentIdentity: props.agentIdentityById[selectedAgent.id] ?? null,
+                      sessions: props.dashboardSessions,
+                      sessionsLoading: props.dashboardSessionsLoading,
+                      soulPreview: props.dashboardSoulPreview,
+                      cronJobs: props.cronJobs,
+                      skills: props.agentSkillsReport,
+                      onLoadSessions: props.onDashboardLoadSessions,
+                      onSelectSession: props.onDashboardSelectSession,
+                    })
+                  : nothing
+              }
+              ${
                 props.activePanel === "files"
                   ? renderAgentFiles({
                       agentId: selectedAgent.id,
@@ -751,6 +780,7 @@ function renderAgentHeader(
 function renderAgentTabs(active: AgentsPanel, onSelect: (panel: AgentsPanel) => void) {
   const tabs: Array<{ id: AgentsPanel; label: string }> = [
     { id: "overview", label: "Overview" },
+    { id: "dashboard", label: "Dashboard" },
     { id: "files", label: "Files" },
     { id: "tools", label: "Tools" },
     { id: "skills", label: "Skills" },
@@ -927,6 +957,135 @@ function renderAgentOverview(params: {
           </button>
         </div>
       </div>
+    </section>
+  `;
+}
+
+function renderAgentDashboard(params: {
+  agent: AgentsListResult["agents"][number];
+  agentIdentity: AgentIdentityResult | null;
+  sessions: Array<{ key: string; label?: string; updatedAt?: number; kind?: string }>;
+  sessionsLoading: boolean;
+  soulPreview: string | null;
+  cronJobs: CronJob[];
+  skills: SkillStatusReport | null;
+  onLoadSessions: (agentId: string) => void;
+  onSelectSession: (sessionKey: string) => void;
+}) {
+  const {
+    agent,
+    agentIdentity,
+    sessions,
+    sessionsLoading,
+    soulPreview,
+    cronJobs,
+    skills,
+    onLoadSessions,
+    onSelectSession,
+  } = params;
+
+  const activeSessions = sessions.filter((s) => s.kind !== "cron" && s.kind !== "subagent");
+  const recentSessions = activeSessions.slice(0, 10);
+  const enabledSkills = skills?.entries?.filter((s) => s.enabled) ?? [];
+  const agentCrons = cronJobs.filter(
+    (j) => j.sessionTarget === "isolated" || j.name?.toLowerCase().includes(agent.id),
+  );
+
+  return html`
+    <section class="card">
+      <div class="row" style="justify-content: space-between; margin-bottom: 12px;">
+        <div class="card-title">Dashboard</div>
+        <button
+          class="btn btn--sm"
+          ?disabled=${sessionsLoading}
+          @click=${() => onLoadSessions(agent.id)}
+        >
+          ${sessionsLoading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      <!-- Stats row -->
+      <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;">
+        <div class="callout" style="flex:1;min-width:120px;">
+          <div style="font-size:22px;font-weight:700;">${activeSessions.length}</div>
+          <div class="muted" style="font-size:11px;">Sessions</div>
+        </div>
+        <div class="callout" style="flex:1;min-width:120px;">
+          <div style="font-size:22px;font-weight:700;">${agentCrons.length}</div>
+          <div class="muted" style="font-size:11px;">Cron Jobs</div>
+        </div>
+        <div class="callout" style="flex:1;min-width:120px;">
+          <div style="font-size:22px;font-weight:700;">${enabledSkills.length}</div>
+          <div class="muted" style="font-size:11px;">Active Skills</div>
+        </div>
+        <div class="callout" style="flex:1;min-width:120px;">
+          <div style="font-size:22px;font-weight:700;">${agent.model ?? "default"}</div>
+          <div class="muted" style="font-size:11px;">Model</div>
+        </div>
+      </div>
+
+      <!-- Recent sessions -->
+      <div style="margin-bottom:16px;">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Recent Sessions</div>
+        ${
+          recentSessions.length === 0
+            ? html`
+                <div class="muted">No sessions yet.</div>
+              `
+            : html`
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            ${recentSessions.map(
+              (s) => html`
+                <button
+                  class="agent-row"
+                  style="padding:6px 8px;"
+                  @click=${() => onSelectSession(s.key)}
+                >
+                  <div class="agent-info" style="flex:1;min-width:0;">
+                    <div class="agent-title" style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.label || s.key}</div>
+                    ${s.updatedAt ? html`<div class="agent-sub mono" style="font-size:10px;">${formatRelativeTimestamp(s.updatedAt)}</div>` : nothing}
+                  </div>
+                  ${s.kind ? html`<span class="agent-pill" style="font-size:9px;">${s.kind}</span>` : nothing}
+                </button>
+              `,
+            )}
+          </div>
+        `
+        }
+      </div>
+
+      <!-- SOUL.md preview -->
+      ${
+        soulPreview
+          ? html`
+        <div style="margin-bottom:16px;">
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px;">SOUL.md</div>
+          <div class="callout" style="font-size:12px;white-space:pre-wrap;max-height:200px;overflow-y:auto;">${soulPreview}</div>
+        </div>
+      `
+          : nothing
+      }
+
+      <!-- Active crons -->
+      ${
+        agentCrons.length > 0
+          ? html`
+        <div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:8px;">Cron Jobs</div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            ${agentCrons.slice(0, 5).map(
+              (job) => html`
+                <div class="callout" style="padding:6px 10px;font-size:11px;">
+                  <div style="font-weight:600;">${job.name || job.id}</div>
+                  <div class="muted">${formatCronSchedule(job)} · ${formatCronState(job)}</div>
+                </div>
+              `,
+            )}
+          </div>
+        </div>
+      `
+          : nothing
+      }
     </section>
   `;
 }

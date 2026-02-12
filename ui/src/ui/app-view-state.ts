@@ -156,7 +156,7 @@ export type AppViewState = {
   agentsList: AgentsListResult | null;
   agentsError: string | null;
   agentsSelectedId: string | null;
-  agentsPanel: "overview" | "files" | "tools" | "skills" | "channels" | "cron";
+  agentsPanel: "overview" | "dashboard" | "files" | "tools" | "skills" | "channels" | "cron";
   agentFilesLoading: boolean;
   agentFilesError: string | null;
   agentFilesList: AgentsFilesListResult | null;
@@ -172,6 +172,9 @@ export type AppViewState = {
   agentSkillsReport: SkillStatusReport | null;
   agentSkillsAgentId: string | null;
   selectedAgentFilter: string | null;
+  dashboardSessions: Array<{ key: string; label?: string; updatedAt?: number; kind?: string }>;
+  dashboardSessionsLoading: boolean;
+  dashboardSoulPreview: string | null;
   sessionsLoading: boolean;
   sessionsResult: SessionsListResult | null;
   sessionsError: string | null;

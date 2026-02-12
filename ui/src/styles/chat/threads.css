@@ -397,6 +397,65 @@
   color: white;
 }
 
+/* Agent new session picker */
+.agent-new-session-group {
+  position: relative;
+}
+
+.agent-new-session-picker {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 8px;
+  right: 8px;
+  z-index: 100;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  padding: 4px;
+  margin-top: 2px;
+}
+
+.agent-new-session-picker--open {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agent-new-session-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--text);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.agent-new-session-option:hover {
+  background: var(--panel-hover);
+}
+
+.agent-new-session-option__emoji {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* Agent badge on thread items */
+.nav-thread-item__agent-badge {
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1;
+  margin-right: 4px;
+  opacity: 0.7;
+}
+
 /* Search input */
 .nav-threads__search {
   position: relative;
