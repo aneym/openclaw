@@ -1758,6 +1758,28 @@
   font-size: 20px;
 }
 
+.agent-avatar-img {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.agent-avatar-img--lg {
+  width: 42px;
+  height: 42px;
+}
+
+.agent-avatar-img--sm {
+  width: 16px;
+  height: 16px;
+}
+
+.agent-avatar-img--xs {
+  width: 14px;
+  height: 14px;
+}
+
 .agent-info {
   display: grid;
   gap: 2px;

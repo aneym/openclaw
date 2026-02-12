@@ -248,27 +248,56 @@ function isLikelyEmoji(value: string) {
   return true;
 }
 
-function resolveAgentEmoji(
-  agent: { identity?: { emoji?: string; avatar?: string } },
+type AgentVisual =
+  | { kind: "emoji"; value: string }
+  | { kind: "image"; url: string }
+  | { kind: "letter"; value: string };
+
+function resolveAgentVisual(
+  agent: { identity?: { emoji?: string; avatar?: string; avatarUrl?: string } },
   agentIdentity?: AgentIdentityResult | null,
-) {
+  fallbackName?: string,
+): AgentVisual {
+  // Check for avatar URL (image) first — prefer images over emoji
+  const avatarUrl = (agent.identity?.avatarUrl ?? agentIdentity?.avatar)?.trim();
+  if (avatarUrl && (avatarUrl.startsWith("data:") || avatarUrl.startsWith("http"))) {
+    return { kind: "image", url: avatarUrl };
+  }
+  // Then check emoji
   const identityEmoji = agentIdentity?.emoji?.trim();
   if (identityEmoji && isLikelyEmoji(identityEmoji)) {
-    return identityEmoji;
+    return { kind: "emoji", value: identityEmoji };
   }
   const agentEmoji = agent.identity?.emoji?.trim();
   if (agentEmoji && isLikelyEmoji(agentEmoji)) {
-    return agentEmoji;
+    return { kind: "emoji", value: agentEmoji };
   }
-  const identityAvatar = agentIdentity?.avatar?.trim();
-  if (identityAvatar && isLikelyEmoji(identityAvatar)) {
-    return identityAvatar;
+  // Fallback to first letter
+  const letter = (fallbackName || agent.identity?.name || "?").charAt(0).toUpperCase();
+  return { kind: "letter", value: letter };
+}
+
+/** Render an agent visual (emoji, image, or letter) as HTML */
+function renderAgentVisual(visual: AgentVisual, size: "sm" | "md" | "lg" = "md") {
+  if (visual.kind === "image") {
+    const cls =
+      size === "lg"
+        ? "agent-avatar-img agent-avatar-img--lg"
+        : size === "sm"
+          ? "agent-avatar-img agent-avatar-img--sm"
+          : "agent-avatar-img";
+    return html`<img class="${cls}" src="${visual.url}" alt="" />`;
   }
-  const avatar = agent.identity?.avatar?.trim();
-  if (avatar && isLikelyEmoji(avatar)) {
-    return avatar;
-  }
-  return "";
+  return visual.value;
+}
+
+/** Legacy compat — returns emoji string or empty */
+function resolveAgentEmoji(
+  agent: { identity?: { emoji?: string; avatar?: string; avatarUrl?: string } },
+  agentIdentity?: AgentIdentityResult | null,
+) {
+  const visual = resolveAgentVisual(agent, agentIdentity);
+  return visual.kind === "emoji" ? visual.value : "";
 }
 
 function agentBadgeText(agentId: string, defaultId: string | null) {
@@ -581,7 +610,11 @@ export function renderAgents(props: AgentsProps) {
                 `
               : agents.map((agent) => {
                   const badge = agentBadgeText(agent.id, defaultId);
-                  const emoji = resolveAgentEmoji(agent, props.agentIdentityById[agent.id] ?? null);
+                  const visual = resolveAgentVisual(
+                    agent,
+                    props.agentIdentityById[agent.id] ?? null,
+                    normalizeAgentLabel(agent),
+                  );
                   return html`
                     <button
                       type="button"
@@ -589,7 +622,7 @@ export function renderAgents(props: AgentsProps) {
                       @click=${() => props.onSelectAgent(agent.id)}
                     >
                       <div class="agent-avatar">
-                        ${emoji || normalizeAgentLabel(agent).slice(0, 1)}
+                        ${renderAgentVisual(visual)}
                       </div>
                       <div class="agent-info">
                         <div class="agent-title">${normalizeAgentLabel(agent)}</div>
@@ -757,12 +790,12 @@ function renderAgentHeader(
   const badge = agentBadgeText(agent.id, defaultId);
   const displayName = normalizeAgentLabel(agent);
   const subtitle = agent.identity?.theme?.trim() || "Agent workspace and routing.";
-  const emoji = resolveAgentEmoji(agent, agentIdentity);
+  const visual = resolveAgentVisual(agent, agentIdentity, displayName);
   return html`
     <section class="card agent-header">
       <div class="agent-header-main">
         <div class="agent-avatar agent-avatar--lg">
-          ${emoji || displayName.slice(0, 1)}
+          ${renderAgentVisual(visual, "lg")}
         </div>
         <div>
           <div class="card-title">${displayName}</div>

@@ -68,6 +68,15 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.split-pane__titlebar-agent {
+  flex-shrink: 0;
+  font-size: 13px;
 }
 
 .split-pane__titlebar-meta {

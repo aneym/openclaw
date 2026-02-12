@@ -2,7 +2,7 @@
  * Thin wrapper around renderChat() that scopes a chat view to a specific pane.
  * Adds a data-pane-id attribute, focus indicator, and pane-specific callbacks.
  */
-import { html } from "lit";
+import { html, nothing } from "lit";
 import type { AppViewState } from "../app-view-state";
 import type { PaneContextMenuCallbacks } from "../components/pane-context-menu";
 import type { PaneState } from "../pane-state";
@@ -200,6 +200,7 @@ export function renderChatPane(props: ChatPaneProps) {
         id: a.id,
         name: a.name || a.identity?.name || a.id,
         emoji: a.identity?.emoji,
+        avatarUrl: a.identity?.avatarUrl,
         default: a.id === defaultId,
       }));
     })(),
@@ -382,6 +383,26 @@ export function renderChatPane(props: ChatPaneProps) {
   const sessionEntry = state.sessionsResult?.sessions?.find((s) => s.key === sessionKey);
   const paneTitle =
     sessionEntry?.displayName || sessionEntry?.label || humanizeSessionKey(sessionKey);
+
+  // Resolve agent badge for multi-agent setups
+  const agentsList = state.agentsList?.agents ?? [];
+  const paneAgentBadge =
+    agentsList.length > 1
+      ? (() => {
+          const parts = sessionKey.split(":");
+          if (parts[0] === "agent" && parts[1]) {
+            const agent = agentsList.find((a) => a.id === parts[1]);
+            if (agent) {
+              return {
+                emoji: agent.identity?.emoji,
+                avatarUrl: agent.identity?.avatarUrl,
+                name: agent.name || agent.identity?.name || agent.id,
+              };
+            }
+          }
+          return null;
+        })()
+      : null;
   const isStreaming = isPaneStreamingState({
     sessionKey,
     isActiveSession,
@@ -436,8 +457,14 @@ export function renderChatPane(props: ChatPaneProps) {
         draggable="true"
         @dragstart=${handleTitlebarDragStart}
       >
-        <span class="split-pane__titlebar-label" title="${paneTitle} — drag to rearrange, right-click for options">
-          ${paneTitle}
+        <span class="split-pane__titlebar-label" title="${paneAgentBadge ? `${paneAgentBadge.name}: ` : ""}${paneTitle} — drag to rearrange, right-click for options">
+          ${
+            paneAgentBadge?.avatarUrl
+              ? html`<img class="split-pane__titlebar-agent" src="${paneAgentBadge.avatarUrl}" alt="${paneAgentBadge.name}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" />`
+              : paneAgentBadge?.emoji
+                ? html`<span class="split-pane__titlebar-agent">${paneAgentBadge.emoji}</span>`
+                : nothing
+          }${paneTitle}
         </span>
         <span class="split-pane__titlebar-meta">
           ${

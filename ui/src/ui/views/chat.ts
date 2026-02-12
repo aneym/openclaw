@@ -83,7 +83,13 @@ export type ChatProps = {
   onSendImmediately: () => void;
   onNewSession: () => void;
   onNewSessionForAgent?: (agentId: string) => void;
-  agents?: Array<{ id: string; name: string; emoji?: string; default?: boolean }>;
+  agents?: Array<{
+    id: string;
+    name: string;
+    emoji?: string;
+    avatarUrl?: string;
+    default?: boolean;
+  }>;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
@@ -610,7 +616,7 @@ function renderSessionPicker(
                 onRequestUpdate?.();
               }}
             >
-              ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+              ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
               <span>${agent.name}</span>
             </button>
           `,
@@ -649,7 +655,7 @@ function renderSessionPicker(
           ${(pickerAgentFilter ? agents.filter((a) => a.id === pickerAgentFilter) : agents).map(
             (agent) => html`
             <button class="session-picker__new-btn" @click=${() => onNewSessionForAgent(agent.id)}>
-              ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+              ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
               New ${agent.name} session
             </button>
           `,
@@ -674,14 +680,11 @@ function renderSessionPicker(
                   ? display
                   : "";
             // Agent badge
-            const agentBadge = hasMultiAgent
+            const agentMatch = hasMultiAgent
               ? (() => {
                   const parts = s.key.split(":");
                   if (parts[0] === "agent") {
-                    const agent = agents.find((a) => a.id === parts[1]);
-                    if (agent?.emoji) {
-                      return agent.emoji;
-                    }
+                    return agents.find((a) => a.id === parts[1]) ?? null;
                   }
                   return null;
                 })()
@@ -696,7 +699,13 @@ function renderSessionPicker(
                 }}
                 title=${s.key}
               >
-                ${agentBadge ? html`<span class="session-picker__item-badge">${agentBadge}</span>` : nothing}
+                ${
+                  agentMatch?.avatarUrl
+                    ? html`<img class="session-picker__item-badge" src="${agentMatch.avatarUrl}" alt="" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" />`
+                    : agentMatch?.emoji
+                      ? html`<span class="session-picker__item-badge">${agentMatch.emoji}</span>`
+                      : nothing
+                }
                 <div class="session-picker__item-text">
                   <span class="session-picker__item-label">${title}</span>
                   ${subtitle ? html`<span class="session-picker__item-title">${subtitle}</span>` : nothing}

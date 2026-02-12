@@ -69,7 +69,7 @@ export interface NavThreadListProps {
   /** Gateway client for server-side search (optional for backward compat). */
   gateway?: GatewayBrowserClient | null;
   /** List of agents for filter pills */
-  agents: Array<{ id: string; name: string; emoji?: string }>;
+  agents: Array<{ id: string; name: string; emoji?: string; avatarUrl?: string }>;
   /** Currently selected agent filter (null = All) */
   selectedAgentFilter: string | null;
   /** Callback when agent filter changes */
@@ -549,7 +549,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                 @click=${() => onAgentFilterChange(agent.id)}
                 title="Filter by ${agent.name}"
               >
-                ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+                ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
                 <span>${agent.name}</span>
               </button>
             `,
@@ -678,7 +678,9 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                           if (!agent) {
                             return nothing;
                           }
-                          return html`<span class="nav-thread-item__agent-badge" title="${agent.name}">${agent.emoji ?? agent.name.charAt(0)}</span>`;
+                          return agent.avatarUrl
+                            ? html`<img class="nav-thread-item__agent-badge" title="${agent.name}" src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />`
+                            : html`<span class="nav-thread-item__agent-badge" title="${agent.name}">${agent.emoji ?? agent.name.charAt(0)}</span>`;
                         })()}
                         ${
                           isRenaming

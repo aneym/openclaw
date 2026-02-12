@@ -394,8 +394,9 @@ export function renderApp(state: AppViewState) {
                         agents:
                           state.agentsList?.agents?.map((a) => ({
                             id: a.id,
-                            name: state.agentIdentityById?.[a.id]?.name ?? a.id,
-                            emoji: state.agentIdentityById?.[a.id]?.emoji,
+                            name: state.agentIdentityById?.[a.id]?.name ?? a.name ?? a.id,
+                            emoji: state.agentIdentityById?.[a.id]?.emoji ?? a.identity?.emoji,
+                            avatarUrl: a.identity?.avatarUrl,
                           })) ?? [],
                         selectedAgentFilter: state.selectedAgentFilter,
                         onAgentFilterChange: (agentId) => {
