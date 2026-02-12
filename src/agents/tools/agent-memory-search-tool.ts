@@ -1,7 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import fs from "node:fs/promises";
 import path from "node:path";
-import type { OpenClawConfig } from "../../config/config.js";
 import type { AnyAgentTool } from "./common.js";
 import { loadConfig } from "../../config/config.js";
 import { listMemoryFiles } from "../../memory/internal.js";
@@ -112,7 +111,7 @@ async function searchMemoryFiles(workspaceDir: string, query: string): Promise<S
           lineEnd: excerpt.end + 1, // 1-indexed
         });
       }
-    } catch (err) {
+    } catch (_err) {
       // Skip files that can't be read
       continue;
     }
@@ -211,8 +210,8 @@ export function createAgentMemorySearchTool(): AnyAgentTool {
           results: safeMatches,
           count: safeMatches.length,
         });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
         return jsonResult({
           results: [],
           error: `Failed to search memory: ${message}`,
