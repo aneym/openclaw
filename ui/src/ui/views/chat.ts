@@ -82,6 +82,8 @@ export type ChatProps = {
   onQueueClearAll: () => void;
   onSendImmediately: () => void;
   onNewSession: () => void;
+  onNewSessionForAgent?: (agentId: string) => void;
+  agents?: Array<{ id: string; name: string; emoji?: string; default?: boolean }>;
   onOpenSidebar?: (content: string) => void;
   onCloseSidebar?: () => void;
   onSplitRatioChange?: (ratio: number) => void;
@@ -517,6 +519,10 @@ function compactAgo(ms?: number | null): string {
   return `${mo}mo`;
 }
 
+// Session picker state (module-level, persists across re-renders)
+let pickerSearchQuery = "";
+let pickerAgentFilter: string | null = null;
+
 /**
  * Session picker shown inside an empty split pane.
  * Lists recent sessions not already open in another pane.
@@ -526,7 +532,12 @@ function renderSessionPicker(
   openKeys: Set<string>,
   currentKey: string,
   onSelect: (key: string) => void,
+  agents?: Array<{ id: string; name: string; emoji?: string; default?: boolean }>,
+  onNewSessionForAgent?: (agentId: string) => void,
+  onRequestUpdate?: () => void,
 ) {
+  const hasMultiAgent = agents && agents.length > 1;
+
   // Filter: exclude sessions already visible in a pane, archived, and cron/global
   const candidates = sessions.filter((s) => {
     if (s.key === currentKey) {
@@ -545,6 +556,25 @@ function renderSessionPicker(
     if (k.includes(":cron:") || k.includes(":cron-")) {
       return false;
     }
+    // Agent filter
+    if (hasMultiAgent && pickerAgentFilter) {
+      const parts = s.key.split(":");
+      if (parts[0] !== "agent" || parts[1] !== pickerAgentFilter) {
+        return false;
+      }
+    }
+    // Search filter
+    if (pickerSearchQuery) {
+      const q = pickerSearchQuery.toLowerCase();
+      const matches =
+        s.label?.toLowerCase().includes(q) ||
+        s.derivedTitle?.toLowerCase().includes(q) ||
+        s.displayName?.toLowerCase().includes(q) ||
+        s.key.toLowerCase().includes(q);
+      if (!matches) {
+        return false;
+      }
+    }
     return true;
   });
 
@@ -552,56 +582,133 @@ function renderSessionPicker(
   candidates.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 
   // Cap at a reasonable number
-  const visible = candidates.slice(0, 12);
+  const visible = candidates.slice(0, 15);
 
-  if (visible.length === 0) {
-    return html`
-      <div class="session-picker">
-        <div class="session-picker__header">No other sessions available</div>
-        <div class="session-picker__hint">Start a new conversation below</div>
-      </div>
-    `;
-  }
+  const targetAgentId = hasMultiAgent
+    ? (pickerAgentFilter ?? agents.find((a) => a.default)?.id ?? agents[0]?.id)
+    : null;
 
   return html`
     <div class="session-picker">
-      <div class="session-picker__header">Open a recent session</div>
-      <div class="session-picker__list">
-        ${visible.map((s) => {
-          // Smart label: prefer label > cleaned derivedTitle > cleaned displayName > humanized key
-          const derived = cleanSessionTitle(s.derivedTitle);
-          const display = cleanSessionTitle(s.displayName);
-          const title = s.label || derived || display || humanizeSessionKey(s.key);
-          // Subtitle: show derived title if label is primary, or display name
-          const subtitle =
-            s.label && derived && s.label !== derived
-              ? derived
-              : !s.label && !derived && display
-                ? display
-                : "";
-          return html`
+      ${
+        hasMultiAgent
+          ? html`
+        <div class="session-picker__pills">
+          <button
+            class="agent-filter-pill ${pickerAgentFilter === null ? "agent-filter-pill--active" : ""}"
+            @click=${() => {
+              pickerAgentFilter = null;
+              onRequestUpdate?.();
+            }}
+          >All</button>
+          ${agents.map(
+            (agent) => html`
             <button
-              class="session-picker__item"
-              @click=${() => onSelect(s.key)}
-              title=${s.key}
+              class="agent-filter-pill ${pickerAgentFilter === agent.id ? "agent-filter-pill--active" : ""}"
+              @click=${() => {
+                pickerAgentFilter = agent.id;
+                onRequestUpdate?.();
+              }}
             >
-              <div class="session-picker__item-text">
-                <span class="session-picker__item-label">${title}</span>
-                ${
-                  subtitle
-                    ? html`<span class="session-picker__item-title">${subtitle}</span>`
-                    : nothing
-                }
-              </div>
-              ${
-                s.updatedAt
-                  ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>`
-                  : nothing
-              }
+              ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+              <span>${agent.name}</span>
             </button>
-          `;
-        })}
+          `,
+          )}
+        </div>
+      `
+          : nothing
+      }
+      <div class="session-picker__search-row">
+        <input
+          class="session-picker__search"
+          type="text"
+          placeholder="Search sessions…"
+          .value=${pickerSearchQuery}
+          @input=${(e: Event) => {
+            pickerSearchQuery = (e.target as HTMLInputElement).value;
+            onRequestUpdate?.();
+          }}
+          aria-label="Search sessions"
+        />
+        ${
+          pickerSearchQuery
+            ? html`
+          <button class="session-picker__search-clear" @click=${() => {
+            pickerSearchQuery = "";
+            onRequestUpdate?.();
+          }}>×</button>
+        `
+            : nothing
+        }
       </div>
+      ${
+        hasMultiAgent && onNewSessionForAgent && targetAgentId
+          ? html`
+        <div class="session-picker__new-row">
+          ${(pickerAgentFilter ? agents.filter((a) => a.id === pickerAgentFilter) : agents).map(
+            (agent) => html`
+            <button class="session-picker__new-btn" @click=${() => onNewSessionForAgent(agent.id)}>
+              ${agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+              New ${agent.name} session
+            </button>
+          `,
+          )}
+        </div>
+      `
+          : nothing
+      }
+      <div class="session-picker__header">${visible.length > 0 ? "Open a recent session" : "No sessions found"}</div>
+      ${
+        visible.length > 0
+          ? html`
+        <div class="session-picker__list">
+          ${visible.map((s) => {
+            const derived = cleanSessionTitle(s.derivedTitle);
+            const display = cleanSessionTitle(s.displayName);
+            const title = s.label || derived || display || humanizeSessionKey(s.key);
+            const subtitle =
+              s.label && derived && s.label !== derived
+                ? derived
+                : !s.label && !derived && display
+                  ? display
+                  : "";
+            // Agent badge
+            const agentBadge = hasMultiAgent
+              ? (() => {
+                  const parts = s.key.split(":");
+                  if (parts[0] === "agent") {
+                    const agent = agents.find((a) => a.id === parts[1]);
+                    if (agent?.emoji) {
+                      return agent.emoji;
+                    }
+                  }
+                  return null;
+                })()
+              : null;
+            return html`
+              <button
+                class="session-picker__item"
+                @click=${() => {
+                  onSelect(s.key);
+                  pickerSearchQuery = "";
+                  pickerAgentFilter = null;
+                }}
+                title=${s.key}
+              >
+                ${agentBadge ? html`<span class="session-picker__item-badge">${agentBadge}</span>` : nothing}
+                <div class="session-picker__item-text">
+                  <span class="session-picker__item-label">${title}</span>
+                  ${subtitle ? html`<span class="session-picker__item-title">${subtitle}</span>` : nothing}
+                </div>
+                ${s.updatedAt ? html`<span class="session-picker__item-time">${compactAgo(s.updatedAt)}</span>` : nothing}
+              </button>
+            `;
+          })}
+        </div>
+      `
+          : nothing
+      }
       <div class="session-picker__hint">Or start a new conversation below</div>
     </div>
   `;
@@ -759,6 +866,9 @@ export function renderChat(props: ChatProps) {
               props.openSessionKeys!,
               props.sessionKey,
               props.onSessionKeyChange,
+              props.agents,
+              props.onNewSessionForAgent,
+              props.onRefresh,
             )
           : nothing
       }

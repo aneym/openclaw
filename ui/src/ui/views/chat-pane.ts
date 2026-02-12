@@ -183,6 +183,26 @@ export function renderChatPane(props: ChatPaneProps) {
       state.threads = new Map(state.threads);
       state.setThreadInPane(leaf.id, desc.sessionKey);
     },
+    onNewSessionForAgent: (agentId: string) => {
+      const base = `agent:${agentId}:webchat`;
+      const desc = createThreadDescriptor(base);
+      const newThread = createThreadState(desc);
+      state.threads.set(desc.id, newThread);
+      state.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+      saveThreadDescriptors(state.getThreadDescriptors());
+      state.threads = new Map(state.threads);
+      state.setThreadInPane(leaf.id, desc.sessionKey);
+    },
+    agents: (() => {
+      const list = state.agentsList?.agents ?? [];
+      const defaultId = state.agentsList?.defaultId ?? null;
+      return list.map((a) => ({
+        id: a.id,
+        name: a.name || a.identity?.name || a.id,
+        emoji: a.identity?.emoji,
+        default: a.id === defaultId,
+      }));
+    })(),
     // Legacy sidebar (not used in split-pane, but required by ChatProps)
     sidebarOpen: false,
     sidebarContent: null,
