@@ -2,6 +2,7 @@ import type { GatewayRequestHandlers } from "./types.js";
 import {
   listAllActiveSubagentRuns,
   listSubagentRunsForRequester,
+  releaseSubagentRun,
 } from "../../agents/subagent-registry.js";
 
 export const subagentsHandlers: GatewayRequestHandlers = {
@@ -26,5 +27,15 @@ export const subagentsHandlers: GatewayRequestHandlers = {
     }));
 
     respond(true, { runs: payload }, undefined);
+  },
+
+  "subagents.dismiss": ({ params, respond }) => {
+    const runId = typeof params.runId === "string" ? params.runId.trim() : "";
+    if (!runId) {
+      respond(false, undefined, "runId is required");
+      return;
+    }
+    releaseSubagentRun(runId);
+    respond(true, { dismissed: true }, undefined);
   },
 };

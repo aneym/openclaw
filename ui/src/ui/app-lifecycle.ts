@@ -1,4 +1,5 @@
 import type { Tab } from "./navigation";
+import type { PaneState } from "./pane-state";
 import type { SplitPaneLayout } from "./split-tree";
 import type { UiSettings } from "./storage";
 import type { ChatQueueItem } from "./ui-types";
@@ -19,7 +20,6 @@ import {
   scheduleChatScroll,
   schedulePaneChatScroll,
   scheduleLogsScroll,
-  scrollAllVisibleChats,
 } from "./app-scroll";
 import {
   applySettingsFromUrl,
@@ -75,6 +75,9 @@ type LifecycleHost = {
   logsPollInterval: number | null;
   debugPollInterval: number | null;
   modelsPollInterval: number | null;
+  // Thread & pane state for scoped scroll
+  threads: Map<string, { chatMessages: unknown[]; chatStream: string | null }>;
+  paneStates: Map<string, PaneState>;
 };
 
 export async function handleConnected(host: LifecycleHost) {
@@ -229,9 +232,36 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
     return;
   }
   // In split-pane mode, background panes stream into ThreadState and only `threads`
-  // changes. Keep any pane that was already near-bottom pinned during streaming.
+  // changes. Scroll only the specific pane(s) whose thread data actually changed,
+  // so that other panes' scroll positions are not disturbed.
   if (host.tab === "chat" && host.splitLayout && changed.has("threads")) {
-    scrollAllVisibleChats(host as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+    const oldThreads = changed.get("threads") as
+      | Map<string, { chatMessages: unknown[]; chatStream: string | null }>
+      | undefined;
+    if (oldThreads) {
+      const changedThreadIds = new Set<string>();
+      for (const [tid, ts] of host.threads) {
+        const old = oldThreads.get(tid);
+        if (!old || old.chatMessages !== ts.chatMessages || old.chatStream !== ts.chatStream) {
+          changedThreadIds.add(tid);
+        }
+      }
+      // Map changed threadIds to their paneIds and scroll only those panes
+      if (changedThreadIds.size > 0) {
+        console.debug(`[lifecycle] threads changed:`, [...changedThreadIds], `paneStates:`, [
+          ...host.paneStates.keys(),
+        ]);
+      }
+      for (const [paneId, ps] of host.paneStates) {
+        if (changedThreadIds.has(ps.threadId)) {
+          console.debug(`[lifecycle] scheduling scroll for pane=${paneId} thread=${ps.threadId}`);
+          schedulePaneChatScroll(
+            host as unknown as Parameters<typeof schedulePaneChatScroll>[0],
+            paneId,
+          );
+        }
+      }
+    }
   }
   if (
     host.tab === "chat" &&

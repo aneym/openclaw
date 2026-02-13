@@ -1,0 +1,158 @@
+/* ── Subagent banner ─────────────────────────────────────────────── */
+
+.subagent-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  margin: 4px 0;
+  user-select: none;
+}
+
+/* Active (running) banner */
+.subagent-banner--active {
+  background: var(--bg-surface, rgba(255, 255, 255, 0.04));
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary, #b0b0b0);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.subagent-banner--active:hover {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.06));
+}
+
+.subagent-banner--collapsed {
+  padding: 6px 12px;
+}
+
+/* Done / error banners */
+.subagent-banner--done {
+  background: var(--bg-success-subtle, rgba(74, 222, 128, 0.08));
+  border: 1px solid var(--border-success, rgba(74, 222, 128, 0.15));
+  color: var(--text-success, #4ade80);
+  animation: subagent-banner-fade-in 0.2s ease;
+}
+
+.subagent-banner--error {
+  background: var(--bg-danger-subtle, rgba(248, 113, 113, 0.08));
+  border: 1px solid var(--border-danger, rgba(248, 113, 113, 0.15));
+  color: var(--text-danger, #f87171);
+}
+
+/* Icon */
+.subagent-banner__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+}
+
+.subagent-banner__icon--pulse {
+  animation: subagent-icon-pulse 1.5s ease-in-out infinite;
+}
+
+/* Chevron for collapse/expand */
+.subagent-banner__chevron {
+  flex-shrink: 0;
+  font-size: 10px;
+  opacity: 0.5;
+  transition: transform 0.15s ease;
+  width: 12px;
+  text-align: center;
+}
+
+/* Text */
+.subagent-banner__text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Elapsed time */
+.subagent-banner__time {
+  flex-shrink: 0;
+  font-size: 11px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Dismiss button */
+.subagent-banner__dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.5;
+  transition: opacity 0.15s ease;
+}
+
+.subagent-banner__dismiss:hover {
+  opacity: 1;
+}
+
+.subagent-banner__dismiss--inline {
+  font-size: 14px;
+  margin-left: auto;
+  padding: 0 4px;
+}
+
+/* Expanded task list */
+.subagent-banner__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px 12px 8px 34px;
+  font-size: 12px;
+  color: var(--text-tertiary, #888);
+}
+
+.subagent-banner__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.subagent-banner__item-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--text-accent, #60a5fa);
+  flex-shrink: 0;
+  animation: subagent-icon-pulse 1.5s ease-in-out infinite;
+}
+
+.subagent-banner__item-task {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Animations */
+@keyframes subagent-icon-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes subagent-banner-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

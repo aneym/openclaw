@@ -104,6 +104,7 @@ export type ChatProps = {
   slashCommands?: SlashCommandEntry[];
   // Sub-agent status
   subagentRuns?: import("../types").SubagentRunInfo[];
+  onSubagentDismiss?: (runId: string) => void;
   // Interactive component callback
   onInteractiveSubmit?: (payload: string) => void;
 };
@@ -174,21 +175,28 @@ function renderCompactionIndicator(status: CompactionIndicatorStatus | null | un
 
 // Module-scoped: track whether the sub-agent banner is collapsed
 let subagentBannerCollapsed = false;
+// Track dismissed "done" banner run IDs so they don't reappear
+const dismissedSubagentRuns = new Set<string>();
 
-function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undefined) {
+function renderSubagentBanner(
+  runs: import("../types").SubagentRunInfo[] | undefined,
+  onDismiss?: (runId: string) => void,
+) {
   if (!runs || runs.length === 0) {
     return nothing;
   }
 
-  const active = runs.filter((r) => !r.endedAt);
-  const justFinished = runs.filter((r) => r.endedAt && Date.now() - r.endedAt < 4000);
+  const active = runs.filter((r) => !r.endedAt && !dismissedSubagentRuns.has(r.runId));
+  const justFinished = runs.filter(
+    (r) => r.endedAt && Date.now() - r.endedAt < 4000 && !dismissedSubagentRuns.has(r.runId),
+  );
 
   // Nothing to show
   if (active.length === 0 && justFinished.length === 0) {
     return nothing;
   }
 
-  // "Done" flash for recently finished runs
+  // "Done" flash for recently finished runs — dismissible
   if (active.length === 0 && justFinished.length > 0) {
     const allOk = justFinished.every((r) => r.outcome?.status === "ok");
     return html`
@@ -197,6 +205,17 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
         <span class="subagent-banner__text">
           ${allOk ? "Sub-agent done" : "Sub-agent failed"}
         </span>
+        <button
+          class="subagent-banner__dismiss"
+          title="Dismiss"
+          @click=${(e: Event) => {
+            e.stopPropagation();
+            for (const r of justFinished) {
+              dismissedSubagentRuns.add(r.runId);
+              onDismiss?.(r.runId);
+            }
+          }}
+        >\u00d7</button>
       </div>
     `;
   }
@@ -212,20 +231,23 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
       ? `Sub-agent: ${active[0].task.slice(0, 60)}${active[0].task.length > 60 ? "\u2026" : ""}`
       : `${active.length} sub-agents working`;
 
+  const chevron = subagentBannerCollapsed ? "\u25b6" : "\u25bc";
+
   return html`
     <div
-      class="subagent-banner subagent-banner--active"
+      class="subagent-banner subagent-banner--active ${subagentBannerCollapsed ? "subagent-banner--collapsed" : ""}"
       @click=${() => {
         subagentBannerCollapsed = !subagentBannerCollapsed;
       }}
       title="Click to ${subagentBannerCollapsed ? "expand" : "collapse"}"
     >
+      <span class="subagent-banner__chevron">${chevron}</span>
       <span class="subagent-banner__icon subagent-banner__icon--pulse">\u26A1</span>
       <span class="subagent-banner__text">${summary}</span>
       <span class="subagent-banner__time">${elapsedStr}</span>
     </div>
     ${
-      !subagentBannerCollapsed && active.length > 1
+      !subagentBannerCollapsed
         ? html`
         <div class="subagent-banner__list">
           ${active.map(
@@ -233,6 +255,19 @@ function renderSubagentBanner(runs: import("../types").SubagentRunInfo[] | undef
               <div class="subagent-banner__item">
                 <span class="subagent-banner__item-dot"></span>
                 <span class="subagent-banner__item-task">${r.label ?? r.task.slice(0, 50)}</span>
+                ${
+                  onDismiss
+                    ? html`<button
+                      class="subagent-banner__dismiss subagent-banner__dismiss--inline"
+                      title="Dismiss this sub-agent"
+                      @click=${(e: Event) => {
+                        e.stopPropagation();
+                        dismissedSubagentRuns.add(r.runId);
+                        onDismiss(r.runId);
+                      }}
+                    >\u00d7</button>`
+                    : nothing
+                }
               </div>
             `,
           )}
@@ -1032,7 +1067,7 @@ export function renderChat(props: ChatProps) {
 
       ${renderCompactionIndicator(props.compactionStatus)}
 
-      ${renderSubagentBanner(props.subagentRuns)}
+      ${renderSubagentBanner(props.subagentRuns, props.onSubagentDismiss)}
       ${
         props.focusMode
           ? html`

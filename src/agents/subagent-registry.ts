@@ -115,6 +115,9 @@ function resumeSubagentRun(runId: string) {
   resumedRuns.add(runId);
 }
 
+/** Hard cap: runs older than this without an endedAt are considered stale. */
+const STALE_RUN_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+
 function restoreSubagentRunsOnce() {
   if (restoreAttempted) {
     return;
@@ -125,15 +128,37 @@ function restoreSubagentRunsOnce() {
     if (restored.size === 0) {
       return;
     }
+    const now = Date.now();
+    const cfg = loadConfig();
+    const archiveAfterMs = resolveArchiveAfterMs(cfg) ?? STALE_RUN_MAX_AGE_MS;
+    const staleThresholdMs = Math.min(archiveAfterMs, STALE_RUN_MAX_AGE_MS);
+
     for (const [runId, entry] of restored.entries()) {
       if (!runId || !entry) {
         continue;
       }
       // Keep any newer in-memory entries.
-      if (!subagentRuns.has(runId)) {
-        subagentRuns.set(runId, entry);
+      if (subagentRuns.has(runId)) {
+        continue;
       }
+
+      // Reap stale runs: if a run never ended and is older than the threshold,
+      // mark it as timed out immediately rather than waiting for agent.wait.
+      const age = now - (entry.startedAt ?? entry.createdAt);
+      if (!entry.endedAt && age > staleThresholdMs) {
+        entry.endedAt = now;
+        entry.outcome = { status: "timeout" };
+        entry.cleanupCompletedAt = now;
+        entry.cleanupHandled = true;
+        // Don't add to active runs — it's already cleaned up.
+        continue;
+      }
+
+      subagentRuns.set(runId, entry);
     }
+
+    // Persist any stale-reaped entries back to disk.
+    persistSubagentRuns();
 
     // Resume pending work.
     ensureListener();

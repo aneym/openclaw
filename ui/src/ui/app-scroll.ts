@@ -1,6 +1,27 @@
 /** Distance (px) from the bottom within which we consider the user "near bottom". */
 const NEAR_BOTTOM_THRESHOLD = 450;
 
+/** Per-pane scroll state so each split pane tracks its own scroll position independently. */
+export interface PaneScrollState {
+  scrollFrame: number | null;
+  scrollTimeout: number | null;
+  hasAutoScrolled: boolean;
+  userNearBottom: boolean;
+  userScrolledAway: boolean;
+  newMessagesBelow: boolean;
+}
+
+export function createPaneScrollState(): PaneScrollState {
+  return {
+    scrollFrame: null,
+    scrollTimeout: null,
+    hasAutoScrolled: false,
+    userNearBottom: true,
+    userScrolledAway: false,
+    newMessagesBelow: false,
+  };
+}
+
 type ScrollHost = {
   updateComplete: Promise<unknown>;
   querySelector: (selectors: string) => Element | null;
@@ -14,6 +35,8 @@ type ScrollHost = {
   logsScrollFrame: number | null;
   logsAtBottom: boolean;
   topbarObserver: ResizeObserver | null;
+  /** Per-pane scroll state for split-pane mode. */
+  paneScrollStates?: Map<string, PaneScrollState>;
 };
 
 function hasSessionPicker(container: unknown): boolean {
@@ -28,17 +51,42 @@ function hasSessionPicker(container: unknown): boolean {
   }
 }
 
+/** Helper: get or create per-pane scroll state. */
+function getPaneScroll(host: ScrollHost, paneId: string): PaneScrollState {
+  if (!host.paneScrollStates) {
+    host.paneScrollStates = new Map();
+  }
+  let ps = host.paneScrollStates.get(paneId);
+  if (!ps) {
+    ps = createPaneScrollState();
+    host.paneScrollStates.set(paneId, ps);
+  }
+  return ps;
+}
+
 export function scheduleChatScroll(
   host: ScrollHost,
   force = false,
   paneId?: string,
   smooth = false,
 ) {
-  if (host.chatScrollFrame) {
-    cancelAnimationFrame(host.chatScrollFrame);
+  // When paneId is provided, use per-pane scroll state so panes don't interfere.
+  const ps = paneId ? getPaneScroll(host, paneId) : null;
+
+  // Cancel pending frame/timeout for this specific scroll context
+  const scrollFrame = ps ? ps.scrollFrame : host.chatScrollFrame;
+  const scrollTimeout = ps ? ps.scrollTimeout : host.chatScrollTimeout;
+  if (scrollFrame) {
+    cancelAnimationFrame(scrollFrame);
   }
-  if (host.chatScrollTimeout != null) {
-    clearTimeout(host.chatScrollTimeout);
+  if (scrollTimeout != null) {
+    clearTimeout(scrollTimeout);
+  }
+  if (ps) {
+    ps.scrollFrame = null;
+    ps.scrollTimeout = null;
+  } else {
+    host.chatScrollFrame = null;
     host.chatScrollTimeout = null;
   }
 
@@ -59,16 +107,29 @@ export function scheduleChatScroll(
     return (document.scrollingElement ?? document.documentElement) as HTMLElement | null;
   };
 
+  // Read scroll state from per-pane or shared host
+  const hasAutoScrolled = ps ? ps.hasAutoScrolled : host.chatHasAutoScrolled;
+  const userScrolledAway = ps ? ps.userScrolledAway : host.chatUserScrolledAway;
+  const userNearBottom = ps ? ps.userNearBottom : host.chatUserNearBottom;
+
   void host.updateComplete.then(() => {
-    host.chatScrollFrame = requestAnimationFrame(() => {
-      host.chatScrollFrame = null;
+    const frameId = requestAnimationFrame(() => {
+      if (ps) {
+        ps.scrollFrame = null;
+      } else {
+        host.chatScrollFrame = null;
+      }
       const target = pickScrollTarget();
+      if (paneId) {
+        console.debug(
+          `[scroll] pane=${paneId} target=${target?.className ?? "null"} force=${force} hasAutoScrolled=${hasAutoScrolled} userScrolledAway=${userScrolledAway} userNearBottom=${userNearBottom}`,
+        );
+      }
       if (!target) {
         return;
       }
 
       // New thread / empty pane state: keep the session picker pinned at the top.
-      // Auto-scrolling to the bottom hides the picker (and feels like a jump) when creating a new pane.
       if (hasSessionPicker(target)) {
         if (typeof target.scrollTo === "function") {
           target.scrollTo({ top: 0, behavior: "auto" });
@@ -79,19 +140,26 @@ export function scheduleChatScroll(
       }
 
       const distanceFromBottom = target.scrollHeight - target.scrollTop - target.clientHeight;
-      const effectiveForce = force && !host.chatHasAutoScrolled;
+      const effectiveForce = force && !hasAutoScrolled;
       const shouldStick =
         effectiveForce ||
-        (!host.chatUserScrolledAway &&
-          (host.chatUserNearBottom || distanceFromBottom < NEAR_BOTTOM_THRESHOLD));
+        (!userScrolledAway && (userNearBottom || distanceFromBottom < NEAR_BOTTOM_THRESHOLD));
 
       if (!shouldStick) {
-        host.chatNewMessagesBelow = true;
+        if (ps) {
+          ps.newMessagesBelow = true;
+        } else {
+          host.chatNewMessagesBelow = true;
+        }
         return;
       }
 
       if (effectiveForce) {
-        host.chatHasAutoScrolled = true;
+        if (ps) {
+          ps.hasAutoScrolled = true;
+        } else {
+          host.chatHasAutoScrolled = true;
+        }
       }
 
       const smoothEnabled =
@@ -106,12 +174,21 @@ export function scheduleChatScroll(
         target.scrollTop = target.scrollHeight;
       }
 
-      host.chatUserNearBottom = true;
-      host.chatNewMessagesBelow = false;
+      if (ps) {
+        ps.userNearBottom = true;
+        ps.newMessagesBelow = false;
+      } else {
+        host.chatUserNearBottom = true;
+        host.chatNewMessagesBelow = false;
+      }
 
       const retryDelay = effectiveForce ? 150 : 120;
-      host.chatScrollTimeout = window.setTimeout(() => {
-        host.chatScrollTimeout = null;
+      const timeoutId = window.setTimeout(() => {
+        if (ps) {
+          ps.scrollTimeout = null;
+        } else {
+          host.chatScrollTimeout = null;
+        }
         const latest = pickScrollTarget();
         if (!latest) {
           return;
@@ -119,19 +196,37 @@ export function scheduleChatScroll(
 
         const latestDistanceFromBottom =
           latest.scrollHeight - latest.scrollTop - latest.clientHeight;
+        const retryUserScrolledAway = ps ? ps.userScrolledAway : host.chatUserScrolledAway;
+        const retryUserNearBottom = ps ? ps.userNearBottom : host.chatUserNearBottom;
         const shouldStickRetry =
           effectiveForce ||
-          (!host.chatUserScrolledAway &&
-            (host.chatUserNearBottom || latestDistanceFromBottom < NEAR_BOTTOM_THRESHOLD));
+          (!retryUserScrolledAway &&
+            (retryUserNearBottom || latestDistanceFromBottom < NEAR_BOTTOM_THRESHOLD));
 
         if (!shouldStickRetry) {
           return;
         }
 
         latest.scrollTop = latest.scrollHeight;
-        host.chatUserNearBottom = true;
+        if (ps) {
+          ps.userNearBottom = true;
+        } else {
+          host.chatUserNearBottom = true;
+        }
       }, retryDelay);
+
+      if (ps) {
+        ps.scrollTimeout = timeoutId;
+      } else {
+        host.chatScrollTimeout = timeoutId;
+      }
     });
+
+    if (ps) {
+      ps.scrollFrame = frameId;
+    } else {
+      host.chatScrollFrame = frameId;
+    }
   });
 }
 
@@ -164,6 +259,26 @@ export function handleChatScroll(host: ScrollHost, event: Event) {
   }
 
   const distanceFromBottom = container.scrollHeight - container.scrollTop - container.clientHeight;
+
+  // Detect which pane this scroll event belongs to and update per-pane state
+  const paneEl =
+    typeof container.closest === "function" ? container.closest("[data-pane-id]") : null;
+  const paneId = paneEl?.dataset?.paneId;
+  const ps = paneId ? getPaneScroll(host, paneId) : null;
+
+  if (ps) {
+    const wasNearBottom = ps.userNearBottom;
+    ps.userNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
+    if (wasNearBottom && !ps.userNearBottom) {
+      ps.userScrolledAway = true;
+    }
+    if (ps.userNearBottom) {
+      ps.userScrolledAway = false;
+      ps.newMessagesBelow = false;
+    }
+  }
+
+  // Also update shared state (for single-pane mode and backwards compat)
   const wasNearBottom = host.chatUserNearBottom;
   host.chatUserNearBottom = distanceFromBottom < NEAR_BOTTOM_THRESHOLD;
 
@@ -186,11 +301,30 @@ export function handleLogsScroll(host: ScrollHost, event: Event) {
   host.logsAtBottom = distanceFromBottom < 80;
 }
 
-export function resetChatScroll(host: ScrollHost) {
+export function resetChatScroll(host: ScrollHost, paneId?: string) {
   host.chatHasAutoScrolled = false;
   host.chatUserNearBottom = true;
   host.chatUserScrolledAway = false;
   host.chatNewMessagesBelow = false;
+  // Also reset per-pane state if applicable
+  if (paneId && host.paneScrollStates) {
+    const ps = host.paneScrollStates.get(paneId);
+    if (ps) {
+      ps.hasAutoScrolled = false;
+      ps.userNearBottom = true;
+      ps.userScrolledAway = false;
+      ps.newMessagesBelow = false;
+    }
+  }
+  // When no specific paneId, reset all pane states
+  if (!paneId && host.paneScrollStates) {
+    for (const ps of host.paneScrollStates.values()) {
+      ps.hasAutoScrolled = false;
+      ps.userNearBottom = true;
+      ps.userScrolledAway = false;
+      ps.newMessagesBelow = false;
+    }
+  }
 }
 
 /**

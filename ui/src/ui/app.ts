@@ -349,6 +349,12 @@ export class OpenClawApp extends LitElement {
   @state() cronRuns: CronRunLogEntry[] = [];
   @state() cronBusy = false;
 
+  @state() tasksLoading = false;
+  @state() tasksProjects: import("./views/tasks-types").Project[] = [];
+  @state() tasksList: import("./views/tasks-types").Task[] = [];
+  @state() tasksSelectedProject: string | null = null;
+  @state() tasksError: string | null = null;
+
   @state() skillsLoading = false;
   @state() skillsReport: SkillStatusReport | null = null;
   @state() skillsError: string | null = null;
@@ -465,6 +471,7 @@ export class OpenClawApp extends LitElement {
   private chatHasAutoScrolled = false;
   private chatUserNearBottom = true;
   private chatUserScrolledAway = false;
+  paneScrollStates: Map<string, import("./app-scroll").PaneScrollState> = new Map();
   nodesPollInterval: number | null = null;
   logsPollInterval: number | null = null;
   debugPollInterval: number | null = null;
@@ -578,6 +585,110 @@ export class OpenClawApp extends LitElement {
 
   async loadCron() {
     await loadCronInternal(this as unknown as Parameters<typeof loadCronInternal>[0]);
+  }
+
+  async loadTasks() {
+    if (!this.client || this.tasksLoading) {
+      return;
+    }
+    this.tasksLoading = true;
+    this.tasksError = null;
+    try {
+      const [projectsRes, tasksRes] = await Promise.all([
+        fetch("/api/tasks/projects"),
+        fetch(
+          this.tasksSelectedProject
+            ? `/api/tasks?project=${encodeURIComponent(this.tasksSelectedProject)}`
+            : "/api/tasks",
+        ),
+      ]);
+      const projectsData = await projectsRes.json();
+      const tasksData = await tasksRes.json();
+      this.tasksProjects = projectsData.projects || [];
+      this.tasksList = tasksData.tasks || [];
+    } catch (err) {
+      this.tasksError = String(err);
+    } finally {
+      this.tasksLoading = false;
+    }
+  }
+
+  async createTask(task: import("./views/tasks-types").NewTask) {
+    if (!this.client) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/tasks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(task),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      await this.loadTasks();
+    } catch (err) {
+      this.tasksError = String(err);
+    }
+  }
+
+  async updateTask(id: string, patch: Partial<import("./views/tasks-types").Task>) {
+    if (!this.client) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      await this.loadTasks();
+    } catch (err) {
+      this.tasksError = String(err);
+    }
+  }
+
+  async reorderTask(
+    id: string,
+    status: import("./views/tasks-types").TaskStatus,
+    sortOrder: number,
+  ) {
+    if (!this.client) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tasks/${id}/reorder`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, sort_order: sortOrder }),
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      await this.loadTasks();
+    } catch (err) {
+      this.tasksError = String(err);
+    }
+  }
+
+  async deleteTask(id: string) {
+    if (!this.client) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/tasks/${id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      await this.loadTasks();
+    } catch (err) {
+      this.tasksError = String(err);
+    }
   }
 
   async handleAbortChat() {

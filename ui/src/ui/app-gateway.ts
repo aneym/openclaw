@@ -27,6 +27,7 @@ import {
   type AgentEventPayload,
   type CompactionStatus,
 } from "./app-tool-stream";
+import { extractText } from "./chat/message-extract";
 import { loadAgents } from "./controllers/agents";
 import { loadAssistantIdentity } from "./controllers/assistant-identity";
 import {
@@ -212,12 +213,25 @@ function applyActiveRunStateToMainSession(
     }
     return;
   }
-  host.chatRunId = null;
+  // Preserve streaming text as a _streamFinal message so it isn't lost
+  // if the transcript hasn't been flushed to disk yet when loadChatHistory runs.
   const hostState = host as unknown as {
     chatStream: string | null;
     chatStreamReasoning: string | null;
     chatStreamStartedAt: number | null;
+    chatMessages: unknown[];
   };
+  const streamText = hostState.chatStream;
+  if (typeof streamText === "string" && streamText.trim()) {
+    const finalMsg = {
+      role: "assistant",
+      content: [{ type: "text", text: streamText }],
+      timestamp: Date.now(),
+      _streamFinal: true,
+    };
+    hostState.chatMessages = [...hostState.chatMessages, finalMsg];
+  }
+  host.chatRunId = null;
   hostState.chatStream = null;
   hostState.chatStreamReasoning = null;
   hostState.chatStreamStartedAt = null;
@@ -239,6 +253,18 @@ function applyActiveRunStateToThread(
       thread.chatStreamStartedAt = Date.now();
     }
     return;
+  }
+  // Preserve streaming text as a _streamFinal message so it isn't lost
+  // if the transcript hasn't been flushed to disk yet when loadChatHistory runs.
+  const threadStreamText = thread.chatStream;
+  if (typeof threadStreamText === "string" && threadStreamText.trim()) {
+    const finalMsg = {
+      role: "assistant",
+      content: [{ type: "text", text: threadStreamText }],
+      timestamp: Date.now(),
+      _streamFinal: true,
+    };
+    thread.chatMessages = [...(thread.chatMessages as unknown[]), finalMsg];
   }
   thread.chatRunId = null;
   thread.chatStream = null;
@@ -649,6 +675,23 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
             payload?.state === "error" ||
             payload?.state === "aborted"
           ) {
+            // Append _streamFinal for background threads so the message
+            // isn't lost when the user later switches to this thread.
+            // Without this, chatStream is cleared but no message is added,
+            // causing the response to vanish until loadChatHistory runs.
+            if (payload?.state === "final" && payload?.message) {
+              const finalText = extractText(payload.message);
+              if (typeof finalText === "string" && finalText.trim()) {
+                const finalMsg = {
+                  role: "assistant",
+                  messageId: payload.runId ? `client:${payload.runId}:assistant` : undefined,
+                  content: [{ type: "text", text: finalText }],
+                  timestamp: Date.now(),
+                  _streamFinal: true,
+                };
+                bgThread.chatMessages = [...(bgThread.chatMessages as unknown[]), finalMsg];
+              }
+            }
             bgThread.chatRunId = null;
             bgThread.chatStream = null;
             bgThread.chatStreamReasoning = null;
@@ -693,6 +736,18 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
               void flushChatQueueForEvent(
                 host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
               );
+              // Retry if transcript wasn't flushed yet
+              const pThread = host.threads?.get(paneThreadId);
+              const stillHasStreamFinal =
+                pThread &&
+                (pThread.chatMessages as Array<Record<string, unknown>>).some(
+                  (m) => m._streamFinal,
+                );
+              if (stillHasStreamFinal) {
+                setTimeout(() => {
+                  void loadChatHistoryForThread(host, eventSessionKey, paneThreadId);
+                }, 1500);
+              }
             });
           } else {
             void flushChatQueueForEvent(
@@ -747,6 +802,17 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
           void flushChatQueueForEvent(
             host as unknown as Parameters<typeof flushChatQueueForEvent>[0],
           );
+          // If the transcript wasn't flushed to disk yet, the _streamFinal
+          // message is still present.  Retry once after a short delay to
+          // pick up the real server message and replace the placeholder.
+          const stillHasStreamFinal = (host.chatMessages as Array<Record<string, unknown>>).some(
+            (m) => m._streamFinal,
+          );
+          if (stillHasStreamFinal) {
+            setTimeout(() => {
+              void loadChatHistory(host as unknown as OpenClawApp);
+            }, 1500);
+          }
         });
       } else {
         void flushChatQueueForEvent(

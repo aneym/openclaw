@@ -85,6 +85,7 @@ import { renderOverview } from "./views/overview.ts";
 import { renderSessions } from "./views/sessions.ts";
 import { renderSkills } from "./views/skills.ts";
 import { renderSplitPaneContainer } from "./views/split-pane-container.ts";
+import { renderTasks } from "./views/tasks.ts";
 import { renderNavThreadList } from "./views/thread-list.ts";
 import { renderToolApprovalPrompt } from "./views/tool-approval.ts";
 import { renderUsage } from "./views/usage.ts";
@@ -683,6 +684,29 @@ export function renderApp(state: AppViewState) {
                 onRun: (job) => runCronJob(state, job),
                 onRemove: (job) => removeCronJob(state, job),
                 onLoadRuns: (jobId) => loadCronRuns(state, jobId),
+              })
+            : nothing
+        }
+
+        ${
+          state.tab === "tasks"
+            ? renderTasks({
+                basePath: state.basePath,
+                loading: state.tasksLoading,
+                projects: state.tasksProjects,
+                tasks: state.tasksList,
+                selectedProject: state.tasksSelectedProject,
+                error: state.tasksError,
+                onProjectSelect: (slug) => {
+                  state.tasksSelectedProject = slug;
+                  void state.loadTasks();
+                },
+                onTaskCreate: (task) => void state.createTask(task),
+                onTaskUpdate: (id, patch) => void state.updateTask(id, patch),
+                onTaskReorder: (id, status, sortOrder) =>
+                  void state.reorderTask(id, status, sortOrder),
+                onTaskDelete: (id) => void state.deleteTask(id),
+                onRefresh: () => void state.loadTasks(),
               })
             : nothing
         }

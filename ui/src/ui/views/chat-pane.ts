@@ -237,6 +237,11 @@ export function renderChatPane(props: ChatPaneProps) {
     onOpenFilePreview: (filePath: string) => state.handleOpenFilePreview(filePath, true),
     // Coding session → opens coding sessions panel
     onOpenCodingSession: () => state.handleOpenCodingSession(),
+    onSubagentDismiss: (runId: string) => {
+      if (state.client) {
+        state.client.request("subagents.dismiss", { runId }).catch(() => {});
+      }
+    },
     assistantName: paneAssistantIdentity.name,
     assistantAvatar: paneAssistantIdentity.avatar,
     gatewayUrl: state.settings.gatewayUrl,
