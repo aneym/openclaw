@@ -334,7 +334,14 @@ export async function refreshChat(host: ChatHost, opts?: { scheduleScroll?: bool
     refreshChatAvatar(host),
   ]);
   if (opts?.scheduleScroll !== false) {
-    scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+    if (host.splitLayout && host.focusedPaneId) {
+      schedulePaneChatScroll(
+        host as unknown as Parameters<typeof schedulePaneChatScroll>[0],
+        host.focusedPaneId,
+      );
+    } else {
+      scheduleChatScroll(host as unknown as Parameters<typeof scheduleChatScroll>[0]);
+    }
   }
 }
 

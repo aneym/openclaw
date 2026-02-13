@@ -38,6 +38,7 @@ import {
 import {
   handleChatEvent,
   handleChatEventForThread,
+  mergeChatMessages,
   type ChatEventPayload,
 } from "./controllers/chat";
 import { loadDevices } from "./controllers/devices";
@@ -271,17 +272,19 @@ async function requestChatStatuses(
         if (typeof row?.sessionKey !== "string") {
           continue;
         }
+        const key = row.sessionKey;
         const runId =
           row.activeRun && typeof row.activeRun.runId === "string" ? row.activeRun.runId : "";
-        if (!runId) {
-          statuses.set(row.sessionKey, null);
-          continue;
-        }
         const streamText =
           row.activeRun && typeof row.activeRun.streamText === "string"
             ? row.activeRun.streamText
             : "";
-        statuses.set(row.sessionKey, { runId, streamText });
+        const activeRun = runId ? { runId, streamText } : null;
+        // Gateway normalizes session keys to canonical `agent:<id>:` form. Mirror the
+        // status across UI aliases so callers can look up by either variant.
+        for (const variant of sessionKeyVariants(key)) {
+          statuses.set(variant, activeRun);
+        }
       }
       statusManySupportByHost.set(host, true);
       return statuses;
@@ -297,18 +300,19 @@ async function requestChatStatuses(
       };
       const runId =
         res?.activeRun && typeof res.activeRun.runId === "string" ? res.activeRun.runId : "";
-      if (!runId) {
-        statuses.set(sessionKey, null);
-        continue;
-      }
       const streamText =
         res.activeRun && typeof res.activeRun.streamText === "string"
           ? res.activeRun.streamText
           : "";
-      statuses.set(sessionKey, { runId, streamText });
+      const activeRun = runId ? { runId, streamText } : null;
+      for (const variant of sessionKeyVariants(sessionKey)) {
+        statuses.set(variant, activeRun);
+      }
     } catch {
       // Older/unstable gateways may fail per-session status calls.
-      statuses.set(sessionKey, null);
+      for (const variant of sessionKeyVariants(sessionKey)) {
+        statuses.set(variant, null);
+      }
     }
   }
   return statuses;
@@ -831,11 +835,19 @@ async function loadChatHistoryForThread(host: GatewayHost, sessionKey: string, t
   }
   thread._historyLoading = true;
   try {
-    const res = await host.client.request("chat.history", {
-      sessionKey,
-      limit: 200,
+    const res = await host.client.request(
+      "chat.history",
+      {
+        sessionKey,
+        limit: 200,
+      },
+      { timeoutMs: 20_000 },
+    );
+    const serverMessages = Array.isArray(res.messages) ? res.messages : [];
+    thread.chatMessages = mergeChatMessages({
+      localMessages: thread.chatMessages as unknown[],
+      serverMessages,
     });
-    thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
     thread.chatThinkingLevel = res.thinkingLevel ?? null;
     host.threads = new Map(host.threads);
   } catch {

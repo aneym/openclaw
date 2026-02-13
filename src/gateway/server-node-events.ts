@@ -168,7 +168,8 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       if (!sessionKey) {
         return;
       }
-      ctx.nodeSubscribe(nodeId, sessionKey);
+      const { canonicalKey } = loadSessionEntry(sessionKey);
+      ctx.nodeSubscribe(nodeId, canonicalKey);
       return;
     }
     case "chat.unsubscribe": {
@@ -187,7 +188,8 @@ export const handleNodeEvent = async (ctx: NodeEventContext, nodeId: string, evt
       if (!sessionKey) {
         return;
       }
-      ctx.nodeUnsubscribe(nodeId, sessionKey);
+      const { canonicalKey } = loadSessionEntry(sessionKey);
+      ctx.nodeUnsubscribe(nodeId, canonicalKey);
       return;
     }
     case "exec.started":

@@ -30,6 +30,8 @@ export type CompactionIndicatorStatus = {
 };
 
 export type ChatProps = {
+  /** Stable ID for split panes; used for per-pane UI state (session picker, etc). */
+  paneId?: string;
   sessionKey: string;
   onSessionKeyChange: (next: string) => void;
   thinkingLevel: string | null;
@@ -525,9 +527,49 @@ function compactAgo(ms?: number | null): string {
   return `${mo}mo`;
 }
 
-// Session picker state (module-level, persists across re-renders)
-let pickerSearchQuery = "";
-let pickerAgentFilter: string | null = null;
+type SessionPickerState = {
+  searchQuery: string;
+  /** Null means "All". */
+  agentFilter: string | null;
+  /** Tracks whether the state has been initialized or explicitly set by the user. */
+  initialized: boolean;
+};
+
+// Session picker state (module-level, but stored per pane so multiple empty panes
+// can show independent pickers simultaneously).
+const pickerStates = new Map<string, SessionPickerState>();
+
+function getSessionPickerState(key: string): SessionPickerState {
+  const existing = pickerStates.get(key);
+  if (existing) {
+    return existing;
+  }
+  const init: SessionPickerState = {
+    searchQuery: "",
+    agentFilter: null,
+    initialized: false,
+  };
+  pickerStates.set(key, init);
+  return init;
+}
+
+function focusComposeTextarea(paneId?: string) {
+  // Match the timing strategy used elsewhere in the UI: wait for Lit's async
+  // render flush so the textarea exists and isn't stale.
+  setTimeout(() => {
+    let el: HTMLTextAreaElement | null = null;
+    if (paneId) {
+      const paneEl = document.querySelector(`.split-pane[data-pane-id="${paneId}"]`);
+      el = paneEl?.querySelector<HTMLTextAreaElement>(".chat-compose textarea") ?? null;
+    }
+    if (!el) {
+      el = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    }
+    if (el && !el.disabled) {
+      el.focus();
+    }
+  }, 50);
+}
 
 /**
  * Session picker shown inside an empty split pane.
@@ -537,12 +579,25 @@ function renderSessionPicker(
   sessions: GatewaySessionRow[],
   openKeys: Set<string>,
   currentKey: string,
+  pickerKey: string,
   onSelect: (key: string) => void,
   agents?: Array<{ id: string; name: string; emoji?: string; default?: boolean }>,
   onNewSessionForAgent?: (agentId: string) => void,
   onRequestUpdate?: () => void,
 ) {
   const hasMultiAgent = agents && agents.length > 1;
+  const picker = getSessionPickerState(pickerKey);
+
+  // Default the filter to the agent of the current pane's session key,
+  // falling back to the default agent. "All" is only used when explicitly selected.
+  if (hasMultiAgent && !picker.initialized) {
+    const parts = currentKey.split(":");
+    const currentAgentId = parts[0] === "agent" ? parts[1] : null;
+    const matchedAgent = currentAgentId ? agents.find((a) => a.id === currentAgentId) : null;
+    const fallback = agents.find((a) => a.default) ?? agents[0];
+    picker.agentFilter = (matchedAgent ?? fallback)?.id ?? null;
+    picker.initialized = true;
+  }
 
   // Filter: exclude sessions already visible in a pane, archived, and cron/global
   const candidates = sessions.filter((s) => {
@@ -563,15 +618,15 @@ function renderSessionPicker(
       return false;
     }
     // Agent filter
-    if (hasMultiAgent && pickerAgentFilter) {
+    if (hasMultiAgent && picker.agentFilter) {
       const parts = s.key.split(":");
-      if (parts[0] !== "agent" || parts[1] !== pickerAgentFilter) {
+      if (parts[0] !== "agent" || parts[1] !== picker.agentFilter) {
         return false;
       }
     }
     // Search filter
-    if (pickerSearchQuery) {
-      const q = pickerSearchQuery.toLowerCase();
+    if (picker.searchQuery) {
+      const q = picker.searchQuery.toLowerCase();
       const matches =
         s.label?.toLowerCase().includes(q) ||
         s.derivedTitle?.toLowerCase().includes(q) ||
@@ -590,10 +645,6 @@ function renderSessionPicker(
   // Cap at a reasonable number
   const visible = candidates.slice(0, 15);
 
-  const targetAgentId = hasMultiAgent
-    ? (pickerAgentFilter ?? agents.find((a) => a.default)?.id ?? agents[0]?.id)
-    : null;
-
   return html`
     <div class="session-picker">
       ${
@@ -601,22 +652,33 @@ function renderSessionPicker(
           ? html`
         <div class="session-picker__pills">
           <button
-            class="agent-filter-pill ${pickerAgentFilter === null ? "agent-filter-pill--active" : ""}"
+            class="agent-filter-pill ${picker.agentFilter === null ? "agent-filter-pill--active" : ""}"
             @click=${() => {
-              pickerAgentFilter = null;
+              picker.agentFilter = null;
+              picker.initialized = true;
               onRequestUpdate?.();
+              focusComposeTextarea(pickerKey);
             }}
-          >All</button>
+            title="Show all agents"
+          >
+            All
+          </button>
           ${agents.map(
             (agent) => html`
             <button
-              class="agent-filter-pill ${pickerAgentFilter === agent.id ? "agent-filter-pill--active" : ""}"
+              class="agent-filter-pill ${picker.agentFilter === agent.id ? "agent-filter-pill--active" : ""}"
               @click=${() => {
-                pickerAgentFilter = agent.id;
+                const alreadyTargeted = currentKey.startsWith(`agent:${agent.id}:`);
+                picker.agentFilter = agent.id;
+                picker.initialized = true;
+                if (onNewSessionForAgent && !alreadyTargeted) {
+                  onNewSessionForAgent(agent.id);
+                }
                 onRequestUpdate?.();
+                focusComposeTextarea(pickerKey);
               }}
             >
-              ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+              ${agent.avatarUrl ? html`<img class="agent-avatar-img agent-avatar-img--xs" src="${agent.avatarUrl}" alt="" width="14" height="14" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
               <span>${agent.name}</span>
             </button>
           `,
@@ -630,40 +692,26 @@ function renderSessionPicker(
           class="session-picker__search"
           type="text"
           placeholder="Search sessions…"
-          .value=${pickerSearchQuery}
+          .value=${picker.searchQuery}
           @input=${(e: Event) => {
-            pickerSearchQuery = (e.target as HTMLInputElement).value;
+            picker.searchQuery = (e.target as HTMLInputElement).value;
+            picker.initialized = true;
             onRequestUpdate?.();
           }}
           aria-label="Search sessions"
         />
         ${
-          pickerSearchQuery
+          picker.searchQuery
             ? html`
           <button class="session-picker__search-clear" @click=${() => {
-            pickerSearchQuery = "";
+            picker.searchQuery = "";
+            picker.initialized = true;
             onRequestUpdate?.();
           }}>×</button>
         `
             : nothing
         }
       </div>
-      ${
-        hasMultiAgent && onNewSessionForAgent && targetAgentId
-          ? html`
-        <div class="session-picker__new-row">
-          ${(pickerAgentFilter ? agents.filter((a) => a.id === pickerAgentFilter) : agents).map(
-            (agent) => html`
-            <button class="session-picker__new-btn" @click=${() => onNewSessionForAgent(agent.id)}>
-              ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
-              New ${agent.name} session
-            </button>
-          `,
-          )}
-        </div>
-      `
-          : nothing
-      }
       <div class="session-picker__header">${visible.length > 0 ? "Open a recent session" : "No sessions found"}</div>
       ${
         visible.length > 0
@@ -694,14 +742,15 @@ function renderSessionPicker(
                 class="session-picker__item"
                 @click=${() => {
                   onSelect(s.key);
-                  pickerSearchQuery = "";
-                  pickerAgentFilter = null;
+                  picker.searchQuery = "";
+                  picker.agentFilter = null;
+                  picker.initialized = false;
                 }}
                 title=${s.key}
               >
                 ${
                   agentMatch?.avatarUrl
-                    ? html`<img class="session-picker__item-badge" src="${agentMatch.avatarUrl}" alt="" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" />`
+                    ? html`<img class="session-picker__item-badge agent-avatar-img agent-avatar-img--sm" src="${agentMatch.avatarUrl}" alt="" width="16" height="16" />`
                     : agentMatch?.emoji
                       ? html`<span class="session-picker__item-badge">${agentMatch.emoji}</span>`
                       : nothing
@@ -718,7 +767,7 @@ function renderSessionPicker(
       `
           : nothing
       }
-      <div class="session-picker__hint">Or start a new conversation below</div>
+      <div class="session-picker__hint">Type below to start a new conversation</div>
     </div>
   `;
 }
@@ -803,6 +852,7 @@ export function renderChat(props: ChatProps) {
     props.stream === null &&
     !props.streamReasoning?.trim();
   const showPicker = isEmpty && props.openSessionKeys && props.sessions?.sessions;
+  const pickerKey = props.paneId ?? props.sessionKey;
 
   const handleThreadClick = (e: Event) => {
     const target = e.target as HTMLElement;
@@ -874,6 +924,7 @@ export function renderChat(props: ChatProps) {
               props.sessions!.sessions,
               props.openSessionKeys!,
               props.sessionKey,
+              pickerKey,
               props.onSessionKeyChange,
               props.agents,
               props.onNewSessionForAgent,

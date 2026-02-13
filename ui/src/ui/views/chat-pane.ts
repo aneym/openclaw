@@ -7,9 +7,9 @@ import type { AppViewState } from "../app-view-state";
 import type { PaneContextMenuCallbacks } from "../components/pane-context-menu";
 import type { PaneState } from "../pane-state";
 import type { SplitLeaf } from "../split-tree";
-import { renderModelPicker } from "../app-render.helpers";
 import { patchSession } from "../controllers/sessions";
 import { saveDraft, saveAttachments } from "../draft-storage";
+import { parseAgentSessionKey } from "../session-keys";
 import {
   getDragData,
   getDragPaneData,
@@ -20,8 +20,8 @@ import {
   dropZoneToDirection,
 } from "../split-dnd";
 import { allLeafIds, allLeaves } from "../split-tree";
-import { createThreadDescriptor, createThreadState } from "../thread-state";
 import "../components/pane-context-menu";
+import { createThreadDescriptor, createThreadState } from "../thread-state";
 import { saveThreadDescriptors } from "../thread-storage";
 import { renderChat, type ChatProps } from "./chat";
 import { humanizeSessionKey } from "./thread-list";
@@ -83,7 +83,28 @@ export function renderChatPane(props: ChatPaneProps) {
       : [sessionKey, state.sessionKey],
   );
 
+  // Resolve per-pane assistant identity from the session's agent
+  const agentsList = state.agentsList?.agents ?? [];
+  const paneAssistantIdentity = (() => {
+    const parsed = parseAgentSessionKey(sessionKey);
+    if (parsed) {
+      const cached = state.agentIdentityById?.[parsed.agentId];
+      if (cached) {
+        return { name: cached.name, avatar: cached.avatar || null };
+      }
+      const agent = agentsList.find((a: { id: string }) => a.id === parsed.agentId);
+      if (agent) {
+        return {
+          name: agent.name || agent.identity?.name || agent.id,
+          avatar: agent.identity?.avatarUrl || agent.identity?.emoji || null,
+        };
+      }
+    }
+    return { name: state.assistantName, avatar: state.assistantAvatar };
+  })();
+
   const chatProps: ChatProps = {
+    paneId: leaf.id,
     sessionKey,
     onSessionKeyChange: (next) => {
       state.setThreadInPane(leaf.id, next);
@@ -94,7 +115,7 @@ export function renderChatPane(props: ChatPaneProps) {
     sending: isActiveSession ? state.chatSending : (thread?.chatSending ?? false),
     compactionStatus: isActiveSession ? state.compactionStatus : (thread?.compactionStatus ?? null),
     subagentRuns: state.subagentRuns.get(sessionKey),
-    assistantAvatarUrl: state.chatAvatarUrl,
+    assistantAvatarUrl: null,
     messages: isActiveSession ? state.chatMessages : (thread?.chatMessages ?? []),
     toolMessages: isActiveSession ? state.chatToolMessages : (thread?.chatToolMessages ?? []),
     stream: isActiveSession ? state.chatStream : (thread?.chatStream ?? null),
@@ -216,8 +237,8 @@ export function renderChatPane(props: ChatPaneProps) {
     onOpenFilePreview: (filePath: string) => state.handleOpenFilePreview(filePath, true),
     // Coding session → opens coding sessions panel
     onOpenCodingSession: () => state.handleOpenCodingSession(),
-    assistantName: state.assistantName,
-    assistantAvatar: state.assistantAvatar,
+    assistantName: paneAssistantIdentity.name,
+    assistantAvatar: paneAssistantIdentity.avatar,
     gatewayUrl: state.settings.gatewayUrl,
     gatewayToken: state.settings.token,
     gatewayPassword: state.password,
@@ -385,7 +406,6 @@ export function renderChatPane(props: ChatPaneProps) {
     sessionEntry?.displayName || sessionEntry?.label || humanizeSessionKey(sessionKey);
 
   // Resolve agent badge for multi-agent setups
-  const agentsList = state.agentsList?.agents ?? [];
   const paneAgentBadge =
     agentsList.length > 1
       ? (() => {
@@ -403,6 +423,7 @@ export function renderChatPane(props: ChatPaneProps) {
           return null;
         })()
       : null;
+
   const isStreaming = isPaneStreamingState({
     sessionKey,
     isActiveSession,
@@ -460,7 +481,7 @@ export function renderChatPane(props: ChatPaneProps) {
         <span class="split-pane__titlebar-label" title="${paneAgentBadge ? `${paneAgentBadge.name}: ` : ""}${paneTitle} — drag to rearrange, right-click for options">
           ${
             paneAgentBadge?.avatarUrl
-              ? html`<img class="split-pane__titlebar-agent" src="${paneAgentBadge.avatarUrl}" alt="${paneAgentBadge.name}" style="width:16px;height:16px;border-radius:50%;object-fit:cover;" />`
+              ? html`<img class="split-pane__titlebar-agent agent-avatar-img agent-avatar-img--sm" src="${paneAgentBadge.avatarUrl}" alt="${paneAgentBadge.name}" width="16" height="16" />`
               : paneAgentBadge?.emoji
                 ? html`<span class="split-pane__titlebar-agent">${paneAgentBadge.emoji}</span>`
                 : nothing
@@ -518,7 +539,6 @@ export function renderChatPane(props: ChatPaneProps) {
             state.closePane(leaf.id);
           }}
         ><svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1" width="12" height="4" rx="1"/><path d="M2 5v8a2 2 0 002 2h8a2 2 0 002-2V5"/><path d="M8 8v4m0 0l2-2m-2 2l-2-2"/></svg></button>
-        ${renderModelPicker(state)}
         <button
           class="split-pane__titlebar-close"
           data-tooltip="Close pane (⌃W)"

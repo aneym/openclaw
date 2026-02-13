@@ -5,6 +5,12 @@ vi.mock("../infra/running-sessions.js", () => ({
   consumeInterruptedSessions: vi.fn(() => []),
 }));
 
+vi.mock("../commands/agent.js", () => ({
+  agentCommand: vi.fn(async () => {
+    throw new Error("agentCommand mocked failure");
+  }),
+}));
+
 vi.mock("../infra/restart-sentinel.js", () => ({
   readRestartSentinel: vi.fn(async () => null),
 }));
@@ -13,15 +19,11 @@ vi.mock("../infra/system-events.js", () => ({
   enqueueSystemEvent: vi.fn(),
 }));
 
-vi.mock("../infra/heartbeat-wake.js", () => ({
-  requestHeartbeatNow: vi.fn(),
-}));
-
 // Import after mocks are set up
 const { consumeInterruptedSessions } = await import("../infra/running-sessions.js");
+const { agentCommand } = await import("../commands/agent.js");
 const { readRestartSentinel } = await import("../infra/restart-sentinel.js");
 const { enqueueSystemEvent } = await import("../infra/system-events.js");
-const { requestHeartbeatNow } = await import("../infra/heartbeat-wake.js");
 const { wakeInterruptedSessions } = await import("./server-interrupted-sessions.js");
 
 describe("wakeInterruptedSessions", () => {
@@ -36,10 +38,10 @@ describe("wakeInterruptedSessions", () => {
   it("does nothing when no interrupted sessions", async () => {
     vi.mocked(consumeInterruptedSessions).mockReturnValue([]);
 
-    await wakeInterruptedSessions();
+    await wakeInterruptedSessions({ deps: {} as never });
 
     expect(enqueueSystemEvent).not.toHaveBeenCalled();
-    expect(requestHeartbeatNow).not.toHaveBeenCalled();
+    expect(agentCommand).not.toHaveBeenCalled();
   });
 
   it("enqueues system events for interrupted sessions", async () => {
@@ -62,7 +64,7 @@ describe("wakeInterruptedSessions", () => {
     vi.mocked(consumeInterruptedSessions).mockReturnValue(sessions);
     vi.mocked(readRestartSentinel).mockResolvedValue(null);
 
-    await wakeInterruptedSessions();
+    await wakeInterruptedSessions({ deps: {} as never });
 
     expect(enqueueSystemEvent).toHaveBeenCalledTimes(2);
     expect(enqueueSystemEvent).toHaveBeenCalledWith(
@@ -73,7 +75,7 @@ describe("wakeInterruptedSessions", () => {
       expect.stringContaining("interrupted by a gateway restart"),
       { sessionKey: "agent:main:telegram:dm:789" },
     );
-    expect(requestHeartbeatNow).toHaveBeenCalledWith({ reason: "interrupted-sessions" });
+    expect(agentCommand).toHaveBeenCalledTimes(2);
   });
 
   it("skips the restart sentinel session to avoid duplicate notifications", async () => {
@@ -104,14 +106,14 @@ describe("wakeInterruptedSessions", () => {
       },
     });
 
-    await wakeInterruptedSessions();
+    await wakeInterruptedSessions({ deps: {} as never });
 
     // Only the non-sentinel session should get an event
     expect(enqueueSystemEvent).toHaveBeenCalledTimes(1);
     expect(enqueueSystemEvent).toHaveBeenCalledWith(expect.any(String), {
       sessionKey: "agent:main:telegram:dm:789",
     });
-    expect(requestHeartbeatNow).toHaveBeenCalled();
+    expect(agentCommand).toHaveBeenCalledTimes(1);
   });
 
   it("skips cron/subagent sessions", async () => {
@@ -134,7 +136,7 @@ describe("wakeInterruptedSessions", () => {
     vi.mocked(consumeInterruptedSessions).mockReturnValue(sessions);
     vi.mocked(readRestartSentinel).mockResolvedValue(null);
 
-    await wakeInterruptedSessions();
+    await wakeInterruptedSessions({ deps: {} as never });
 
     // Only the non-cron session should get an event
     expect(enqueueSystemEvent).toHaveBeenCalledTimes(1);
@@ -156,9 +158,9 @@ describe("wakeInterruptedSessions", () => {
     vi.mocked(consumeInterruptedSessions).mockReturnValue(sessions);
     vi.mocked(readRestartSentinel).mockResolvedValue(null);
 
-    await wakeInterruptedSessions();
+    await wakeInterruptedSessions({ deps: {} as never });
 
     expect(enqueueSystemEvent).not.toHaveBeenCalled();
-    expect(requestHeartbeatNow).not.toHaveBeenCalled();
+    expect(agentCommand).not.toHaveBeenCalled();
   });
 });

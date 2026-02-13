@@ -124,9 +124,16 @@ function resolveAssistantAvatarUrl(state: AppViewState): string | null {
  * Focus the chat composer textarea.
  * Uses a short setTimeout to ensure Lit's async render cycle has flushed.
  */
-function focusComposer() {
+function focusComposer(state?: Pick<AppViewState, "splitLayout" | "focusedPaneId">) {
   setTimeout(() => {
-    const el = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    let el: HTMLTextAreaElement | null = null;
+    if (state?.splitLayout && state.focusedPaneId) {
+      const paneEl = document.querySelector(`.split-pane[data-pane-id="${state.focusedPaneId}"]`);
+      el = paneEl?.querySelector<HTMLTextAreaElement>(".chat-compose textarea") ?? null;
+    }
+    if (!el) {
+      el = document.querySelector<HTMLTextAreaElement>(".chat-compose textarea");
+    }
     if (el && !el.disabled) {
       el.focus();
     }
@@ -176,7 +183,7 @@ function startNewSession(state: AppViewState, agentId?: string) {
     desc.sessionKey,
     true,
   );
-  focusComposer();
+  focusComposer(state);
 }
 
 /** Ensure the current session key is always present in the sessions list */
@@ -401,6 +408,7 @@ export function renderApp(state: AppViewState) {
                         selectedAgentFilter: state.selectedAgentFilter,
                         onAgentFilterChange: (agentId) => {
                           state.selectedAgentFilter = agentId;
+                          focusComposer(state);
                         },
                         onSelect: (sessionKey) => {
                           // In split mode, also update the focused pane's leaf
@@ -430,7 +438,7 @@ export function renderApp(state: AppViewState) {
                             true,
                           );
                           void loadChatHistory(state);
-                          focusComposer();
+                          focusComposer(state);
                         },
                         onRename: (sessionKey, label) => {
                           void patchSession(state, sessionKey, { label });

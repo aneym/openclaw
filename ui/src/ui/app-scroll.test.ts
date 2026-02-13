@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { handleChatScroll, scheduleChatScroll, resetChatScroll } from "./app-scroll.ts";
+import {
+  handleChatScroll,
+  scheduleChatScroll,
+  resetChatScroll,
+  scrollAllVisibleChats,
+} from "./app-scroll.ts";
 
 /* ------------------------------------------------------------------ */
 /*  Helpers                                                            */
@@ -191,6 +196,26 @@ describe("scheduleChatScroll", () => {
     expect(container.scrollTop).toBe(container.scrollHeight);
   });
 
+  it("keeps session picker pinned to top (new pane / empty thread)", async () => {
+    const { host, container } = createScrollHost({
+      scrollHeight: 2000,
+      scrollTop: 500,
+      clientHeight: 400,
+    });
+    // Simulate the session picker being present in the scroll container.
+    (container as unknown as { querySelector?: (selector: string) => unknown }).querySelector = (
+      selector: string,
+    ) => (selector === ".session-picker" ? {} : null);
+
+    host.chatHasAutoScrolled = false;
+    host.chatUserNearBottom = false;
+
+    scheduleChatScroll(host, true);
+    await host.updateComplete;
+
+    expect(container.scrollTop).toBe(0);
+  });
+
   // Optional enhancement: "scroll to bottom" indicator (not part of core autoscroll fix)
   it.skip("sets chatNewMessagesBelow when not scrolling due to user position", async () => {
     const { host } = createScrollHost({
@@ -206,6 +231,46 @@ describe("scheduleChatScroll", () => {
     await host.updateComplete;
 
     expect(host.chatNewMessagesBelow).toBe(true);
+  });
+});
+
+describe("scrollAllVisibleChats", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 1;
+    });
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("does not force-scroll session picker threads to bottom", async () => {
+    const pickerThread = {
+      scrollHeight: 1000,
+      scrollTop: 0,
+      clientHeight: 700,
+      querySelector: (selector: string) => (selector === ".session-picker" ? {} : null),
+    };
+    const normalThread = {
+      scrollHeight: 1000,
+      scrollTop: 0,
+      clientHeight: 700,
+      querySelector: () => null,
+    };
+    const host = {
+      updateComplete: Promise.resolve(),
+      querySelectorAll: vi.fn().mockReturnValue([pickerThread, normalThread]),
+    };
+
+    scrollAllVisibleChats(host as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+    await host.updateComplete;
+
+    expect(pickerThread.scrollTop).toBe(0);
+    expect(normalThread.scrollTop).toBe(normalThread.scrollHeight);
   });
 });
 

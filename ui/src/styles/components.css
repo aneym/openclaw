@@ -1761,23 +1761,32 @@
 .agent-avatar-img {
   width: 28px;
   height: 28px;
+  max-width: 28px;
+  max-height: 28px;
   border-radius: 50%;
   object-fit: cover;
+  flex-shrink: 0;
 }
 
 .agent-avatar-img--lg {
   width: 42px;
   height: 42px;
+  max-width: 42px;
+  max-height: 42px;
 }
 
 .agent-avatar-img--sm {
   width: 16px;
   height: 16px;
+  max-width: 16px;
+  max-height: 16px;
 }
 
 .agent-avatar-img--xs {
   width: 14px;
   height: 14px;
+  max-width: 14px;
+  max-height: 14px;
 }
 
 .agent-info {

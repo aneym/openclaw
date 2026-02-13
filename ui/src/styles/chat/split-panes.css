@@ -79,6 +79,13 @@
   font-size: 13px;
 }
 
+.split-pane__titlebar-agent.agent-avatar-img {
+  width: 16px;
+  height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+}
+
 .split-pane__titlebar-meta {
   flex-shrink: 0;
   font-size: 11px;
@@ -118,25 +125,6 @@
 .split-pane__titlebar-copy--copied {
   opacity: 1;
   color: var(--success, #4caf50);
-}
-
-.split-pane__titlebar-reset {
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  line-height: 1;
-  padding: 0 2px;
-  opacity: 0.5;
-  transition: opacity 100ms;
-  display: inline-flex;
-  align-items: center;
-}
-
-.split-pane__titlebar-reset:hover {
-  opacity: 1;
-  color: var(--accent);
 }
 
 .split-pane__titlebar-archive {
@@ -427,33 +415,6 @@
   cursor: pointer;
   font-size: 14px;
   padding: 2px 4px;
-}
-
-.session-picker__new-row {
-  display: flex;
-  gap: 8px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-bottom: 16px;
-}
-
-.session-picker__new-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 6px 14px;
-  font-size: 12px;
-  font-family: inherit;
-  color: var(--text);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.session-picker__new-btn:hover {
-  background: var(--panel-hover, var(--bg));
 }
 
 .session-picker__item-badge {

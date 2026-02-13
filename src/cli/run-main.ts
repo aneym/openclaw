@@ -9,8 +9,8 @@ import { isMainModule } from "../infra/is-main.js";
 import { ensureOpenClawCliOnPath } from "../infra/path-env.js";
 import { assertSupportedRuntime } from "../infra/runtime-guard.js";
 import { installUnhandledRejectionHandler } from "../infra/unhandled-rejections.js";
-import { enableConsoleCapture } from "../logging.js";
-import { getPrimaryCommand, hasHelpOrVersion } from "./argv.js";
+import { enableConsoleCapture, routeLogsToStderr } from "../logging.js";
+import { getCommandPath, getPrimaryCommand, hasHelpOrVersion } from "./argv.js";
 import { tryRouteCli } from "./route.js";
 
 export function rewriteUpdateFlagArgv(argv: string[]): string[] {
@@ -37,6 +37,14 @@ export async function runCli(argv: string[] = process.argv) {
     return;
   }
 
+  const commandPath = getCommandPath(normalizedArgv, 2);
+  const isMcpServe = commandPath[0] === "mcp" && commandPath[1] === "serve";
+  if (isMcpServe) {
+    // MCP stdio servers must keep stdout clean for protocol frames.
+    // Route all console.* output to stderr.
+    routeLogsToStderr();
+  }
+
   // Capture all console output into structured logs while keeping stdout/stderr behavior.
   enableConsoleCapture();
 
@@ -60,7 +68,8 @@ export async function runCli(argv: string[] = process.argv) {
     await registerSubCliByName(program, primary);
   }
 
-  const shouldSkipPluginRegistration = !primary && hasHelpOrVersion(parseArgv);
+  const shouldSkipPluginRegistration =
+    primary === "mcp" || (!primary && hasHelpOrVersion(parseArgv));
   if (!shouldSkipPluginRegistration) {
     // Register plugin CLI commands before parsing
     const { registerPluginCliCommands } = await import("../plugins/cli.js");

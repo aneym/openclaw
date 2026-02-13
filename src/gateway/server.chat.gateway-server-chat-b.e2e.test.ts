@@ -179,7 +179,7 @@ describe("gateway server chat", () => {
           expect(abortRes.ok).toBe(true);
           const evt = await abortedEventP;
           expect(evt.payload?.runId).toBe("idem-abort-1");
-          expect(evt.payload?.sessionKey).toBe("main");
+          expect(evt.payload?.sessionKey).toBe("agent:main:main");
         } finally {
           await abortInFlight;
         }
@@ -223,10 +223,67 @@ describe("gateway server chat", () => {
           expect(sendRes.ok).toBe(true);
           const evt = await abortedEventP;
           expect(evt.payload?.runId).toBe("idem-abort-save-1");
-          expect(evt.payload?.sessionKey).toBe("main");
+          expect(evt.payload?.sessionKey).toBe("agent:main:main");
         } finally {
           sessionStoreSaveDelayMs.value = 0;
         }
+
+        await writeStore({ main: { sessionId: "sess-main", updatedAt: Date.now() } });
+        resetSpy();
+        let aliasAgentStartedResolve: (() => void) | undefined;
+        const aliasAgentStartedP = new Promise<void>((resolve) => {
+          aliasAgentStartedResolve = resolve;
+        });
+        spy.mockImplementationOnce(async (_ctx, opts) => {
+          opts?.onAgentRunStart?.(opts.runId ?? "idem-alias-1");
+          aliasAgentStartedResolve?.();
+          const signal = opts?.abortSignal;
+          await new Promise<void>((resolve) => {
+            if (!signal) {
+              return resolve();
+            }
+            if (signal.aborted) {
+              return resolve();
+            }
+            signal.addEventListener("abort", () => resolve(), { once: true });
+          });
+        });
+        const aliasAbortedEventP = onceMessage(
+          ws,
+          (o) =>
+            o.type === "event" &&
+            o.event === "chat" &&
+            o.payload?.state === "aborted" &&
+            o.payload?.runId === "idem-alias-1",
+          8000,
+        );
+        const aliasSendResP = onceMessage(ws, (o) => o.type === "res" && o.id === "send-alias-1");
+        sendReq(ws, "send-alias-1", "chat.send", {
+          sessionKey: "main",
+          message: "hello",
+          idempotencyKey: "idem-alias-1",
+          timeoutMs: 30_000,
+        });
+        const aliasSendRes = await aliasSendResP;
+        expect(aliasSendRes.ok).toBe(true);
+        await aliasAgentStartedP;
+
+        // Status should resolve across canonical session key aliases.
+        const aliasStatus = await rpcReq<{ activeRun?: { runId?: string } }>(ws, "chat.status", {
+          sessionKey: "agent:main:main",
+        });
+        expect(aliasStatus.ok).toBe(true);
+        expect(aliasStatus.payload?.activeRun?.runId).toBe("idem-alias-1");
+
+        // Abort should also resolve across session key aliases.
+        const aliasAbortRes = await rpcReq(ws, "chat.abort", {
+          sessionKey: "agent:main:main",
+          runId: "idem-alias-1",
+        });
+        expect(aliasAbortRes.ok).toBe(true);
+        expect(aliasAbortRes.payload?.aborted).toBe(true);
+        const aliasAbortEvt = await aliasAbortedEventP;
+        expect(aliasAbortEvt.payload?.sessionKey).toBe("agent:main:main");
 
         await writeStore({ main: { sessionId: "sess-main", updatedAt: Date.now() } });
         resetSpy();
@@ -275,7 +332,7 @@ describe("gateway server chat", () => {
         const stopRes = await stopResP;
         expect(stopRes.ok).toBe(true);
         const stopEvt = await abortedStopEventP;
-        expect(stopEvt.payload?.sessionKey).toBe("main");
+        expect(stopEvt.payload?.sessionKey).toBe("agent:main:main");
         expect(spy.mock.calls.length).toBe(callsBeforeStop + 1);
         resetSpy();
         let resolveRun: (() => void) | undefined;
@@ -462,12 +519,29 @@ describe("gateway server chat", () => {
         expect(abortCompleteRes.payload?.aborted).toBe(false);
 
         await writeStore({ main: { sessionId: "sess-main", updatedAt: Date.now() } });
+        resetSpy();
+        let run1DoneResolve: (() => void) | undefined;
+        const run1Done = new Promise<void>((resolve) => {
+          run1DoneResolve = resolve;
+        });
+        spy.mockImplementationOnce(async (_ctx, opts) => {
+          opts?.onAgentRunStart?.("idem-1");
+          await run1Done;
+        });
         const res1 = await rpcReq(ws, "chat.send", {
           sessionKey: "main",
           message: "first",
           idempotencyKey: "idem-1",
         });
         expect(res1.ok).toBe(true);
+        let run2DoneResolve: (() => void) | undefined;
+        const run2Done = new Promise<void>((resolve) => {
+          run2DoneResolve = resolve;
+        });
+        spy.mockImplementationOnce(async (_ctx, opts) => {
+          opts?.onAgentRunStart?.("idem-2");
+          await run2Done;
+        });
         const res2 = await rpcReq(ws, "chat.send", {
           sessionKey: "main",
           message: "second",
@@ -476,7 +550,11 @@ describe("gateway server chat", () => {
         expect(res2.ok).toBe(true);
         const final1P = onceMessage(
           ws,
-          (o) => o.type === "event" && o.event === "chat" && o.payload?.state === "final",
+          (o) =>
+            o.type === "event" &&
+            o.event === "chat" &&
+            o.payload?.state === "final" &&
+            o.payload?.runId === "idem-1",
           8000,
         );
         emitAgentEvent({
@@ -484,6 +562,7 @@ describe("gateway server chat", () => {
           stream: "lifecycle",
           data: { phase: "end" },
         });
+        run1DoneResolve?.();
         const final1 = await final1P;
         const run1 =
           final1.payload && typeof final1.payload === "object"
@@ -492,7 +571,11 @@ describe("gateway server chat", () => {
         expect(run1).toBe("idem-1");
         const final2P = onceMessage(
           ws,
-          (o) => o.type === "event" && o.event === "chat" && o.payload?.state === "final",
+          (o) =>
+            o.type === "event" &&
+            o.event === "chat" &&
+            o.payload?.state === "final" &&
+            o.payload?.runId === "idem-2",
           8000,
         );
         emitAgentEvent({
@@ -500,6 +583,7 @@ describe("gateway server chat", () => {
           stream: "lifecycle",
           data: { phase: "end" },
         });
+        run2DoneResolve?.();
         const final2 = await final2P;
         const run2 =
           final2.payload && typeof final2.payload === "object"

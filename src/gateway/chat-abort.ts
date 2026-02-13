@@ -6,6 +6,16 @@ export type ChatAbortControllerEntry = {
   sessionKey: string;
   startedAtMs: number;
   expiresAtMs: number;
+  /**
+   * Webchat persistence shim: the pi-coding-agent SessionManager does not
+   * persist the initial user message to disk until the first assistant message
+   * exists. If the browser refreshes mid-run, chat.history would otherwise
+   * return an empty transcript and the just-sent user message disappears.
+   *
+   * We store the outbound user message for the active run so chat.history can
+   * include it during in-flight runs.
+   */
+  pendingUserMessage?: Record<string, unknown> | null;
 };
 
 export function isChatStopCommandText(text: string): boolean {

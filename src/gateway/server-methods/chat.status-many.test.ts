@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { GatewayClient, GatewayRequestContext } from "./types.js";
+import { installGatewayTestHooks } from "../test-helpers.server.js";
 import { chatHandlers } from "./chat.js";
+
+installGatewayTestHooks({ scope: "suite" });
 
 type StatusContext = Pick<
   GatewayRequestContext,
@@ -17,7 +20,7 @@ describe("chat.statusMany", () => {
           {
             controller: new AbortController(),
             sessionId: "sess-1",
-            sessionKey: "main",
+            sessionKey: "agent:main:main",
             startedAtMs: 1,
             expiresAtMs: 10,
           },
@@ -55,7 +58,7 @@ describe("chat.statusMany", () => {
     expect(respond).toHaveBeenCalledWith(true, {
       statuses: [
         {
-          sessionKey: "main",
+          sessionKey: "agent:main:main",
           activeRun: { runId: "run-1", streamText: "partial main reply" },
         },
         {
@@ -107,7 +110,7 @@ describe("chat.status", () => {
           {
             controller: new AbortController(),
             sessionId: "sess-1",
-            sessionKey: "main",
+            sessionKey: "agent:main:main",
             startedAtMs: 1,
             expiresAtMs: 10,
           },
@@ -145,7 +148,7 @@ describe("chat.abort", () => {
           {
             controller: new AbortController(),
             sessionId: "sess-1",
-            sessionKey: "main",
+            sessionKey: "agent:main:main",
             startedAtMs: 1,
             expiresAtMs: 10,
           },
@@ -176,6 +179,6 @@ describe("chat.abort", () => {
     });
     expect(context.chatAbortControllers.has("real-run")).toBe(false);
     expect(context.chatAbortedRuns.has("real-run")).toBe(true);
-    expect(removeChatRun).toHaveBeenCalledWith("real-run", "real-run", "main");
+    expect(removeChatRun).toHaveBeenCalledWith("real-run", "real-run", "agent:main:main");
   });
 });

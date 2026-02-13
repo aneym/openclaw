@@ -43,6 +43,8 @@ export type GatewayHelloOk = {
 type Pending = {
   resolve: (value: unknown) => void;
   reject: (err: unknown) => void;
+  timeoutTimer: number | null;
+  method: string;
 };
 
 export type GatewayBrowserClientOptions = {
@@ -174,6 +176,10 @@ export class GatewayBrowserClient {
       console.log("[gateway] flushing %d pending requests:", this.pending.size, err.message);
     }
     for (const [, p] of this.pending) {
+      if (p.timeoutTimer != null) {
+        window.clearTimeout(p.timeoutTimer);
+        p.timeoutTimer = null;
+      }
       p.reject(err);
     }
     this.pending.clear();
@@ -313,7 +319,7 @@ export class GatewayBrowserClient {
       auth?.token ? "token" : auth?.password ? "password" : "none",
     );
 
-    void this.request<GatewayHelloOk>("connect", params)
+    void this.request<GatewayHelloOk>("connect", params, { timeoutMs: 12_000 })
       .then((hello) => {
         console.log(
           "[gateway] connect SUCCESS! protocol=%d auth.deviceToken=%s",
@@ -410,6 +416,10 @@ export class GatewayBrowserClient {
         return;
       }
       this.pending.delete(res.id);
+      if (pending.timeoutTimer != null) {
+        window.clearTimeout(pending.timeoutTimer);
+        pending.timeoutTimer = null;
+      }
       if (res.ok) {
         pending.resolve(res.payload);
       } else {
@@ -421,16 +431,47 @@ export class GatewayBrowserClient {
     console.warn("[gateway] unknown frame type:", (frame as { type?: unknown }).type);
   }
 
-  request<T = unknown>(method: string, params?: unknown): Promise<T> {
+  request<T = unknown>(
+    method: string,
+    params?: unknown,
+    opts?: { timeoutMs?: number },
+  ): Promise<T> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.reject(new Error("gateway not connected"));
     }
+    const defaultTimeoutMs = 30_000;
+    const timeoutMs =
+      typeof opts?.timeoutMs === "number" ? Math.floor(opts.timeoutMs) : defaultTimeoutMs;
     const id = generateUUID();
     const frame = { type: "req", id, method, params };
     const p = new Promise<T>((resolve, reject) => {
-      this.pending.set(id, { resolve: (v) => resolve(v as T), reject });
+      const shouldTimeout = Number.isFinite(timeoutMs) && timeoutMs > 0;
+      const timeoutTimer = shouldTimeout
+        ? window.setTimeout(() => {
+            const pending = this.pending.get(id);
+            if (!pending) {
+              return;
+            }
+            this.pending.delete(id);
+            pending.timeoutTimer = null;
+            pending.reject(new Error(`gateway request timed out after ${timeoutMs}ms: ${method}`));
+          }, timeoutMs)
+        : null;
+
+      this.pending.set(id, { resolve: (v) => resolve(v as T), reject, timeoutTimer, method });
     });
-    this.ws.send(JSON.stringify(frame));
+    try {
+      this.ws.send(JSON.stringify(frame));
+    } catch (err) {
+      const pending = this.pending.get(id);
+      if (pending) {
+        if (pending.timeoutTimer != null) {
+          window.clearTimeout(pending.timeoutTimer);
+        }
+        this.pending.delete(id);
+      }
+      return Promise.reject(err instanceof Error ? err : new Error(String(err)));
+    }
     return p;
   }
 

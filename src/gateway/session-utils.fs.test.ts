@@ -390,6 +390,32 @@ describe("readSessionMessages", () => {
     expect(marker.__openclaw?.id).toBe("comp-1");
     expect(typeof marker.timestamp).toBe("number");
   });
+
+  test("propagates transcript entry ids onto nested messages for stable UI keys", () => {
+    const sessionId = "test-session-message-ids";
+    const transcriptPath = path.join(tmpDir, `${sessionId}.jsonl`);
+    const lines = [
+      JSON.stringify({ type: "session", version: 1, id: sessionId }),
+      JSON.stringify({
+        type: "message",
+        id: "m1",
+        timestamp: Date.now(),
+        message: { role: "user", content: "Hello", timestamp: 1 },
+      }),
+      JSON.stringify({
+        type: "message",
+        id: "m2",
+        timestamp: Date.now(),
+        message: { role: "assistant", content: "World", timestamp: 2 },
+      }),
+    ];
+    fs.writeFileSync(transcriptPath, lines.join("\n"), "utf-8");
+
+    const out = readSessionMessages(sessionId, storePath);
+    expect(out).toHaveLength(2);
+    expect((out[0] as { id?: string }).id).toBe("m1");
+    expect((out[1] as { id?: string }).id).toBe("m2");
+  });
 });
 
 describe("readSessionPreviewItemsFromTranscript", () => {

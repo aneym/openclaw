@@ -11,6 +11,7 @@ export function readSessionMessages(
   sessionId: string,
   storePath: string | undefined,
   sessionFile?: string,
+  opts?: { tail?: number },
 ): unknown[] {
   const candidates = resolveSessionTranscriptCandidates(sessionId, storePath, sessionFile);
 
@@ -19,7 +20,14 @@ export function readSessionMessages(
     return [];
   }
 
-  const lines = fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
+  const tailCount =
+    typeof opts?.tail === "number" && Number.isFinite(opts.tail) && opts.tail > 0
+      ? Math.floor(opts.tail)
+      : null;
+  const lines =
+    tailCount !== null
+      ? readJsonlTailLines(filePath, tailCount + 50)
+      : fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
   const messages: unknown[] = [];
   for (const line of lines) {
     if (!line.trim()) {
@@ -28,7 +36,21 @@ export function readSessionMessages(
     try {
       const parsed = JSON.parse(line);
       if (parsed?.message) {
-        messages.push(parsed.message);
+        const msg = parsed.message as unknown;
+        // Stabilize message identity for the Web UI: transcript entries have a stable `id`
+        // but the nested `message` does not. Propagate the entry id so list keys don't
+        // churn when chat.history slices a moving window (which caused full-pane flashes).
+        const entryId = typeof parsed.id === "string" ? parsed.id : "";
+        if (entryId && msg && typeof msg === "object") {
+          const record = msg as Record<string, unknown>;
+          if (typeof record.id !== "string" || !record.id) {
+            messages.push({ ...record, id: entryId });
+          } else {
+            messages.push(msg);
+          }
+        } else {
+          messages.push(msg);
+        }
         continue;
       }
 
@@ -51,7 +73,75 @@ export function readSessionMessages(
       // ignore bad lines
     }
   }
+  if (tailCount !== null && messages.length > tailCount) {
+    return messages.slice(-tailCount);
+  }
   return messages;
+}
+
+function readJsonlTailLines(filePath: string, maxLines: number): string[] {
+  if (!Number.isFinite(maxLines) || maxLines <= 0) {
+    return [];
+  }
+  let fd: number | null = null;
+  try {
+    fd = fs.openSync(filePath, "r");
+    const stat = fs.fstatSync(fd);
+    const size = stat.size;
+    if (size <= 0) {
+      return [];
+    }
+
+    const chunkSize = 64 * 1024;
+    let position = size;
+    let newlineCount = 0;
+    let startOffset = size;
+    const chunks: Buffer[] = [];
+
+    while (position > 0 && newlineCount < maxLines + 1) {
+      const readSize = Math.min(chunkSize, position);
+      const start = position - readSize;
+      const buf = Buffer.allocUnsafe(readSize);
+      fs.readSync(fd, buf, 0, readSize, start);
+      chunks.unshift(buf);
+      startOffset = start;
+      for (let i = 0; i < buf.length; i++) {
+        if (buf[i] === 10) {
+          newlineCount += 1;
+        }
+      }
+      position = start;
+    }
+
+    const merged = Buffer.concat(chunks);
+    let text = merged.toString("utf-8");
+    let lines = text.split(/\r?\n/);
+
+    // If we started mid-file and the preceding byte wasn't a newline, the first
+    // split line is partial — drop it to avoid JSON parse errors.
+    if (startOffset > 0) {
+      const prev = Buffer.alloc(1);
+      fs.readSync(fd, prev, 0, 1, startOffset - 1);
+      if (prev[0] !== 10) {
+        lines = lines.slice(1);
+      }
+    }
+
+    if (lines.length > maxLines) {
+      lines = lines.slice(-maxLines);
+    }
+    return lines;
+  } catch {
+    return [];
+  } finally {
+    if (fd !== null) {
+      try {
+        fs.closeSync(fd);
+      } catch {
+        // no-op
+      }
+    }
+  }
 }
 
 export function resolveSessionTranscriptCandidates(

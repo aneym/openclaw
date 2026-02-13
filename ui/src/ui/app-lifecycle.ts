@@ -19,6 +19,7 @@ import {
   scheduleChatScroll,
   schedulePaneChatScroll,
   scheduleLogsScroll,
+  scrollAllVisibleChats,
 } from "./app-scroll";
 import {
   applySettingsFromUrl,
@@ -227,19 +228,23 @@ export function handleUpdated(host: LifecycleHost, changed: Map<PropertyKey, unk
   if (host.tab === "chat" && host.chatManualRefreshInFlight) {
     return;
   }
+  // In split-pane mode, background panes stream into ThreadState and only `threads`
+  // changes. Keep any pane that was already near-bottom pinned during streaming.
+  if (host.tab === "chat" && host.splitLayout && changed.has("threads")) {
+    scrollAllVisibleChats(host as unknown as Parameters<typeof scrollAllVisibleChats>[0]);
+  }
   if (
     host.tab === "chat" &&
     (changed.has("chatMessages") ||
       changed.has("chatToolMessages") ||
       changed.has("chatStream") ||
+      changed.has("chatStreamReasoning") ||
       changed.has("chatLoading") ||
       changed.has("tab"))
   ) {
     const forcedByTab = changed.has("tab");
     const forcedByLoad =
-      changed.has("chatLoading") &&
-      changed.get("chatLoading") === true &&
-      host.chatLoading === false;
+      changed.has("chatLoading") && changed.get("chatLoading") === true && !host.chatLoading;
     const force = forcedByTab || forcedByLoad || !host.chatHasAutoScrolled;
     // In split-pane mode, scope scroll to the focused pane
     if (host.splitLayout && host.focusedPaneId) {

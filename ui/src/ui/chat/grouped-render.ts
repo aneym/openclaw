@@ -525,6 +525,8 @@ function renderAvatar(role: string, assistant?: Pick<AssistantIdentity, "name" |
         class="chat-avatar ${className}"
         src="${assistantAvatar}"
         alt="${assistantName}"
+        width="22"
+        height="22"
       />`;
     }
     return html`<div class="chat-avatar ${className}">${assistantAvatar}</div>`;

@@ -9,6 +9,7 @@ import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
 import { createReplyPrefixOptions } from "../../channels/reply-prefix.js";
+import { loadConfig } from "../../config/config.js";
 import { resolveSendPolicy } from "../../sessions/send-policy.js";
 import { INTERNAL_MESSAGE_CHANNEL } from "../../utils/message-channel.js";
 import {
@@ -36,6 +37,7 @@ import {
   capArrayByJsonBytes,
   loadSessionEntry,
   readSessionMessages,
+  resolveSessionStoreKey,
   resolveSessionModelRef,
 } from "../session-utils.js";
 import { formatForLog } from "../ws-log.js";
@@ -165,6 +167,15 @@ function nextChatSeq(context: { agentRunSeq: Map<string, number> }, runId: strin
   return next;
 }
 
+function resolveCanonicalChatSessionKey(rawSessionKey: string): string {
+  const raw = rawSessionKey.trim();
+  if (!raw) {
+    return raw;
+  }
+  const cfg = loadConfig();
+  return resolveSessionStoreKey({ cfg, sessionKey: raw });
+}
+
 function broadcastChatFinal(params: {
   context: Pick<GatewayRequestContext, "broadcast" | "nodeSendToSession" | "agentRunSeq">;
   runId: string;
@@ -223,6 +234,66 @@ function resolveActiveRunForSession(
   return null;
 }
 
+type TranscriptMessageLike = {
+  role?: unknown;
+  content?: unknown;
+};
+
+function extractTextFromTranscriptMessage(message: unknown): string | null {
+  if (!message || typeof message !== "object") {
+    return null;
+  }
+  const content = (message as TranscriptMessageLike).content;
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    return trimmed ? trimmed : null;
+  }
+  if (!Array.isArray(content)) {
+    return null;
+  }
+  for (const part of content) {
+    if (!part || typeof part !== "object") {
+      continue;
+    }
+    const type = (part as { type?: unknown }).type;
+    const text = (part as { text?: unknown }).text;
+    if (
+      typeof text === "string" &&
+      (type === "text" || type === "input_text" || type === "output_text")
+    ) {
+      const trimmed = text.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return null;
+}
+
+function transcriptHasPendingUserMessage(history: unknown[], pending: Record<string, unknown>) {
+  if (!pending || pending.role !== "user") {
+    return true;
+  }
+  const pendingText = extractTextFromTranscriptMessage(pending);
+  if (!pendingText) {
+    // Image-only messages are rare and transcript representation may differ.
+    // Prefer showing the pending prompt rather than risking a false match.
+    return false;
+  }
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i] as TranscriptMessageLike | undefined;
+    if (!msg || typeof msg !== "object") {
+      continue;
+    }
+    if (msg.role !== "user") {
+      continue;
+    }
+    const historyText = extractTextFromTranscriptMessage(msg);
+    return historyText === pendingText;
+  }
+  return false;
+}
+
 function maybeRegisterToolEventRecipientForRun(params: {
   context: Pick<GatewayRequestContext, "registerToolEventRecipient">;
   client: { connId?: string; connect?: { caps?: string[] | null } } | null;
@@ -259,7 +330,8 @@ export const chatHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { sessionKey } = params as { sessionKey: string };
+    const { sessionKey: rawSessionKey } = params as { sessionKey: string };
+    const sessionKey = resolveCanonicalChatSessionKey(rawSessionKey);
     const activeRun = resolveActiveRunForSession(context, sessionKey);
     maybeRegisterToolEventRecipientForRun({
       context,
@@ -282,14 +354,15 @@ export const chatHandlers: GatewayRequestHandlers = {
     }
     const { sessionKeys } = params as { sessionKeys: string[] };
     const statuses = sessionKeys.map((sessionKey) => {
-      const activeRun = resolveActiveRunForSession(context, sessionKey);
+      const canonicalKey = resolveCanonicalChatSessionKey(sessionKey);
+      const activeRun = resolveActiveRunForSession(context, canonicalKey);
       maybeRegisterToolEventRecipientForRun({
         context,
         client,
         runId: activeRun?.runId,
       });
       return {
-        sessionKey,
+        sessionKey: canonicalKey,
         activeRun,
       };
     });
@@ -311,24 +384,53 @@ export const chatHandlers: GatewayRequestHandlers = {
       sessionKey: string;
       limit?: number;
     };
-    const { cfg, storePath, entry } = loadSessionEntry(sessionKey);
+    const { cfg, storePath, entry, canonicalKey } = loadSessionEntry(sessionKey);
+    const canonicalSessionKey = canonicalKey;
     const sessionId = entry?.sessionId;
-    const rawMessages =
-      sessionId && storePath ? readSessionMessages(sessionId, storePath, entry?.sessionFile) : [];
     const hardMax = 1000;
     const defaultLimit = 200;
     const requested = typeof limit === "number" ? limit : defaultLimit;
     const max = Math.min(hardMax, requested);
+    const rawMessages =
+      sessionId && storePath
+        ? readSessionMessages(sessionId, storePath, entry?.sessionFile, { tail: max })
+        : [];
     const sliced = rawMessages.length > max ? rawMessages.slice(-max) : rawMessages;
     const sanitized = stripEnvelopeFromMessages(sliced);
-    const capped = capArrayByJsonBytes(sanitized, getMaxChatHistoryMessagesBytes()).items;
+
+    // Webchat refresh safety: if there's an in-flight run for this session, ensure
+    // the outbound user message is present even if pi-coding-agent hasn't flushed
+    // the transcript to disk yet (it waits until the first assistant message).
+    const pendingUserMessages: Array<Record<string, unknown>> = [];
+    for (const [, active] of context.chatAbortControllers) {
+      if (active.sessionKey !== canonicalSessionKey) {
+        continue;
+      }
+      const pending = active.pendingUserMessage;
+      if (pending && typeof pending === "object") {
+        pendingUserMessages.push(pending);
+      }
+    }
+    pendingUserMessages.sort((a, b) => Number(a.timestamp ?? 0) - Number(b.timestamp ?? 0));
+
+    const merged = [...sanitized];
+    for (const pending of pendingUserMessages) {
+      if (!transcriptHasPendingUserMessage(merged, pending)) {
+        merged.push(pending);
+      }
+    }
+
+    const capped = capArrayByJsonBytes(merged, getMaxChatHistoryMessagesBytes()).items;
     let thinkingLevel = entry?.thinkingLevel;
     if (!thinkingLevel) {
       const configured = cfg.agents?.defaults?.thinkingDefault;
       if (configured) {
         thinkingLevel = configured;
       } else {
-        const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
+        const sessionAgentId = resolveSessionAgentId({
+          sessionKey: canonicalSessionKey,
+          config: cfg,
+        });
         const { provider, model } = resolveSessionModelRef(cfg, entry, sessionAgentId);
         const catalog = await context.loadGatewayModelCatalog();
         thinkingLevel = resolveThinkingDefault({
@@ -342,7 +444,7 @@ export const chatHandlers: GatewayRequestHandlers = {
     const verboseLevel = entry?.verboseLevel ?? cfg.agents?.defaults?.verboseDefault;
     const reasoningLevel = entry?.reasoningLevel ?? cfg.agents?.defaults?.reasoningDefault ?? "off";
     respond(true, {
-      sessionKey,
+      sessionKey: canonicalSessionKey,
       sessionId,
       messages: capped,
       thinkingLevel,
@@ -362,10 +464,11 @@ export const chatHandlers: GatewayRequestHandlers = {
       );
       return;
     }
-    const { sessionKey, runId } = params as {
+    const { sessionKey: rawSessionKey, runId } = params as {
       sessionKey: string;
       runId?: string;
     };
+    const sessionKey = resolveCanonicalChatSessionKey(rawSessionKey);
 
     const ops = {
       chatAbortControllers: context.chatAbortControllers,
@@ -544,7 +647,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           broadcast: context.broadcast,
           nodeSendToSession: context.nodeSendToSession,
         },
-        { sessionKey: rawSessionKey, stopReason: "stop" },
+        { sessionKey, stopReason: "stop" },
       );
       respond(true, { ok: true, aborted: res.aborted, runIds: res.runIds });
       return;
@@ -569,12 +672,43 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     try {
       const abortController = new AbortController();
+      const pendingUserMessage = (() => {
+        const contentBlocks: Array<{ type: string; text?: string; source?: unknown }> = [];
+        if (rawMessage) {
+          contentBlocks.push({ type: "text", text: rawMessage });
+        }
+        for (const att of normalizedAttachments) {
+          const mimeType = att.mimeType ?? "application/octet-stream";
+          const b64 = att.content;
+          if (!b64) {
+            continue;
+          }
+          // Match the Web UI shape (data URL stored in `source.data`) so it renders identically.
+          const dataUrl = `data:${mimeType};base64,${b64}`;
+          contentBlocks.push({
+            type: "image",
+            source: { type: "base64", media_type: mimeType, data: dataUrl },
+          });
+        }
+        return {
+          role: "user",
+          messageId: `client:${clientRunId}:user`,
+          content: contentBlocks,
+          timestamp: now,
+          __openclaw: {
+            kind: "pending_user",
+            runId: clientRunId,
+            createdAtMs: now,
+          },
+        } satisfies Record<string, unknown>;
+      })();
       context.chatAbortControllers.set(clientRunId, {
         controller: abortController,
         sessionId: entry?.sessionId ?? clientRunId,
-        sessionKey: rawSessionKey,
+        sessionKey,
         startedAtMs: now,
         expiresAtMs: resolveChatRunExpiresAtMs({ now, timeoutMs }),
+        pendingUserMessage,
       });
       const ackPayload = {
         runId: clientRunId,
@@ -660,7 +794,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             // `resolveSessionKeyForRun` may return undefined and chat
             // events are silently skipped.
             context.addChatRun(runId, {
-              sessionKey: p.sessionKey,
+              sessionKey,
               clientRunId,
             });
             const connId = typeof client?.connId === "string" ? client.connId : undefined;
@@ -674,7 +808,7 @@ export const chatHandlers: GatewayRequestHandlers = {
               // late-joining clients (e.g. page refresh mid-response) receive
               // in-progress tool events without leaking cross-session data.
               for (const [activeRunId, active] of context.chatAbortControllers) {
-                if (activeRunId !== runId && active.sessionKey === p.sessionKey) {
+                if (activeRunId !== runId && active.sessionKey === sessionKey) {
                   context.registerToolEventRecipient(activeRunId, connId);
                 }
               }
@@ -723,7 +857,7 @@ export const chatHandlers: GatewayRequestHandlers = {
             broadcastChatFinal({
               context,
               runId: clientRunId,
-              sessionKey: rawSessionKey,
+              sessionKey,
               message,
             });
           }
@@ -748,7 +882,7 @@ export const chatHandlers: GatewayRequestHandlers = {
           broadcastChatError({
             context,
             runId: clientRunId,
-            sessionKey: rawSessionKey,
+            sessionKey,
             errorMessage: String(err),
           });
         })
@@ -794,7 +928,8 @@ export const chatHandlers: GatewayRequestHandlers = {
 
     // Load session to find transcript file
     const rawSessionKey = p.sessionKey;
-    const { storePath, entry } = loadSessionEntry(rawSessionKey);
+    const { storePath, entry, canonicalKey } = loadSessionEntry(rawSessionKey);
+    const sessionKey = canonicalKey;
     const sessionId = entry?.sessionId;
     if (!sessionId || !storePath) {
       respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, "session not found"));
@@ -825,14 +960,14 @@ export const chatHandlers: GatewayRequestHandlers = {
     const chatPayload = {
       runId: `inject-${appended.messageId}`,
       sourceRunId: `inject-${appended.messageId}`,
-      sessionKey: rawSessionKey,
+      sessionKey,
       seq: 0,
       updatedAtMs: Date.now(),
       state: "final" as const,
       message: appended.message,
     };
     context.broadcast("chat", chatPayload);
-    context.nodeSendToSession(rawSessionKey, "chat", chatPayload);
+    context.nodeSendToSession(sessionKey, "chat", chatPayload);
 
     respond(true, { ok: true, messageId: appended.messageId });
   },

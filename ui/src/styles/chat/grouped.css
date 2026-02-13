@@ -109,8 +109,14 @@
 /* Image avatar support */
 img.chat-avatar {
   display: block;
+  width: 22px;
+  height: 22px;
+  max-width: 22px;
+  max-height: 22px;
+  border-radius: 50%;
   object-fit: cover;
   object-position: center;
+  flex-shrink: 0;
 }
 
 /* Minimal Bubble Design - dynamic width based on content */
@@ -246,6 +252,11 @@ img.chat-avatar {
   border-radius: 0;
   padding: 10px 0;
   box-shadow: none;
+}
+
+/* Align first bubble text top with avatar top */
+.chat-group.assistant .chat-group-messages > :first-child .chat-bubble {
+  padding-top: 0;
 }
 
 .chat-group.assistant .chat-bubble.has-copy {

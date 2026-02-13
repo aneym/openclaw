@@ -7,14 +7,19 @@
 import { html } from "lit";
 import type { AppViewState } from "../app-view-state";
 import type { SplitNode, SplitBranch, SplitLeaf } from "../split-tree";
+import { createLeaf } from "../split-tree";
 import { renderChatPane } from "./chat-pane";
 import { renderTerminalPane } from "./terminal-pane";
 import "../components/resizable-divider";
 
 export function renderSplitPaneContainer(state: AppViewState) {
+  // Defensive: splitLayout can be null during the earliest app render before
+  // lifecycle code restores/initializes the layout. Render a single-leaf tree
+  // instead of crashing (browser tests and fast refresh paths hit this).
+  const root = state.splitLayout?.root ?? createLeaf(state.sessionKey, "pane-initial");
   return html`
     <div class="split-pane-root">
-      ${renderNode(state.splitLayout.root, state)}
+      ${renderNode(root, state)}
     </div>
   `;
 }

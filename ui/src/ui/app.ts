@@ -85,11 +85,17 @@ import {
 } from "./app-tool-stream.ts";
 import { resolveInjectedAssistantIdentity } from "./assistant-identity.ts";
 import { loadAssistantIdentity as loadAssistantIdentityInternal } from "./controllers/assistant-identity.ts";
-import { clearAbortPending, loadChatHistory, markAbortPending } from "./controllers/chat.ts";
+import {
+  clearAbortPending,
+  loadChatHistory,
+  markAbortPending,
+  mergeChatMessages,
+} from "./controllers/chat.ts";
 import { fetchFileContent } from "./controllers/file.ts";
 import { patchSession } from "./controllers/sessions.ts";
 import { loadDraft, loadAttachments, loadQueue } from "./draft-storage.ts";
 import { type PaneState, type ArtifactTab, syncPaneStates } from "./pane-state.ts";
+import { sessionKeysMatch } from "./session-keys.ts";
 import {
   createLeaf,
   createTerminalLeaf,
@@ -123,6 +129,7 @@ import {
   type ModelCatalogEntry,
   type SlashCommandEntry,
 } from "./ui-types.ts";
+import { generateUUID } from "./uuid.ts";
 import { parseStreamEvents, detectCurrentPhase } from "./views/coding-panel.js";
 
 declare global {
@@ -191,6 +198,8 @@ export class OpenClawApp extends LitElement {
   /** Active sub-agent runs keyed by requester session key. */
   @state() subagentRuns: Map<string, import("./types").SubagentRunInfo[]> = new Map();
   @state() chatManualRefreshInFlight = false;
+  /** True when new messages arrived below the fold and auto-scroll is disabled. */
+  @state() chatNewMessagesBelow = false;
   // Sidebar state for tool output viewing
   @state() sidebarOpen = false;
   @state() sidebarContent: string | null = null;
@@ -543,7 +552,7 @@ export class OpenClawApp extends LitElement {
     scheduleChatScrollInternal(
       this as unknown as Parameters<typeof scheduleChatScrollInternal>[0],
       true,
-      undefined,
+      this.splitLayout && this.focusedPaneId ? this.focusedPaneId : undefined,
       Boolean(opts?.smooth),
     );
   }
@@ -1312,7 +1321,7 @@ export class OpenClawApp extends LitElement {
       label: "Main",
       createdAt: Date.now(),
       lastActivityAt: Date.now(),
-      parentSessionKey: this.sessionKey,
+      parentSessionKey: this.sessionKey.split(":thread:")[0] || this.sessionKey,
     };
     const thread = createThreadState(descriptor);
     this.threads.set(descriptor.id, thread);
@@ -1322,6 +1331,56 @@ export class OpenClawApp extends LitElement {
   }
 
   // -- Split pane management ------------------------------------------------
+
+  private ensureThreadStateForSessionKey(sessionKey: string): string {
+    const existingId = this.sessionKeyToThreadId.get(sessionKey);
+    if (existingId && this.threads.has(existingId)) {
+      return existingId;
+    }
+
+    // Try alias-tolerant match so canonical/rest variants resolve to the same ThreadState.
+    for (const [mappedKey, mappedId] of this.sessionKeyToThreadId) {
+      if (!sessionKeysMatch(mappedKey, sessionKey)) {
+        continue;
+      }
+      if (this.threads.has(mappedId)) {
+        // Cache direct mapping for faster subsequent lookups.
+        this.sessionKeyToThreadId.set(sessionKey, mappedId);
+        return mappedId;
+      }
+    }
+
+    const now = Date.now();
+    const desc: ThreadDescriptor = {
+      id: `session-${generateUUID()}`,
+      sessionKey,
+      label: "",
+      createdAt: now,
+      lastActivityAt: now,
+      parentSessionKey: sessionKey.split(":thread:")[0] || sessionKey,
+    };
+    const thread = createThreadState(desc);
+
+    // Restore persisted compose state for sessions that aren't in thread storage.
+    const draft = loadDraft(sessionKey);
+    if (draft) {
+      thread.chatMessage = draft;
+    }
+    const attachments = loadAttachments(sessionKey);
+    if (attachments.length) {
+      thread.chatAttachments = attachments;
+    }
+    const savedQueue = loadQueue(sessionKey);
+    if (savedQueue.length) {
+      thread.chatQueue = savedQueue;
+    }
+
+    this.threads.set(desc.id, thread);
+    this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
+    // Trigger Lit reactivity for any panes that were previously missing state.
+    this.threads = new Map(this.threads);
+    return desc.id;
+  }
 
   splitPane(direction: "horizontal" | "vertical") {
     const currentSessionKey = this.sessionKey;
@@ -1336,7 +1395,7 @@ export class OpenClawApp extends LitElement {
         label: "Main",
         createdAt: Date.now(),
         lastActivityAt: Date.now(),
-        parentSessionKey: currentSessionKey,
+        parentSessionKey: currentSessionKey.split(":thread:")[0] || currentSessionKey,
       };
       const mainThread = createThreadState(mainDesc);
       // Snapshot current live state into the new ThreadState immediately
@@ -1349,10 +1408,12 @@ export class OpenClawApp extends LitElement {
     }
 
     // Create a fresh thread for the new pane (without switching to it)
+    const currentThreadId = this.ensureThreadStateForSessionKey(currentSessionKey);
+    const currentThread = this.threads.get(currentThreadId);
     const parentKey =
-      (this.activeThreadId
-        ? this.threads.get(this.activeThreadId)?.descriptor.parentSessionKey
-        : null) || this.sessionKey;
+      currentThread?.descriptor.parentSessionKey ||
+      currentSessionKey.split(":thread:")[0] ||
+      currentSessionKey;
     const newDescriptor = createThreadDescriptor(parentKey);
     const newThread = createThreadState(newDescriptor);
     this.threads.set(newDescriptor.id, newThread);
@@ -1456,15 +1517,15 @@ export class OpenClawApp extends LitElement {
 
     if (newRoot.kind === "leaf") {
       // Only one pane left - keep it as single-leaf layout
-      this.sessionKey = newRoot.threadId;
       this.splitLayout = {
         root: newRoot,
         focusedPaneId: newRoot.id,
       };
       this.focusedPaneId = newRoot.id;
-      // Restore the remaining thread's state
-      const remainingId = this.sessionKeyToThreadId.get(newRoot.threadId);
-      if (remainingId) {
+      if (newRoot.paneType !== "terminal") {
+        this.sessionKey = newRoot.threadId;
+        // Restore the remaining thread's state
+        const remainingId = this.ensureThreadStateForSessionKey(newRoot.threadId);
         const remainingThread = this.threads.get(remainingId);
         if (remainingThread) {
           restoreThreadState(this, remainingThread);
@@ -1489,28 +1550,14 @@ export class OpenClawApp extends LitElement {
     const focusLeaf = findLeaf(newRoot, newFocus);
     if (focusLeaf && focusLeaf.threadId !== this.sessionKey) {
       // Snapshot current state first — ensure ThreadState exists
-      let prevId = this.sessionKeyToThreadId.get(this.sessionKey);
-      if (!prevId) {
-        const desc: ThreadDescriptor = {
-          id: `pane-snap-${Date.now()}`,
-          sessionKey: this.sessionKey,
-          label: "",
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-          parentSessionKey: this.sessionKey.split(":thread:")[0] || this.sessionKey,
-        };
-        const newThread = createThreadState(desc);
-        this.threads.set(desc.id, newThread);
-        this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
-        prevId = desc.id;
-      }
+      const prevId = this.ensureThreadStateForSessionKey(this.sessionKey);
       const prevThread = this.threads.get(prevId);
       if (prevThread) {
         Object.assign(prevThread, snapshotThreadState(this));
       }
-      this.sessionKey = focusLeaf.threadId;
-      const targetId2 = this.sessionKeyToThreadId.get(focusLeaf.threadId);
-      if (targetId2) {
+      if (focusLeaf.paneType !== "terminal") {
+        this.sessionKey = focusLeaf.threadId;
+        const targetId2 = this.ensureThreadStateForSessionKey(focusLeaf.threadId);
         const targetThread = this.threads.get(targetId2);
         if (targetThread) {
           restoreThreadState(this, targetThread);
@@ -1546,22 +1593,7 @@ export class OpenClawApp extends LitElement {
 
     // Snapshot current thread's live state before switching
     if (switching) {
-      let prevThreadId = this.sessionKeyToThreadId.get(this.sessionKey);
-      // Ensure a ThreadState exists for the current session so snapshot has a target
-      if (!prevThreadId) {
-        const desc: ThreadDescriptor = {
-          id: `pane-snap-${Date.now()}`,
-          sessionKey: this.sessionKey,
-          label: "",
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-          parentSessionKey: this.sessionKey.split(":thread:")[0] || this.sessionKey,
-        };
-        const newThread = createThreadState(desc);
-        this.threads.set(desc.id, newThread);
-        this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
-        prevThreadId = desc.id;
-      }
+      const prevThreadId = this.ensureThreadStateForSessionKey(this.sessionKey);
       const prevThread = this.threads.get(prevThreadId);
       if (prevThread) {
         Object.assign(prevThread, snapshotThreadState(this));
@@ -1570,33 +1602,53 @@ export class OpenClawApp extends LitElement {
       this.threads = new Map(this.threads);
     }
 
+    // Terminal panes participate in focus (keyboard + styling) but should not
+    // swap the active chat session / live chat state.
+    if (leaf.paneType === "terminal") {
+      // replaceState — focus change is minor, not a meaningful navigation
+      this.syncUrlWithPanes(true);
+      // Persist so HMR / reload restores the correct focused pane
+      this.persistSplitLayout();
+
+      if (this._focusPaneTimer != null) {
+        clearTimeout(this._focusPaneTimer);
+        this._focusPaneTimer = null;
+      }
+      return;
+    }
+
     // Switch session and restore target thread's state
     if (leaf.threadId !== this.sessionKey) {
       this.sessionKey = leaf.threadId;
-      const targetThreadId = this.sessionKeyToThreadId.get(leaf.threadId);
-      if (targetThreadId) {
-        const targetThread = this.threads.get(targetThreadId);
-        if (targetThread) {
-          restoreThreadState(this, targetThread);
+      const targetThreadId = this.ensureThreadStateForSessionKey(leaf.threadId);
+      const targetThread = this.threads.get(targetThreadId);
+      if (targetThread) {
+        restoreThreadState(this, targetThread);
 
-          // Bug 4 guard: if the target thread has an in-flight history load,
-          // re-restore once it completes so the host sees fresh data.
-          if (targetThread._historyLoading) {
-            const capturedPaneId = paneId;
-            const poll = () => {
-              if (!targetThread._historyLoading) {
-                // Only apply if this pane is still focused (user didn't switch again)
-                if (this.focusedPaneId === capturedPaneId) {
-                  restoreThreadState(this, targetThread);
-                  this.threads = new Map(this.threads);
-                }
-              } else {
-                setTimeout(poll, 50);
+        // Bug 4 guard: if the target thread has an in-flight history load,
+        // re-restore once it completes so the host sees fresh data.
+        if (targetThread._historyLoading) {
+          const capturedPaneId = paneId;
+          const poll = () => {
+            if (!targetThread._historyLoading) {
+              // Only apply if this pane is still focused (user didn't switch again)
+              if (this.focusedPaneId === capturedPaneId) {
+                restoreThreadState(this, targetThread);
+                this.threads = new Map(this.threads);
               }
-            };
-            setTimeout(poll, 50);
-          }
+            } else {
+              setTimeout(poll, 50);
+            }
+          };
+          setTimeout(poll, 50);
         }
+      }
+
+      // If we don't have any cached history for this session yet, load it.
+      // This prevents the focused pane from showing whatever the previous pane
+      // last rendered while the async history request is in flight.
+      if (this.connected && this.client && this.chatMessages.length === 0) {
+        void loadChatHistory(this as unknown as Parameters<typeof loadChatHistory>[0]);
       }
     }
 
@@ -1662,20 +1714,9 @@ export class OpenClawApp extends LitElement {
       }
     }
 
-    // Ensure a ThreadState exists for the new session key
-    if (!this.sessionKeyToThreadId.has(threadId)) {
-      const desc: ThreadDescriptor = {
-        id: `pane-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        sessionKey: threadId,
-        label: "",
-        createdAt: Date.now(),
-        lastActivityAt: Date.now(),
-        parentSessionKey: threadId.split(":thread:")[0] || threadId,
-      };
-      const newThread = createThreadState(desc);
-      this.threads.set(desc.id, newThread);
-      this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
-    }
+    // Ensure a ThreadState exists for the new session key.
+    // This is required for non-focused panes to render without touching the global live state.
+    this.ensureThreadStateForSessionKey(threadId);
 
     const newRoot = setLeafThread(this.splitLayout.root, paneId, threadId);
     this.splitLayout = { ...this.splitLayout, root: newRoot };
@@ -1687,21 +1728,7 @@ export class OpenClawApp extends LitElement {
     // Without this, changing the focused pane's thread can leave `sessionKey`
     // pointing at the old thread, so sends read the wrong draft/run state.
     if (this.focusedPaneId === paneId && threadId !== this.sessionKey) {
-      let prevThreadId = this.sessionKeyToThreadId.get(this.sessionKey);
-      if (!prevThreadId) {
-        const desc: ThreadDescriptor = {
-          id: `pane-snap-${Date.now()}`,
-          sessionKey: this.sessionKey,
-          label: "",
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-          parentSessionKey: this.sessionKey.split(":thread:")[0] || this.sessionKey,
-        };
-        const newThread = createThreadState(desc);
-        this.threads.set(desc.id, newThread);
-        this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
-        prevThreadId = desc.id;
-      }
+      const prevThreadId = this.ensureThreadStateForSessionKey(this.sessionKey);
 
       const prevThread = this.threads.get(prevThreadId);
       if (prevThread) {
@@ -1709,12 +1736,10 @@ export class OpenClawApp extends LitElement {
       }
 
       this.sessionKey = threadId;
-      const nextThreadId = this.sessionKeyToThreadId.get(threadId);
-      if (nextThreadId) {
-        const nextThread = this.threads.get(nextThreadId);
-        if (nextThread) {
-          restoreThreadState(this, nextThread);
-        }
+      const nextThreadId = this.ensureThreadStateForSessionKey(threadId);
+      const nextThread = this.threads.get(nextThreadId);
+      if (nextThread) {
+        restoreThreadState(this, nextThread);
       }
     }
 
@@ -1722,17 +1747,54 @@ export class OpenClawApp extends LitElement {
     const mapId = this.sessionKeyToThreadId.get(threadId);
     const thread = mapId ? this.threads.get(mapId) : null;
     if (thread && thread.chatMessages.length === 0 && this.client && this.connected) {
+      if (thread._historyLoading) {
+        return;
+      }
+      const client = this.client;
+      const sessionKey = threadId;
+      const isActivePane =
+        this.focusedPaneId === paneId && sessionKeysMatch(this.sessionKey, sessionKey);
+
+      thread._historyLoading = true;
+      if (!isActivePane) {
+        thread.chatLoading = true;
+        // Trigger a re-render so the loading indicator replaces the session picker.
+        this.threads = new Map(this.threads);
+      }
       void (async () => {
         try {
-          const res = await this.client!.request("chat.history", {
-            sessionKey: threadId,
-            limit: 200,
-          });
-          thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
-          thread.chatThinkingLevel = res.thinkingLevel ?? null;
+          if (isActivePane) {
+            await loadChatHistory(this as unknown as Parameters<typeof loadChatHistory>[0]);
+            // Sync the live state back into the ThreadState so non-focused panes
+            // (or a future focus change) see the loaded history.
+            if (sessionKeysMatch(this.sessionKey, sessionKey)) {
+              Object.assign(thread, snapshotThreadState(this));
+            }
+          } else {
+            const res = await client.request(
+              "chat.history",
+              {
+                sessionKey,
+                limit: 200,
+              },
+              { timeoutMs: 20_000 },
+            );
+            const serverMessages = Array.isArray(res.messages) ? res.messages : [];
+            thread.chatMessages = mergeChatMessages({
+              localMessages: thread.chatMessages,
+              serverMessages,
+            });
+            thread.chatThinkingLevel = res.thinkingLevel ?? null;
+          }
           this.threads = new Map(this.threads);
         } catch {
           /* non-critical */
+        } finally {
+          thread._historyLoading = false;
+          if (!isActivePane) {
+            thread.chatLoading = false;
+            this.threads = new Map(this.threads);
+          }
         }
       })();
     }
@@ -1873,18 +1935,27 @@ export class OpenClawApp extends LitElement {
     this.focusedPaneId = layout.focusedPaneId;
     this.syncPaneStatesFromLayout();
 
+    // Ensure every visible chat pane has a ThreadState so focus switching
+    // can't "inherit" another pane's live state (random chat swap).
+    for (const leaf of allLeaves(layout.root)) {
+      if (leaf.paneType === "terminal") {
+        continue;
+      }
+      this.ensureThreadStateForSessionKey(leaf.threadId);
+    }
+
     // Restore the focused pane's session key so the live state (chatMessage,
     // chatMessages, etc.) targets the correct pane after HMR / page reload.
     if (layout.focusedPaneId) {
       const focusedLeaf = findLeaf(layout.root, layout.focusedPaneId);
-      if (focusedLeaf && focusedLeaf.threadId !== this.sessionKey) {
-        this.sessionKey = focusedLeaf.threadId;
-        const threadId = this.sessionKeyToThreadId.get(focusedLeaf.threadId);
-        if (threadId) {
-          const thread = this.threads.get(threadId);
-          if (thread) {
-            restoreThreadState(this, thread);
-          }
+      if (focusedLeaf) {
+        if (focusedLeaf.threadId !== this.sessionKey) {
+          this.sessionKey = focusedLeaf.threadId;
+        }
+        const threadId = this.ensureThreadStateForSessionKey(focusedLeaf.threadId);
+        const thread = this.threads.get(threadId);
+        if (thread) {
+          restoreThreadState(this, thread);
         }
       }
     }
@@ -2038,36 +2109,33 @@ export class OpenClawApp extends LitElement {
     const focusedKey = this.sessionKey;
 
     for (const leaf of leaves) {
+      if (leaf.paneType === "terminal") {
+        continue;
+      }
       if (leaf.threadId === focusedKey) {
         continue;
       } // Already loaded by main flow
 
       // Ensure a ThreadState exists for this session key
-      let threadMapId = this.sessionKeyToThreadId.get(leaf.threadId);
-      let thread = threadMapId ? this.threads.get(threadMapId) : null;
+      const threadMapId = this.ensureThreadStateForSessionKey(leaf.threadId);
+      const thread = this.threads.get(threadMapId);
       if (!thread) {
-        const desc: import("./thread-state").ThreadDescriptor = {
-          id: `pane-${leaf.id}`,
-          sessionKey: leaf.threadId,
-          label: "",
-          createdAt: Date.now(),
-          lastActivityAt: Date.now(),
-          parentSessionKey: leaf.threadId.split(":thread:")[0] || leaf.threadId,
-        };
-        thread = createThreadState(desc);
-        this.threads.set(desc.id, thread);
-        this.sessionKeyToThreadId.set(desc.sessionKey, desc.id);
-        threadMapId = desc.id;
+        continue;
       }
 
       // Load history if the thread has no messages yet
       if (thread.chatMessages.length === 0) {
+        thread.chatLoading = true;
         try {
           const res = await this.client.request("chat.history", {
             sessionKey: leaf.threadId,
             limit: 200,
           });
-          thread.chatMessages = Array.isArray(res.messages) ? res.messages : [];
+          const serverMessages = Array.isArray(res.messages) ? res.messages : [];
+          thread.chatMessages = mergeChatMessages({
+            localMessages: thread.chatMessages,
+            serverMessages,
+          });
           thread.chatThinkingLevel = res.thinkingLevel ?? null;
         } catch {
           // Non-critical — pane will show empty until next refresh
@@ -2090,6 +2158,10 @@ export class OpenClawApp extends LitElement {
         // Single-pane mode: scroll the main chat thread
         const thread = this.querySelector(".chat-thread");
         if (thread) {
+          if (thread.querySelector(".session-picker")) {
+            thread.scrollTop = 0;
+            return;
+          }
           thread.scrollTop = thread.scrollHeight;
         }
         return;
@@ -2098,6 +2170,10 @@ export class OpenClawApp extends LitElement {
       for (const leaf of leaves) {
         const paneEl = this.querySelector(`[data-pane-id="${leaf.id}"] .chat-thread`);
         if (paneEl) {
+          if (paneEl.querySelector(".session-picker")) {
+            paneEl.scrollTop = 0;
+            continue;
+          }
           paneEl.scrollTop = paneEl.scrollHeight;
         }
       }

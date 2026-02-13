@@ -263,10 +263,18 @@ export async function refreshActiveTab(host: SettingsHost) {
   }
   if (host.tab === "chat") {
     await refreshChat(host as unknown as Parameters<typeof refreshChat>[0]);
-    scheduleChatScroll(
-      host as unknown as Parameters<typeof scheduleChatScroll>[0],
-      !host.chatHasAutoScrolled,
-    );
+    if (host.splitLayout && host.focusedPaneId) {
+      scheduleChatScroll(
+        host as unknown as Parameters<typeof scheduleChatScroll>[0],
+        !host.chatHasAutoScrolled,
+        host.focusedPaneId,
+      );
+    } else {
+      scheduleChatScroll(
+        host as unknown as Parameters<typeof scheduleChatScroll>[0],
+        !host.chatHasAutoScrolled,
+      );
+    }
   }
   if (host.tab === "config") {
     await loadConfigSchema(host as unknown as OpenClawApp);
@@ -493,7 +501,9 @@ export function syncUrlWithPanes(host: PanesSyncHost, replace: boolean) {
     }
 
     // Keep session= in sync with focused pane
-    const focusedKey = paneKeys[Math.max(0, focusIdx)];
+    const focusedLeaf = leaves[Math.max(0, focusIdx)];
+    const focusedKey =
+      focusedLeaf?.paneType === "terminal" ? host.sessionKey : paneKeys[Math.max(0, focusIdx)];
     if (focusedKey) {
       url.searchParams.set("session", focusedKey);
     }

@@ -16,6 +16,18 @@ type ScrollHost = {
   topbarObserver: ResizeObserver | null;
 };
 
+function hasSessionPicker(container: unknown): boolean {
+  const el = container as { querySelector?: (selector: string) => unknown } | null;
+  if (!el || typeof el.querySelector !== "function") {
+    return false;
+  }
+  try {
+    return Boolean(el.querySelector(".session-picker"));
+  } catch {
+    return false;
+  }
+}
+
 export function scheduleChatScroll(
   host: ScrollHost,
   force = false,
@@ -52,6 +64,17 @@ export function scheduleChatScroll(
       host.chatScrollFrame = null;
       const target = pickScrollTarget();
       if (!target) {
+        return;
+      }
+
+      // New thread / empty pane state: keep the session picker pinned at the top.
+      // Auto-scrolling to the bottom hides the picker (and feels like a jump) when creating a new pane.
+      if (hasSessionPicker(target)) {
+        if (typeof target.scrollTo === "function") {
+          target.scrollTo({ top: 0, behavior: "auto" });
+        } else {
+          target.scrollTop = 0;
+        }
         return;
       }
 
@@ -188,6 +211,9 @@ export function scrollAllVisibleChats(host: ScrollHost) {
     requestAnimationFrame(() => {
       const threads = (host as unknown as ParentNode).querySelectorAll(".chat-thread");
       for (const thread of threads) {
+        if (hasSessionPicker(thread)) {
+          continue;
+        }
         const distanceFromBottom = thread.scrollHeight - thread.scrollTop - thread.clientHeight;
         if (distanceFromBottom < NEAR_BOTTOM_THRESHOLD) {
           thread.scrollTop = thread.scrollHeight;

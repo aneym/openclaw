@@ -549,7 +549,7 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                 @click=${() => onAgentFilterChange(agent.id)}
                 title="Filter by ${agent.name}"
               >
-                ${agent.avatarUrl ? html`<img src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
+                ${agent.avatarUrl ? html`<img class="agent-avatar-img agent-avatar-img--xs" src="${agent.avatarUrl}" alt="" width="14" height="14" />` : agent.emoji ? html`<span>${agent.emoji}</span>` : nothing}
                 <span>${agent.name}</span>
               </button>
             `,
@@ -679,8 +679,8 @@ export function renderNavThreadList(props: NavThreadListProps): TemplateResult {
                             return nothing;
                           }
                           return agent.avatarUrl
-                            ? html`<img class="nav-thread-item__agent-badge" title="${agent.name}" src="${agent.avatarUrl}" alt="" style="width:14px;height:14px;border-radius:50%;object-fit:cover;" />`
-                            : html`<span class="nav-thread-item__agent-badge" title="${agent.name}">${agent.emoji ?? agent.name.charAt(0)}</span>`;
+                            ? html`<img class="nav-thread-item__agent-badge agent-avatar-img agent-avatar-img--xs" title="${agent.name}" src="${agent.avatarUrl}" alt="" width="14" height="14" />`
+                            : html`<span class="nav-thread-item__agent-badge" title="${agent.name}">${agent.emoji ?? agent.name}</span>`;
                         })()}
                         ${
                           isRenaming

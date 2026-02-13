@@ -32,6 +32,11 @@ export type ChatState = {
   client: GatewayBrowserClient | null;
   connected: boolean;
   sessionKey: string;
+  /**
+   * Internal: monotonic token for `loadChatHistory()` so stale async responses
+   * don't overwrite the active pane when the user switches sessions/panes.
+   */
+  chatHistoryLoadId?: string | null;
   chatLoading: boolean;
   chatMessages: unknown[];
   chatThinkingLevel: string | null;
@@ -57,20 +62,126 @@ export async function loadChatHistory(state: ChatState) {
   if (!state.client || !state.connected) {
     return;
   }
+  const loadId = generateUUID();
+  const requestedSessionKey = state.sessionKey;
+  state.chatHistoryLoadId = loadId;
   state.chatLoading = true;
   state.lastError = null;
   try {
-    const res = await state.client.request("chat.history", {
-      sessionKey: state.sessionKey,
-      limit: 200,
+    let res: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        res = await state.client.request(
+          "chat.history",
+          {
+            sessionKey: requestedSessionKey,
+            limit: 200,
+          },
+          { timeoutMs: 20_000 },
+        );
+        break;
+      } catch (err) {
+        const isStale =
+          state.chatHistoryLoadId !== loadId ||
+          !sessionKeysMatch(requestedSessionKey, state.sessionKey);
+        if (isStale) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : String(err);
+        if (attempt === 0 && message.includes("gateway request timed out")) {
+          continue;
+        }
+        throw err;
+      }
+    }
+    if (!res) {
+      return;
+    }
+
+    // Ignore stale results (session changed or a newer request started).
+    if (state.chatHistoryLoadId !== loadId) {
+      return;
+    }
+    if (!sessionKeysMatch(requestedSessionKey, state.sessionKey)) {
+      return;
+    }
+
+    const serverMessages = Array.isArray((res as { messages?: unknown }).messages)
+      ? ((res as { messages?: unknown }).messages as unknown[])
+      : [];
+    state.chatMessages = mergeChatMessages({
+      localMessages: state.chatMessages,
+      serverMessages,
     });
-    state.chatMessages = Array.isArray(res.messages) ? res.messages : [];
-    state.chatThinkingLevel = res.thinkingLevel ?? null;
+    const thinkingLevel = (res as { thinkingLevel?: unknown }).thinkingLevel;
+    state.chatThinkingLevel = typeof thinkingLevel === "string" ? thinkingLevel : null;
   } catch (err) {
+    if (state.chatHistoryLoadId !== loadId) {
+      return;
+    }
+    if (!sessionKeysMatch(requestedSessionKey, state.sessionKey)) {
+      return;
+    }
     state.lastError = String(err);
   } finally {
-    state.chatLoading = false;
+    // Only clear loading if this is still the most recent request.
+    if (state.chatHistoryLoadId === loadId) {
+      state.chatLoading = false;
+    }
   }
+}
+
+function isOptimisticMessage(message: unknown): boolean {
+  if (!message || typeof message !== "object") {
+    return false;
+  }
+  const msg = message as { _optimistic?: unknown; _streamFinal?: unknown };
+  return Boolean(msg._optimistic) || Boolean(msg._streamFinal);
+}
+
+function messagesEquivalentForMerge(a: unknown, b: unknown): boolean {
+  if (!a || typeof a !== "object" || !b || typeof b !== "object") {
+    return false;
+  }
+  const aRole = (a as { role?: unknown }).role;
+  const bRole = (b as { role?: unknown }).role;
+  if (aRole !== bRole) {
+    return false;
+  }
+  const aText = extractText(a);
+  const bText = extractText(b);
+  if (typeof aText === "string" && typeof bText === "string") {
+    return aText.trim() === bText.trim();
+  }
+  return false;
+}
+
+export function mergeChatMessages(params: {
+  localMessages: unknown[];
+  serverMessages: unknown[];
+}): unknown[] {
+  const localMessages = Array.isArray(params.localMessages) ? params.localMessages : [];
+  const serverMessages = Array.isArray(params.serverMessages) ? params.serverMessages : [];
+
+  // If the server returns empty history (e.g. transcript not flushed yet),
+  // never wipe non-empty local state — that causes message "flashes".
+  if (serverMessages.length === 0 && localMessages.length > 0) {
+    return localMessages;
+  }
+
+  const optimistic = localMessages.filter(isOptimisticMessage);
+  if (optimistic.length === 0) {
+    return serverMessages;
+  }
+
+  const merged = [...serverMessages];
+  for (const msg of optimistic) {
+    const exists = serverMessages.some((serverMsg) => messagesEquivalentForMerge(serverMsg, msg));
+    if (!exists) {
+      merged.push(msg);
+    }
+  }
+  return merged;
 }
 
 function dataUrlToBase64(dataUrl: string): { content: string; mimeType: string } | null {
@@ -95,6 +206,7 @@ export async function sendChatMessage(
     return null;
   }
 
+  const runId = generateUUID();
   const now = Date.now();
 
   // Build user message content blocks
@@ -116,14 +228,16 @@ export async function sendChatMessage(
     ...state.chatMessages,
     {
       role: "user",
+      messageId: `client:${runId}:user`,
       content: contentBlocks,
       timestamp: now,
+      _optimistic: true,
+      _clientRunId: runId,
     },
   ];
 
   state.chatSending = true;
   state.lastError = null;
-  const runId = generateUUID();
   state.chatRunId = runId;
   state.chatStream = "";
   state.chatStreamReasoning = "";
@@ -251,6 +365,7 @@ export function handleChatEvent(state: ChatState, payload?: ChatEventPayload) {
     if (typeof finalText === "string" && finalText.trim()) {
       const finalMsg = {
         role: "assistant",
+        messageId: payload.runId ? `client:${payload.runId}:assistant` : undefined,
         content: [{ type: "text", text: finalText }],
         timestamp: Date.now(),
         _streamFinal: true, // marker so loadChatHistory can replace it
@@ -328,6 +443,7 @@ export function handleChatEventForThread(
     if (typeof finalText === "string" && finalText.trim()) {
       const finalMsg = {
         role: "assistant",
+        messageId: payload.runId ? `client:${payload.runId}:assistant` : undefined,
         content: [{ type: "text", text: finalText }],
         timestamp: Date.now(),
         _streamFinal: true,
