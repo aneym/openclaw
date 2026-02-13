@@ -15,6 +15,14 @@ const api = {
   setDockBadge: (count) => {
     electron.ipcRenderer.invoke("app:set-dock-badge", count);
   },
+  triageBridge: {
+    getInfo: () => electron.ipcRenderer.invoke("triageBridge:getInfo"),
+    onEvent: (callback) => {
+      const listener = (_, event) => callback(event);
+      electron.ipcRenderer.on("triageBridge:event", listener);
+      return () => electron.ipcRenderer.removeListener("triageBridge:event", listener);
+    },
+  },
   // Logs API (for debugging and agent self-iteration)
   logs: {
     getMainLogs: () => electron.ipcRenderer.invoke("logs:getMainLogs"),

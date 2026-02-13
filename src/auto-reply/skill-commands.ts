@@ -35,6 +35,13 @@ export function listSkillCommandsForWorkspace(params: {
   });
 }
 
+export function listNativeSkillCommandsForAgents(params: {
+  cfg: OpenClawConfig;
+  agentIds?: string[];
+}): SkillCommandSpec[] {
+  return listSkillCommandsForAgents(params).filter((cmd) => cmd.nativeCommand);
+}
+
 export function listSkillCommandsForAgents(params: {
   cfg: OpenClawConfig;
   agentIds?: string[];

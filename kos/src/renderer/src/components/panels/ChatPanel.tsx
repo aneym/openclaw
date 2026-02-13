@@ -1,17 +1,23 @@
-import { useEffect, useMemo } from "react";
+import { Loader2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
+import { toast } from "sonner";
 import type { Chat } from "../../types";
 import { useChatSession } from "../../hooks/use-chat-session";
+import { useSubagentRuns } from "../../hooks/use-subagent-sync";
 import { klog } from "../../lib/klog";
 import { useChatStore } from "../../stores/chat-store";
 import { ComposeBar } from "../chat/ComposeBar";
 import { MessageList } from "../chat/MessageList";
+import { SlashAutocomplete } from "../chat/SlashAutocomplete";
+import { SubagentBanner } from "../chat/SubagentBanner";
 
 interface ChatPanelProps {
   chatId: string;
+  panelId?: string;
   autoFocus?: boolean;
 }
 
-export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
+export function ChatPanel({ chatId, panelId, autoFocus = false }: ChatPanelProps) {
   // Select raw Map to avoid calling method in selector (causes infinite loops)
   const chatsMap = useChatStore((s) => s.chats);
 
@@ -19,6 +25,9 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
   const chat = useMemo(() => chatsMap.get(chatId) as Chat | undefined, [chatsMap, chatId]);
 
   const sessionKey = chat?.sessionKey ?? "";
+
+  // Ref for compose area (used by SlashAutocomplete to find textarea)
+  const composeRef = useRef<HTMLDivElement>(null);
 
   // Diagnostic logging on mount and when chat changes
   useEffect(() => {
@@ -41,12 +50,41 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
     streamReasoning,
     activeTools,
     awaitingResponse,
+    isCompacting,
+    thinkingVisible,
     queue,
     sendMessage,
     sendNow,
     abort,
     removeFromQueue,
   } = useChatSession(sessionKey, chatId);
+
+  // Sub-agent runs for this session
+  const subagentRuns = useSubagentRuns(sessionKey || undefined);
+
+  // Toast when compaction completes
+  const wasCompactingRef = useRef(false);
+  useEffect(() => {
+    if (wasCompactingRef.current && !isCompacting) {
+      toast("Context compacted", { duration: 3000 });
+    }
+    wasCompactingRef.current = isCompacting;
+  }, [isCompacting]);
+
+  // Slash autocomplete: set textarea value via native input setter (React-friendly)
+  const handleSlashSelect = useCallback((command: string) => {
+    const textarea = composeRef.current?.querySelector("textarea");
+    if (!textarea) {
+      return;
+    }
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value",
+    )?.set;
+    nativeInputValueSetter?.call(textarea, command);
+    textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    textarea.focus();
+  }, []);
 
   // If chat doesn't exist or has no sessionKey, show error state
   if (!chat?.sessionKey) {
@@ -80,29 +118,46 @@ export function ChatPanel({ chatId, autoFocus = false }: ChatPanelProps) {
   // Render chat UI
   return (
     <div className="flex flex-col h-full">
+      {/* Sub-agent status banner */}
+      {subagentRuns.length > 0 && <SubagentBanner runs={subagentRuns} />}
+
+      {/* Context compaction indicator */}
+      {isCompacting && (
+        <div className="flex items-center gap-2 px-4 py-1.5 bg-muted/50 border-b border-border text-xs text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Compacting context...
+        </div>
+      )}
+
       {/* Message list (flex-1 takes remaining space) */}
       <MessageList
         messages={messages}
         isStreaming={isStreaming}
         streamText={streamText}
-        streamReasoning={streamReasoning}
+        streamReasoning={thinkingVisible ? streamReasoning : undefined}
         activeTools={activeTools}
         awaitingResponse={awaitingResponse}
+        panelId={panelId}
+        chatId={chatId}
+        thinkingVisible={thinkingVisible}
       />
 
-      {/* Compose bar (fixed at bottom) */}
-      <ComposeBar
-        sessionKey={sessionKey}
-        chatId={chatId}
-        isStreaming={isStreaming}
-        awaitingResponse={awaitingResponse}
-        autoFocus={autoFocus}
-        queue={queue}
-        onSend={sendMessage}
-        onSendNow={sendNow}
-        onAbort={abort}
-        onRemoveFromQueue={removeFromQueue}
-      />
+      {/* Compose area with slash autocomplete overlay */}
+      <div ref={composeRef} className="relative">
+        <SlashAutocomplete containerRef={composeRef} onSelect={handleSlashSelect} />
+        <ComposeBar
+          sessionKey={sessionKey}
+          chatId={chatId}
+          isStreaming={isStreaming}
+          awaitingResponse={awaitingResponse}
+          autoFocus={autoFocus}
+          queue={queue}
+          onSend={sendMessage}
+          onSendNow={sendNow}
+          onAbort={abort}
+          onRemoveFromQueue={removeFromQueue}
+        />
+      </div>
     </div>
   );
 }

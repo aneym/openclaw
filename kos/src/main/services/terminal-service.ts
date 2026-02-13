@@ -74,7 +74,9 @@ export function cleanupOldScrollback(): void {
 
     const files = readdirSync(SCROLLBACK_DIR);
     for (const file of files) {
-      if (!file.endsWith(".scrollback")) continue;
+      if (!file.endsWith(".scrollback")) {
+        continue;
+      }
       const filePath = join(SCROLLBACK_DIR, file);
       const stat = statSync(filePath);
       if (now - stat.mtimeMs > maxAge) {
@@ -196,6 +198,8 @@ export function createTerminal(
       ...process.env,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
+      // Used by Codex/Claude hooks to post completion events back into kOS.
+      KOS_TERMINAL_ID: id,
     },
   });
 
@@ -239,7 +243,9 @@ export function createTerminal(
     }
 
     // Debounced save to disk (every 5 seconds of inactivity)
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     entry.saveTimeout = setTimeout(() => {
       saveScrollback(id, entry.scrollback);
     }, 5000);
@@ -250,7 +256,9 @@ export function createTerminal(
   // Handle terminal exit
   ptyProcess.onExit(({ exitCode }) => {
     // Save scrollback before exit
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     saveScrollback(id, entry.scrollback);
 
     const exitCallback = entry.onExit;
@@ -310,7 +318,9 @@ export function killTerminal(id: string, preserveScrollback = true): void {
   const entry = terminals.get(id);
   if (entry) {
     // Cancel pending save
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
 
     if (preserveScrollback) {
       // Save scrollback for next app launch
@@ -331,7 +341,9 @@ export function clearTerminalScrollback(id: string): void {
   if (entry) {
     entry.scrollback = [];
     entry.scrollbackBytes = 0;
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     deleteScrollback(id);
   }
 }
@@ -339,7 +351,9 @@ export function clearTerminalScrollback(id: string): void {
 // Get terminal info
 export function getTerminalInfo(id: string): TerminalInfo | null {
   const entry = terminals.get(id);
-  if (!entry) return null;
+  if (!entry) {
+    return null;
+  }
 
   return {
     id,
@@ -354,7 +368,9 @@ export function getTerminalInfo(id: string): TerminalInfo | null {
 export function killAllTerminals(): void {
   for (const [id, entry] of terminals) {
     // Cancel pending save and save immediately
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     saveScrollback(id, entry.scrollback);
     entry.pty.kill();
     terminals.delete(id);
@@ -370,7 +386,9 @@ export function getActiveTerminals(): string[] {
 // Returns the child process names if any
 export function getTerminalChildProcesses(id: string): string[] {
   const entry = terminals.get(id);
-  if (!entry) return [];
+  if (!entry) {
+    return [];
+  }
 
   try {
     // Use pgrep to find child processes of the shell
@@ -379,7 +397,9 @@ export function getTerminalChildProcesses(id: string): string[] {
       encoding: "utf-8",
     }).trim();
 
-    if (!result) return [];
+    if (!result) {
+      return [];
+    }
 
     // Get the names of child processes
     const childPids = result.split("\n").filter(Boolean);
@@ -390,7 +410,9 @@ export function getTerminalChildProcesses(id: string): string[] {
         const name = execSync(`ps -p ${pid} -o comm= 2>/dev/null || true`, {
           encoding: "utf-8",
         }).trim();
-        if (name) names.push(name);
+        if (name) {
+          names.push(name);
+        }
       } catch {
         // Ignore errors for individual process lookups
       }
@@ -467,8 +489,12 @@ export async function execInManagedTerminal(
   timeoutMs = 30000,
 ): Promise<{ output: string; exitCode?: number }> {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
 
   return new Promise((resolve) => {
     let output = "";
@@ -517,8 +543,12 @@ export function readManagedTerminalOutput(
   maxBytes = 50000,
 ): string {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
 
   // Return recent scrollback
   const fullOutput = entry.scrollback.join("");
@@ -527,7 +557,9 @@ export function readManagedTerminalOutput(
 
 // Close a managed terminal
 export function closeManagedTerminal(id: string, force = false): void {
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
 
   console.log(`[terminal-service] Closing managed terminal: id=${id}, force=${force}`);
   managedTerminals.delete(id);
@@ -566,8 +598,12 @@ export function listManagedTerminals(): {
 // Copy managed terminal output to clipboard and return the copied text
 export function copyManagedTerminalOutput(id: string, maxBytes = 50000): string {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
 
   // Get recent scrollback
   const fullOutput = entry.scrollback.join("");

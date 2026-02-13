@@ -24,9 +24,16 @@ struct IOSGatewayChatTransport: OpenClawChatTransport, Sendable {
         struct Params: Codable {
             var includeGlobal: Bool
             var includeUnknown: Bool
+            var includeDerivedTitles: Bool
+            var includeLastMessage: Bool
             var limit: Int?
         }
-        let data = try JSONEncoder().encode(Params(includeGlobal: true, includeUnknown: false, limit: limit))
+        let data = try JSONEncoder().encode(Params(
+            includeGlobal: true,
+            includeUnknown: false,
+            includeDerivedTitles: true,
+            includeLastMessage: true,
+            limit: limit))
         let json = String(data: data, encoding: .utf8)
         let res = try await self.gateway.request(method: "sessions.list", paramsJSON: json, timeoutSeconds: 15)
         return try JSONDecoder().decode(OpenClawChatSessionsListResponse.self, from: res)

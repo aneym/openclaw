@@ -26,6 +26,7 @@ export function useSessionActions(
   const archiveChat = useChatStore((s) => s.archiveChat);
   const addChat = useChatStore((s) => s.addChat);
   const openThreadInPane = usePanelStore((s) => s.openThreadInPane);
+  const closePanelsForChat = usePanelStore((s) => s.closePanelsForChat);
 
   const archive = useCallback(async () => {
     if (!connected) {
@@ -37,6 +38,8 @@ export function useSessionActions(
 
     try {
       await request("sessions.patch", { key: sessionKey, archived: true });
+      // Close any panels showing this chat before archiving
+      closePanelsForChat(chatId);
       archiveChat(chatId);
       notifications.sessionArchived(sessionKey);
       setState({ isLoading: false, error: null });
@@ -47,7 +50,7 @@ export function useSessionActions(
       notifications.rpcError("sessions.patch", message);
       return false;
     }
-  }, [connected, request, sessionKey, chatId, archiveChat]);
+  }, [connected, request, sessionKey, chatId, archiveChat, closePanelsForChat]);
 
   const resetSession = useCallback(() => {
     const uuid = crypto.randomUUID();

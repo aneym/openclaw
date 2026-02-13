@@ -1,5 +1,7 @@
+import { Globe, Keyboard } from "lucide-react";
 import { useMemo } from "react";
 import type { PanelType, PanelTab } from "../../types";
+import { supportsPanelType } from "../../lib/runtime";
 import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
@@ -7,12 +9,16 @@ import { TABBED_PANEL_TYPES } from "../../types";
 import { CodingSessionPanel } from "../coding/CodingSessionPanel";
 import { KanbanBoard } from "../kanban/KanbanBoard";
 import { KanbanEmptyState } from "../kanban/KanbanEmptyState";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { BrowserPanel } from "./BrowserPanel";
 import { ChatPanel } from "./ChatPanel";
 import { EmptyChatPane } from "./EmptyChatPane";
 import { EmptyTerminalPane } from "./EmptyTerminalPane";
+import { GatewayTasksBoard } from "./GatewayTasksBoard";
+import { GitPanel } from "./GitPanel";
 import { PanelTypeSwitcher } from "./PanelTypeSwitcher";
 import { TerminalPanel } from "./TerminalPanel";
+import { UnsupportedPanelPane } from "./UnsupportedPanelPane";
 
 interface PanelContentProps {
   type: PanelType;
@@ -50,7 +56,9 @@ export function PanelContent({
   const layoutsMap = usePanelStore((s) => s.layouts);
   const openChatIds = useMemo(() => {
     const layout = layoutsMap.get(workspaceId);
-    if (!layout) return new Set<string>();
+    if (!layout) {
+      return new Set<string>();
+    }
     const ids = new Set<string>();
     for (const [pId, panel] of layout.panels) {
       if (panel.type === "chat" && pId !== panelId) {
@@ -61,7 +69,9 @@ export function PanelContent({
         // Collect tab contentIds (tabbed panels)
         if (panel.tabs) {
           for (const tab of panel.tabs) {
-            if (tab.contentId) ids.add(tab.contentId);
+            if (tab.contentId) {
+              ids.add(tab.contentId);
+            }
           }
         }
       }
@@ -83,10 +93,15 @@ export function PanelContent({
         if (!chatId) {
           // Tab has no contentId - show empty state with session picker
           return (
-            <EmptyChatPane workspaceId={workspaceId} panelId={panelId} openChatIds={openChatIds} />
+            <EmptyChatPane
+              workspaceId={workspaceId}
+              panelId={panelId}
+              openChatIds={openChatIds}
+              initialAgentId={data?.agentId as string | undefined}
+            />
           );
         }
-        return <ChatPanel chatId={chatId} autoFocus={isFocused} />;
+        return <ChatPanel chatId={chatId} panelId={panelId} autoFocus={isFocused} />;
       }
 
       // For non-tabbed (legacy) panels, fall back to activeChatId
@@ -94,10 +109,15 @@ export function PanelContent({
 
       if (!chatId) {
         return (
-          <EmptyChatPane workspaceId={workspaceId} panelId={panelId} openChatIds={openChatIds} />
+          <EmptyChatPane
+            workspaceId={workspaceId}
+            panelId={panelId}
+            openChatIds={openChatIds}
+            initialAgentId={data?.agentId as string | undefined}
+          />
         );
       }
-      return <ChatPanel chatId={chatId} autoFocus={isFocused} />;
+      return <ChatPanel chatId={chatId} panelId={panelId} autoFocus={isFocused} />;
     }
 
     case "coding-session": {
@@ -122,6 +142,20 @@ export function PanelContent({
     }
 
     case "terminal": {
+      if (!supportsPanelType("terminal")) {
+        return (
+          <UnsupportedPanelPane
+            workspaceId={workspaceId}
+            panelId={panelId}
+            title="Terminal unavailable in browser"
+            message="Terminal panels require the Electron desktop runtime. Open kOS in the desktop app to use shell tools."
+            icon={Keyboard}
+            suggestedType="chat"
+            suggestedActionLabel="Switch to Chat"
+          />
+        );
+      }
+
       // For tabbed panels, use the active tab's contentId as terminalId
       // For non-tabbed (legacy), use panel data or panelId as fallback
       // The stable ID allows PTY to survive HMR (detach on unmount, reattach on remount)
@@ -175,9 +209,23 @@ export function PanelContent({
     }
 
     case "browser": {
+      if (!supportsPanelType("browser")) {
+        return (
+          <UnsupportedPanelPane
+            workspaceId={workspaceId}
+            panelId={panelId}
+            title="Browser panel unavailable in browser mode"
+            message="The embedded BrowserView is provided by Electron. Use this panel from the desktop app."
+            icon={Globe}
+            suggestedType="chat"
+            suggestedActionLabel="Switch to Chat"
+          />
+        );
+      }
+
       const url = data?.url as string | undefined;
-      const panelId = data?.panelId as string | undefined;
-      return <BrowserPanel panelId={panelId ?? "browser-default"} initialUrl={url} />;
+      const browserId = data?.panelId as string | undefined;
+      return <BrowserPanel panelId={browserId ?? "browser-default"} initialUrl={url} />;
     }
 
     case "preview":
@@ -220,6 +268,15 @@ export function PanelContent({
           </div>
         </div>
       );
+
+    case "artifact":
+      return <ArtifactPanel />;
+
+    case "git":
+      return <GitPanel />;
+
+    case "gateway-tasks":
+      return <GatewayTasksBoard />;
 
     case "empty":
       return (

@@ -30,6 +30,9 @@ import {
   Eye,
   Code,
   Square,
+  FileText,
+  GitBranch,
+  ListChecks,
 } from "lucide-react";
 import {
   useState,
@@ -320,16 +323,24 @@ export function PanelDndProvider({ workspaceId, children }: PanelDndProviderProp
   const handleDragMove = useCallback(
     (event: DragMoveEvent) => {
       const { over } = event;
-      if (!over || !activeDragData) return;
+      if (!over || !activeDragData) {
+        return;
+      }
 
       // Only update zone for panel drops (gutters/sortable handled by onDragOver)
-      if (over.data.current?.sortable || over.data.current?.type === "gutter") return;
+      if (over.data.current?.sortable || over.data.current?.type === "gutter") {
+        return;
+      }
 
       const panelId = over.data.current?.panelId as string | undefined;
-      if (!panelId) return;
+      if (!panelId) {
+        return;
+      }
 
       const rect = over.rect;
-      if (!rect) return;
+      if (!rect) {
+        return;
+      }
 
       const mousePos = mousePositionRef.current;
       const cursorX = mousePos?.x ?? rect.left + rect.width / 2;
@@ -575,6 +586,9 @@ const PANEL_TYPE_ICONS: Record<PanelType, typeof MessageSquare> = {
   preview: Eye,
   tasks: Kanban,
   code: Code,
+  artifact: FileText,
+  git: GitBranch,
+  "gateway-tasks": ListChecks,
   empty: Square,
 };
 
@@ -586,6 +600,9 @@ const PANEL_TYPE_LABELS: Record<PanelType, string> = {
   preview: "Preview",
   tasks: "Tasks",
   code: "Code",
+  artifact: "Artifact",
+  git: "Git",
+  "gateway-tasks": "Gateway Tasks",
   empty: "Empty",
 };
 
@@ -632,7 +649,9 @@ function DragOverlayContent({
     let label = PANEL_TYPE_LABELS[type];
     if (dragData.contentId) {
       const chat = chatsMap.get(dragData.contentId);
-      if (chat?.title) label = chat.title;
+      if (chat?.title) {
+        label = chat.title;
+      }
     }
     return <PillOverlay icon={Icon} label={label} />;
   }

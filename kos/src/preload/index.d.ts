@@ -308,6 +308,20 @@ export interface TerminalAPI {
   copyManaged: (id: string) => Promise<{ copied: boolean; length: number }>;
 }
 
+export interface TriageBridgeAPI {
+  getInfo: () => Promise<{ endpoint: string; token: string } | null>;
+  onEvent: (
+    callback: (event: {
+      source: "claude" | "codex" | "terminal";
+      terminalId: string;
+      title?: string;
+      preview?: string;
+      occurredAt?: number;
+      sourceEventId?: string;
+    }) => void,
+  ) => () => void;
+}
+
 export interface BrowserAPI {
   // Initialize browser panel, returns initial tab ID
   create: (bounds: Rectangle) => Promise<string>;
@@ -380,6 +394,7 @@ declare global {
       getGatewayConfig: () => Promise<{ url: string; token?: string; source?: string }>;
       openDirectoryDialog: () => Promise<{ canceled: boolean; filePaths: string[] }>;
       setDockBadge: (count: number) => void;
+      triageBridge: TriageBridgeAPI;
       config: ConfigAPI;
       projects: ProjectsAPI;
       git: GitAPI;
@@ -392,5 +407,3 @@ declare global {
     };
   }
 }
-
-export {};

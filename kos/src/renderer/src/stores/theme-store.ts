@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { ThemeDefinition } from "../types";
 import { builtInThemes } from "../lib/built-in-themes";
+import { getInitialThemeConfig, saveThemeConfig } from "../lib/theme-storage";
 
 export interface GlassSettings {
   chromeTint: number; // 0–100, default 6 (light) / 12 (dark)
@@ -30,10 +31,10 @@ interface ThemeState {
   getActiveTheme: () => ThemeDefinition | undefined;
 }
 
-function persistToFile(state: ThemeState): void {
+function persistThemeConfig(state: ThemeState): void {
   // Only persist user-installed themes (not built-in)
   const userThemes = state.themes.filter((t) => !t.isBuiltIn);
-  window.api?.config.saveThemes({
+  saveThemeConfig({
     version: 1,
     themes: userThemes,
     activeThemeId: state.activeThemeId,
@@ -43,9 +44,9 @@ function persistToFile(state: ThemeState): void {
   });
 }
 
-// Read initial config synchronously from preload (set before React renders)
+// Read initial config synchronously from preload when available, otherwise localStorage.
 function getInitialState() {
-  const config = window.api?.initialThemeConfig;
+  const config = getInitialThemeConfig();
   if (!config) {
     return {
       themes: builtInThemes,
@@ -83,25 +84,25 @@ export const useThemeStore = create<ThemeState>()((set, get) => ({
 
   setLiquidGlass: (enabled: boolean) => {
     set({ liquidGlass: enabled });
-    persistToFile(get());
+    persistThemeConfig(get());
   },
 
   setGlass: (patch: Partial<GlassSettings>) => {
     set((state) => ({ glass: { ...state.glass, ...patch } }));
-    persistToFile(get());
+    persistThemeConfig(get());
   },
 
   setActiveTheme: (id: string) => {
     const theme = get().themes.find((t) => t.id === id);
     if (theme) {
       set({ activeThemeId: id });
-      persistToFile(get());
+      persistThemeConfig(get());
     }
   },
 
   setMode: (mode: "light" | "dark" | "system") => {
     set({ mode });
-    persistToFile(get());
+    persistThemeConfig(get());
   },
 
   installTheme: (theme: ThemeDefinition) => {
@@ -115,20 +116,22 @@ export const useThemeStore = create<ThemeState>()((set, get) => ({
       }
       return { themes: [...state.themes, theme] };
     });
-    persistToFile(get());
+    persistThemeConfig(get());
   },
 
   removeTheme: (id: string) => {
     const theme = get().themes.find((t) => t.id === id);
     // Cannot remove built-in themes
-    if (!theme || theme.isBuiltIn) return;
+    if (!theme || theme.isBuiltIn) {
+      return;
+    }
 
     set((state) => ({
       themes: state.themes.filter((t) => t.id !== id),
       // If removing the active theme, fall back to default
-      activeThemeId: state.activeThemeId === id ? "default" : state.activeThemeId,
+      activeThemeId: state.activeThemeId === id ? "palantir" : state.activeThemeId,
     }));
-    persistToFile(get());
+    persistThemeConfig(get());
   },
 
   getActiveTheme: () => {

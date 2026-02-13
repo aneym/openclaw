@@ -317,11 +317,22 @@ export type PluginHookAgentContext = {
   sessionKey?: string;
   workspaceDir?: string;
   messageProvider?: string;
+  channelId?: string;
+  accountId?: string;
+  senderId?: string;
+  senderName?: string;
+  senderUsername?: string;
+  senderE164?: string;
 };
 
 // before_agent_start hook
 export type PluginHookBeforeAgentStartEvent = {
   prompt: string;
+  /**
+   * Raw inbound user message without OpenClaw envelope/system prepends.
+   * Prefer this for retrieval queries to avoid prompt wrapper noise.
+   */
+  rawMessage?: string;
   messages?: unknown[];
 };
 

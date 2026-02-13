@@ -3,7 +3,7 @@ import { useState } from "react";
 import type { Profile } from "../../types";
 import { cn } from "../../lib/utils";
 import { useProfileStore, useActiveProfile } from "../../stores/profile-store";
-import { DEFAULT_GATEWAY_URL } from "../../types/profile";
+import { DEFAULT_GATEWAY_URL, resolveGatewayConnection } from "../../types/profile";
 import { Button } from "../ui/button";
 import {
   Dialog,
@@ -60,9 +60,13 @@ export function ProfileSettings() {
   const [formData, setFormData] = useState<ProfileFormData>(defaultFormData);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const sortedProfiles = Array.from(profiles.values()).sort((a, b) => {
-    if (a.isDefault && !b.isDefault) return -1;
-    if (!a.isDefault && b.isDefault) return 1;
+  const sortedProfiles = Array.from(profiles.values()).toSorted((a, b) => {
+    if (a.isDefault && !b.isDefault) {
+      return -1;
+    }
+    if (!a.isDefault && b.isDefault) {
+      return 1;
+    }
     return a.name.localeCompare(b.name);
   });
 
@@ -83,13 +87,18 @@ export function ProfileSettings() {
   };
 
   const handleSave = () => {
+    const normalizedConnection = resolveGatewayConnection({
+      gatewayUrl: formData.gatewayUrl || DEFAULT_GATEWAY_URL,
+      gatewayToken: formData.gatewayToken || undefined,
+    });
+
     if (isCreating) {
       createProfile({
         name: formData.name || "New Profile",
         icon: formData.icon,
         color: formData.color,
-        gatewayUrl: formData.gatewayUrl || DEFAULT_GATEWAY_URL,
-        gatewayToken: formData.gatewayToken || undefined,
+        gatewayUrl: normalizedConnection.gatewayUrl,
+        gatewayToken: normalizedConnection.gatewayToken,
         isDefault: false,
       });
       setIsCreating(false);
@@ -98,8 +107,8 @@ export function ProfileSettings() {
         name: formData.name,
         icon: formData.icon,
         color: formData.color,
-        gatewayUrl: formData.gatewayUrl,
-        gatewayToken: formData.gatewayToken || undefined,
+        gatewayUrl: normalizedConnection.gatewayUrl,
+        gatewayToken: normalizedConnection.gatewayToken,
       });
       setEditingProfile(null);
     }

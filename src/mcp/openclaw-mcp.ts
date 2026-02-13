@@ -15,6 +15,40 @@ function getCallbackSessionKey(): string | undefined {
   return raw || undefined;
 }
 
+function readFirstEnv(keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const raw = process.env[key];
+    if (!raw) {
+      continue;
+    }
+    const trimmed = raw.trim();
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+  return undefined;
+}
+
+type CallbackRouteContext = {
+  channel?: string;
+  to?: string;
+  threadId?: string;
+  accountId?: string;
+};
+
+function getCallbackRouteContext(): CallbackRouteContext {
+  const channel = readFirstEnv(["OPENCLAW_MESSAGE_CHANNEL", "OPENCLAW_CHANNEL"]);
+  const to = readFirstEnv(["OPENCLAW_MESSAGE_TO", "OPENCLAW_TO"]);
+  const threadId = readFirstEnv(["OPENCLAW_MESSAGE_THREAD_ID", "OPENCLAW_THREAD_ID"]);
+  const accountId = readFirstEnv(["OPENCLAW_MESSAGE_ACCOUNT_ID", "OPENCLAW_ACCOUNT_ID"]);
+  return {
+    channel,
+    to,
+    threadId,
+    accountId,
+  };
+}
+
 function normalizeBool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
@@ -100,7 +134,7 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
   });
 
   const shared = baseCallOpts(opts);
-  const callbackKey = getCallbackSessionKey();
+  const callbackPreviewKey = getCallbackSessionKey();
 
   // ── report_back ───────────────────────────────────────────────
   // Zero-config tool: uses OPENCLAW_SESSION_KEY from env (set by spawning agent).
@@ -113,19 +147,39 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
         "No session key needed — it uses the OPENCLAW_SESSION_KEY environment variable " +
         "set by the spawning agent. Use this when you finish a task and want to notify " +
         "the agent that asked you to do it." +
-        (callbackKey
-          ? ` (Callback session: ${callbackKey})`
+        (callbackPreviewKey
+          ? ` (Callback session: ${callbackPreviewKey})`
           : " (WARNING: OPENCLAW_SESSION_KEY not set — this tool will fail.)"),
       inputSchema: {
         message: z.string().describe("The message to send back to the spawning agent."),
+        sessionKey: z
+          .string()
+          .optional()
+          .describe(
+            "Optional callback session key override. Defaults to OPENCLAW_SESSION_KEY from env.",
+          ),
         deliver: z
           .boolean()
           .optional()
           .describe("Whether to deliver to connected channels (default true)."),
+        inject: z
+          .boolean()
+          .optional()
+          .describe(
+            "If true, append the message directly via chat.inject (no agent run). Useful for stop-hook status updates like 'codex turn completed'.",
+          ),
+        label: z
+          .string()
+          .optional()
+          .describe("Optional label prefix when inject=true (e.g. 'codex hook')."),
       },
     },
     async (args) => {
-      if (!callbackKey) {
+      const sessionKey =
+        typeof args.sessionKey === "string" && args.sessionKey.trim()
+          ? args.sessionKey.trim()
+          : getCallbackSessionKey();
+      if (!sessionKey) {
         return {
           content: [
             {
@@ -148,24 +202,43 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
       }
 
       const deliver = normalizeBool(args.deliver, true);
+      const inject = normalizeBool(args.inject, false);
+      const routeContext = getCallbackRouteContext();
       try {
-        const payload = await callGateway({
-          ...shared,
-          method: "agent",
-          params: {
-            sessionKey: callbackKey,
-            message,
-            deliver,
-            idempotencyKey: randomUUID(),
-          },
-          expectFinal: false,
-        });
+        const payload = inject
+          ? await callGateway({
+              ...shared,
+              method: "chat.inject",
+              params: {
+                sessionKey,
+                message,
+                label:
+                  typeof args.label === "string" && args.label.trim()
+                    ? args.label.trim()
+                    : undefined,
+              },
+            })
+          : await callGateway({
+              ...shared,
+              method: "agent",
+              params: {
+                sessionKey,
+                message,
+                deliver,
+                idempotencyKey: randomUUID(),
+                channel: routeContext.channel,
+                to: routeContext.to,
+                threadId: routeContext.threadId,
+                accountId: routeContext.accountId,
+              },
+              expectFinal: false,
+            });
         return {
           content: [
             {
               type: "text" as const,
               text: JSON.stringify(
-                { reported: true, sessionKey: callbackKey, ...payload },
+                { reported: true, injected: inject, sessionKey, ...payload },
                 null,
                 2,
               ),
@@ -262,6 +335,19 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
           .boolean()
           .optional()
           .describe("Whether to deliver the response to connected channels (default true)."),
+        channel: z
+          .string()
+          .optional()
+          .describe("Optional explicit channel override (e.g. telegram, discord, slack)."),
+        to: z
+          .string()
+          .optional()
+          .describe("Optional explicit target/chat id override for delivery routing."),
+        threadId: z.string().optional().describe("Optional explicit thread/topic id override."),
+        accountId: z
+          .string()
+          .optional()
+          .describe("Optional account id override for multi-account channels."),
         thinking: z.string().optional(),
         timeoutSeconds: z.number().nonnegative().optional(),
         idempotencyKey: z.string().optional(),
@@ -285,12 +371,28 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
 
       const deliver = normalizeBool(args.deliver, true);
       const thinking =
-        typeof args.thinking === "string" && args.thinking.trim() ? args.thinking : undefined;
+        typeof args.thinking === "string" && args.thinking.trim()
+          ? args.thinking.trim()
+          : undefined;
       const timeoutSeconds = normalizePositiveInt(args.timeoutSeconds);
       const idempotencyKey =
         typeof args.idempotencyKey === "string" && args.idempotencyKey.trim()
           ? args.idempotencyKey.trim()
           : randomUUID();
+      const routeContext = getCallbackRouteContext();
+      const channel =
+        typeof args.channel === "string" && args.channel.trim()
+          ? args.channel.trim()
+          : routeContext.channel;
+      const to = typeof args.to === "string" && args.to.trim() ? args.to.trim() : routeContext.to;
+      const threadId =
+        typeof args.threadId === "string" && args.threadId.trim()
+          ? args.threadId.trim()
+          : routeContext.threadId;
+      const accountId =
+        typeof args.accountId === "string" && args.accountId.trim()
+          ? args.accountId.trim()
+          : routeContext.accountId;
 
       try {
         const payload = await callGateway({
@@ -303,6 +405,10 @@ export async function serveOpenClawMcpServer(opts?: OpenClawMcpServeOptions): Pr
             thinking,
             timeout: timeoutSeconds,
             idempotencyKey,
+            channel,
+            to,
+            threadId,
+            accountId,
           },
           expectFinal: false,
         });

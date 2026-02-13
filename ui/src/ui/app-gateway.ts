@@ -121,6 +121,46 @@ type ChatStatusActiveRun = {
 };
 
 const statusManySupportByHost = new WeakMap<GatewayHost, boolean>();
+const SESSION_RENAME_REFRESH_THROTTLE_MS = 1_000;
+const SESSION_RENAME_REFRESH_RETRY_DELAYS_MS = [3_000, 10_000] as const;
+const sessionRenameRefreshTimersByHost = new WeakMap<GatewayHost, number[]>();
+const sessionRenameRefreshLastAtByHost = new WeakMap<GatewayHost, number>();
+
+function clearSessionRenameRefreshTimers(host: GatewayHost): void {
+  const timers = sessionRenameRefreshTimersByHost.get(host);
+  if (!timers?.length) {
+    return;
+  }
+  for (const timer of timers) {
+    window.clearTimeout(timer);
+  }
+  sessionRenameRefreshTimersByHost.delete(host);
+}
+
+function refreshSessionTitles(host: GatewayHost): void {
+  const now = Date.now();
+  const lastAt = sessionRenameRefreshLastAtByHost.get(host) ?? 0;
+  if (now - lastAt < SESSION_RENAME_REFRESH_THROTTLE_MS) {
+    return;
+  }
+  sessionRenameRefreshLastAtByHost.set(host, now);
+  void loadSessions(host as unknown as OpenClawApp, {
+    activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
+  });
+}
+
+// Auto-title writes can land several seconds after chat.final.
+// Coalesced retries ensure sidebar titles eventually converge.
+function scheduleSessionTitleRefresh(host: GatewayHost): void {
+  refreshSessionTitles(host);
+  clearSessionRenameRefreshTimers(host);
+  const timers = SESSION_RENAME_REFRESH_RETRY_DELAYS_MS.map((delayMs) =>
+    window.setTimeout(() => {
+      refreshSessionTitles(host);
+    }, delayMs),
+  );
+  sessionRenameRefreshTimersByHost.set(host, timers);
+}
 
 function collectVisibleSessionKeys(host: GatewayHost): string[] {
   const keys = new Set<string>([host.sessionKey]);
@@ -548,6 +588,7 @@ export function connectGateway(host: GatewayHost) {
     },
     onClose: ({ code, reason }) => {
       host.connected = false;
+      clearSessionRenameRefreshTimers(host);
       // Code 1012 = Service Restart (expected during config saves, don't show as error)
       if (code !== 1012) {
         host.lastError = `disconnected (${code}): ${reason || "no reason"}`;
@@ -715,19 +756,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
         if (threadState === "final" || threadState === "error" || threadState === "aborted") {
           resetToolStreamForThread(paneThread);
           const runId = payload.runId;
-          if (runId && host.refreshSessionsAfterChat.has(runId)) {
+          if (runId) {
             host.refreshSessionsAfterChat.delete(runId);
-            if (threadState === "final") {
-              void loadSessions(host as unknown as OpenClawApp, {
-                activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-              });
-              // Delayed refresh to pick up server-side auto-title
-              setTimeout(() => {
-                void loadSessions(host as unknown as OpenClawApp, {
-                  activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-                });
-              }, 3000);
-            }
+          }
+          if (threadState === "final") {
+            scheduleSessionTitleRefresh(host);
           }
 
           if (threadState === "final" && eventSessionKey && paneThreadId) {
@@ -772,19 +805,11 @@ function handleGatewayEventUnsafe(host: GatewayHost, evt: GatewayEventFrame) {
     if (state === "final" || state === "error" || state === "aborted") {
       resetToolStream(host as unknown as Parameters<typeof resetToolStream>[0]);
       const runId = payload?.runId;
-      if (runId && host.refreshSessionsAfterChat.has(runId)) {
+      if (runId) {
         host.refreshSessionsAfterChat.delete(runId);
-        if (state === "final") {
-          void loadSessions(host as unknown as OpenClawApp, {
-            activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-          });
-          // Delayed refresh to pick up server-side auto-title
-          setTimeout(() => {
-            void loadSessions(host as unknown as OpenClawApp, {
-              activeMinutes: CHAT_SESSIONS_ACTIVE_MINUTES,
-            });
-          }, 3000);
-        }
+      }
+      if (state === "final") {
+        scheduleSessionTitleRefresh(host);
       }
       if (state === "final") {
         // Play notification sound if enabled and user isn't watching

@@ -6,6 +6,27 @@ import { logDebug, logError } from "../logger.js";
 import { resolveCommandStdio } from "./spawn-utils.js";
 
 const execFileAsync = promisify(execFile);
+const MAX_LOG_ARGS = 8;
+const MAX_LOG_ARG_CHARS = 100;
+
+function summarizeArgForLog(arg: string): string {
+  const looksLikeConversation =
+    /\[role:\s*(user|assistant|toolresult|system)\]/i.test(arg) || arg.length > 200;
+  if (looksLikeConversation) {
+    return `<arg:${arg.length} chars>`;
+  }
+  const singleLine = arg.replace(/\s+/g, " ").trim();
+  if (singleLine.length <= MAX_LOG_ARG_CHARS) {
+    return singleLine;
+  }
+  return `${singleLine.slice(0, MAX_LOG_ARG_CHARS)}…`;
+}
+
+function summarizeCommandForLog(command: string, args: string[]): string {
+  const shown = args.slice(0, MAX_LOG_ARGS).map((arg) => summarizeArgForLog(arg));
+  const hidden = args.length - shown.length;
+  return [command, ...shown, hidden > 0 ? `…(+${hidden} args)` : ""].filter(Boolean).join(" ");
+}
 
 /**
  * Resolves a command for Windows compatibility.
@@ -56,7 +77,7 @@ export async function runExec(
     return { stdout, stderr };
   } catch (err) {
     if (shouldLogVerbose()) {
-      logError(danger(`Command failed: ${command} ${args.join(" ")}`));
+      logError(danger(`Command failed: ${summarizeCommandForLog(command, args)}`));
     }
     throw err;
   }

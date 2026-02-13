@@ -24,9 +24,22 @@ public struct AnyCodable: Codable, @unchecked Sendable {
     public func encode(to encoder: Encoder) throws {
         var container = encoder.singleValueContainer()
         switch self.value {
+        // JSONSerialization uses NSNumber for booleans (kCFBooleanTrue/False). Preserve those as Bool.
+        case let number as NSNumber:
+            if CFGetTypeID(number) == CFBooleanGetTypeID() {
+                try container.encode(number.boolValue)
+            } else {
+                // Prefer integral encoding when the value is representable as an Int64.
+                let int64 = number.int64Value
+                if NSNumber(value: int64) == number {
+                    try container.encode(int64)
+                } else {
+                    try container.encode(number.doubleValue)
+                }
+            }
+        case let boolVal as Bool: try container.encode(boolVal)
         case let intVal as Int: try container.encode(intVal)
         case let doubleVal as Double: try container.encode(doubleVal)
-        case let boolVal as Bool: try container.encode(boolVal)
         case let stringVal as String: try container.encode(stringVal)
         case is NSNull: try container.encodeNil()
         case let dict as [String: AnyCodable]: try container.encode(dict)

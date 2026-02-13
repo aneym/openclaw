@@ -166,9 +166,16 @@ export function attachGatewayWsConnectionHandler(params: {
         ...closeMeta,
       };
       if (!client) {
+        const authReason =
+          typeof closeMeta.authReason === "string" ? closeMeta.authReason : undefined;
+        const isRoutineUnauthorizedRetry =
+          closeCause === "unauthorized" &&
+          (authReason === "token_missing" || authReason === "token_mismatch");
         const logFn = isNoisySwiftPmHelperClose(requestUserAgent, remoteAddr)
           ? logWsControl.debug
-          : logWsControl.warn;
+          : isRoutineUnauthorizedRetry
+            ? logWsControl.debug
+            : logWsControl.warn;
         logFn(
           `closed before connect conn=${connId} remote=${remoteAddr ?? "?"} fwd=${forwardedFor ?? "n/a"} origin=${requestOrigin ?? "n/a"} host=${requestHost ?? "n/a"} ua=${requestUserAgent ?? "n/a"} code=${code ?? "n/a"} reason=${reason?.toString() || "n/a"}`,
           closeContext,

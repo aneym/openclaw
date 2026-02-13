@@ -84,11 +84,31 @@ export function normalizeMessage(raw: unknown, chatId: string): ChatMessage {
     parts.push({ type: "audio", url: aud.url, filename: aud.filename });
   }
 
+  // Prefer stable IDs when available. Some gateway messages (notably pending webchat
+  // user prompts) may not have `id` but do have `messageId`. Using it avoids
+  // random IDs that can cause React ordering/key issues during incremental refreshes.
+  const id =
+    (typeof m.id === "string" && m.id) ||
+    (typeof m.messageId === "string" && m.messageId) ||
+    (typeof m.message_id === "string" && m.message_id) ||
+    generateId();
+
+  const createdAt =
+    typeof m.timestamp === "number"
+      ? m.timestamp
+      : typeof m.timestamp === "string" && Number.isFinite(Number(m.timestamp))
+        ? Number(m.timestamp)
+        : typeof m.createdAtMs === "number"
+          ? m.createdAtMs
+          : typeof m.createdAt === "number"
+            ? m.createdAt
+            : Date.now();
+
   return {
-    id: (m.id as string) ?? generateId(),
+    id,
     role: normalizeRole(m.role as string),
     parts,
-    createdAt: (m.timestamp as number) ?? Date.now(),
+    createdAt,
     chatId,
     metadata: m.metadata as Record<string, unknown> | undefined,
   };
@@ -105,12 +125,20 @@ function generateId(): string {
  * Normalize role string to our canonical role types.
  */
 function normalizeRole(role: unknown): ChatMessage["role"] {
-  if (typeof role !== "string") return "assistant";
+  if (typeof role !== "string") {
+    return "assistant";
+  }
 
   const lower = role.toLowerCase();
-  if (lower === "user") return "user";
-  if (lower === "assistant") return "assistant";
-  if (lower === "system") return "system";
+  if (lower === "user") {
+    return "user";
+  }
+  if (lower === "assistant") {
+    return "assistant";
+  }
+  if (lower === "system") {
+    return "system";
+  }
   if (
     lower === "tool" ||
     lower === "toolresult" ||
@@ -213,7 +241,9 @@ function extractThinking(m: Record<string, unknown>): string | null {
 
   // Back-compat: extract <think> or <thinking> tags from raw text
   const rawText = extractRawText(m);
-  if (!rawText) return null;
+  if (!rawText) {
+    return null;
+  }
 
   const matches = Array.from(
     rawText.matchAll(/<\s*think(?:ing)?\s*>([\s\S]*?)<\s*\/\s*think(?:ing)?\s*>/gi),
@@ -284,7 +314,9 @@ function stripEnvelope(text: string): string {
   ];
 
   const match = text.match(ENVELOPE_PREFIX);
-  if (!match) return text;
+  if (!match) {
+    return text;
+  }
 
   const header = match[1] ?? "";
 
@@ -294,7 +326,9 @@ function stripEnvelope(text: string): string {
     /\d{4}-\d{2}-\d{2} \d{2}:\d{2}\b/.test(header) ||
     ENVELOPE_CHANNELS.some((label) => header.startsWith(`${label} `));
 
-  if (!looksLikeEnvelope) return text;
+  if (!looksLikeEnvelope) {
+    return text;
+  }
 
   return text.slice(match[0].length);
 }
@@ -462,7 +496,9 @@ const IMAGE_EXTS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "
 
 function getExtension(path: string): string {
   const dot = path.lastIndexOf(".");
-  if (dot === -1) return "";
+  if (dot === -1) {
+    return "";
+  }
   // Strip query/hash if present
   return path
     .slice(dot + 1)
@@ -475,8 +511,12 @@ function getExtension(path: string): string {
  * e.g. /var/folders/.../file.mp3 → kos-media://local/var/folders/.../file.mp3
  */
 function toMediaUrl(path: string): string {
-  if (/^https?:\/\//i.test(path)) return path;
-  if (path.startsWith("kos-media://")) return path;
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  if (path.startsWith("kos-media://")) {
+    return path;
+  }
   // Absolute path → kos-media://local/...
   if (path.startsWith("/")) {
     return "kos-media://local" + path;

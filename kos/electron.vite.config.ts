@@ -13,6 +13,8 @@ export default defineConfig({
   renderer: {
     server: {
       port: 5175,
+      host: "0.0.0.0",
+      allowedHosts: ["studio.tailf266ac.ts.net"],
     },
     resolve: {
       alias: {

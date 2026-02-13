@@ -1,4 +1,5 @@
-import { useMemo, memo } from "react";
+import { Copy, Check } from "lucide-react";
+import { useMemo, memo, useState, useCallback } from "react";
 import type { ActiveTool } from "@/stores/chat-session-store";
 import type {
   ChatMessage,
@@ -28,6 +29,7 @@ interface MessageGroupProps {
   streamReasoning?: string;
   activeTools?: ActiveTool[];
   showTimestamp?: boolean;
+  thinkingVisible?: boolean;
 }
 
 function formatTimestamp(timestamp: number): string {
@@ -119,6 +121,30 @@ function extractPartsByType(messages: ChatMessage[]) {
   return { toolParts, reasoningParts, textParts, imageParts, audioParts, videoParts, fileParts };
 }
 
+function MessageActions({ textParts }: { textParts: Array<{ text: string }> }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    const markdown = textParts.map((tp) => tp.text).join("\n\n");
+    void navigator.clipboard.writeText(markdown).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }, [textParts]);
+
+  return (
+    <div className="opacity-0 group-hover/msg:opacity-100 transition-opacity flex gap-0.5">
+      <button
+        onClick={handleCopy}
+        className="rounded p-1 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        title="Copy as markdown"
+      >
+        {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+      </button>
+    </div>
+  );
+}
+
 /**
  * MessageGroup renders a turn (consecutive messages from the same role).
  *
@@ -136,13 +162,16 @@ export const MessageGroup = memo(function MessageGroup({
   streamReasoning,
   activeTools,
   showTimestamp = true,
+  thinkingVisible = false,
 }: MessageGroupProps) {
   const { toolParts, reasoningParts, textParts, imageParts, audioParts, videoParts, fileParts } =
     useMemo(() => extractPartsByType(messages), [messages]);
 
   // Build tool-only messages for ToolCallGroup (it expects ChatMessage[])
   const toolMessages = useMemo(() => {
-    if (toolParts.length === 0) return [];
+    if (toolParts.length === 0) {
+      return [];
+    }
     // Create a synthetic message containing all tool parts
     const syntheticMessage: ChatMessage = {
       id: `tools-${messages[0]?.id ?? "unknown"}`,
@@ -156,18 +185,27 @@ export const MessageGroup = memo(function MessageGroup({
 
   // Safety-net: strip any residual <think> tags from stream text
   const displayStreamText = useMemo(() => {
-    if (!streamText) return "";
+    if (!streamText) {
+      return "";
+    }
     return streamText
       .replace(/<\s*think(?:ing)?\s*>[\s\S]*?(<\s*\/\s*think(?:ing)?\s*>|$)/gi, "")
       .trim();
   }, [streamText]);
 
-  if (messages.length === 0) return null;
+  if (messages.length === 0) {
+    return null;
+  }
 
   const hasTextContent = textParts.length > 0 || (isStreaming && displayStreamText);
 
   return (
-    <div className={cn("flex flex-col gap-4 group", role === "user" ? "items-end" : "items-start")}>
+    <div
+      className={cn(
+        "flex flex-col gap-4 group group/msg",
+        role === "user" ? "items-end" : "items-start",
+      )}
+    >
       {/* 1. Tool calls, executing tools, and reasoning grouped tightly */}
       {(toolMessages.length > 0 ||
         reasoningParts.length > 0 ||
@@ -178,8 +216,10 @@ export const MessageGroup = memo(function MessageGroup({
           {isStreaming && activeTools && activeTools.length > 0 && (
             <ExecutingTools tools={activeTools} />
           )}
-          {reasoningParts.length > 0 && <ReasoningBlock entries={reasoningParts} />}
-          {isStreaming && streamReasoning && reasoningParts.length === 0 && (
+          {thinkingVisible && reasoningParts.length > 0 && (
+            <ReasoningBlock entries={reasoningParts} />
+          )}
+          {thinkingVisible && isStreaming && streamReasoning && reasoningParts.length === 0 && (
             <ReasoningBlock entries={[{ reasoning: streamReasoning }]} />
           )}
         </div>
@@ -209,6 +249,9 @@ export const MessageGroup = memo(function MessageGroup({
           )}
         </div>
       )}
+
+      {/* Message actions (copy) — shown on hover, only for non-streaming messages with text */}
+      {!isStreaming && textParts.length > 0 && <MessageActions textParts={textParts} />}
 
       {/* 3. Images */}
       {imageParts.map((img, idx) => (

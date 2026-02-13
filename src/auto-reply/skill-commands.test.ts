@@ -24,7 +24,9 @@ describe("resolveSkillCommandInvocation", () => {
   it("matches skill commands and parses args", () => {
     const invocation = resolveSkillCommandInvocation({
       commandBodyNormalized: "/demo_skill do the thing",
-      skillCommands: [{ name: "demo_skill", skillName: "demo-skill", description: "Demo" }],
+      skillCommands: [
+        { name: "demo_skill", skillName: "demo-skill", description: "Demo", nativeCommand: false },
+      ],
     });
     expect(invocation?.command.skillName).toBe("demo-skill");
     expect(invocation?.args).toBe("do the thing");
@@ -33,7 +35,9 @@ describe("resolveSkillCommandInvocation", () => {
   it("supports /skill with name argument", () => {
     const invocation = resolveSkillCommandInvocation({
       commandBodyNormalized: "/skill demo_skill do the thing",
-      skillCommands: [{ name: "demo_skill", skillName: "demo-skill", description: "Demo" }],
+      skillCommands: [
+        { name: "demo_skill", skillName: "demo-skill", description: "Demo", nativeCommand: false },
+      ],
     });
     expect(invocation?.command.name).toBe("demo_skill");
     expect(invocation?.args).toBe("do the thing");
@@ -42,7 +46,9 @@ describe("resolveSkillCommandInvocation", () => {
   it("normalizes /skill lookup names", () => {
     const invocation = resolveSkillCommandInvocation({
       commandBodyNormalized: "/skill demo-skill",
-      skillCommands: [{ name: "demo_skill", skillName: "demo-skill", description: "Demo" }],
+      skillCommands: [
+        { name: "demo_skill", skillName: "demo-skill", description: "Demo", nativeCommand: false },
+      ],
     });
     expect(invocation?.command.name).toBe("demo_skill");
     expect(invocation?.args).toBeUndefined();
@@ -51,7 +57,9 @@ describe("resolveSkillCommandInvocation", () => {
   it("returns null for unknown commands", () => {
     const invocation = resolveSkillCommandInvocation({
       commandBodyNormalized: "/unknown arg",
-      skillCommands: [{ name: "demo_skill", skillName: "demo-skill", description: "Demo" }],
+      skillCommands: [
+        { name: "demo_skill", skillName: "demo-skill", description: "Demo", nativeCommand: false },
+      ],
     });
     expect(invocation).toBeNull();
   });

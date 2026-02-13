@@ -4,6 +4,7 @@ import type { ActiveTool } from "@/stores/chat-session-store";
 import { Button } from "@/components/ui/button";
 import { klog } from "@/lib/klog";
 import { cn } from "@/lib/utils";
+import { peekChatSessionStore } from "@/stores/chat-session-store";
 import { ChatMessage } from "@/types/message";
 import { ExecutingToolsSummary } from "./ExecutingTools";
 import { MessageGroup } from "./MessageGroup";
@@ -18,6 +19,9 @@ interface MessageListProps {
   activeTools?: ActiveTool[];
   awaitingResponse?: boolean;
   className?: string;
+  panelId?: string;
+  chatId?: string;
+  thinkingVisible?: boolean;
 }
 
 interface MessageGrouping {
@@ -65,16 +69,52 @@ export function MessageList({
   activeTools = [],
   awaitingResponse = false,
   className,
+  panelId,
+  chatId,
+  thinkingVisible = false,
 }: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const sentinelRef = useRef<HTMLDivElement>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [hasNewMessages, setHasNewMessages] = useState(false);
-  const prevMessageCountRef = useRef(messages.length);
 
   // Scroll throttling refs for streaming autoscroll
   const scrollThrottleRef = useRef<number | null>(null);
   const userScrolledAwayRef = useRef(false);
+  const lastUserInteractAtRef = useRef<number>(0);
+
+  // Track last message identity, not just length (history can be capped at 200 and stay constant).
+  const prevLastMessageSigRef = useRef<string>("");
+  const lastMessageSig = useMemo(() => {
+    const last = messages.length > 0 ? messages[messages.length - 1] : null;
+    return last ? `${last.id}:${last.createdAt ?? ""}` : "";
+  }, [messages]);
+
+  const markUserInteracting = useCallback(() => {
+    lastUserInteractAtRef.current = Date.now();
+  }, []);
+
+  const userIsInteracting = useCallback(() => {
+    return Date.now() - lastUserInteractAtRef.current < 900;
+  }, []);
+
+  // Report scroll state to the chat-session-store (for cross-pane awareness)
+  const storeRef = useRef<NonNullable<ReturnType<typeof peekChatSessionStore>> | null>(null);
+  useEffect(() => {
+    if (!panelId || !chatId) {
+      return;
+    }
+    // Look up the store (don't create one — it should already exist from ChatPanel)
+    const store = peekChatSessionStore(chatId);
+    if (!store) {
+      return;
+    }
+    storeRef.current = store;
+    return () => {
+      store.getState().clearPaneScroll(panelId);
+      storeRef.current = null;
+    };
+  }, [panelId, chatId]);
 
   // Group consecutive same-role messages
   const messageGroups = useMemo(() => {
@@ -100,23 +140,39 @@ export function MessageList({
 
   // Track user scroll intent — pause autoscroll when user scrolls up
   const handleScroll = useCallback(() => {
+    markUserInteracting();
     const container = containerRef.current;
-    if (!container) return;
+    if (!container) {
+      return;
+    }
     const distanceFromBottom =
       container.scrollHeight - container.scrollTop - container.clientHeight;
 
+    const nearBottom = distanceFromBottom < 50;
+    const scrolledAway = distanceFromBottom > 200;
+
     // If user scrolled more than 200px from bottom, pause autoscroll
-    if (distanceFromBottom > 200) {
+    if (scrolledAway) {
       userScrolledAwayRef.current = true;
-    } else if (distanceFromBottom < 50) {
+    } else if (nearBottom) {
       userScrolledAwayRef.current = false;
     }
-  }, []);
+
+    // Report to store for cross-pane awareness
+    if (panelId && storeRef.current) {
+      storeRef.current.getState().updatePaneScroll(panelId, {
+        userNearBottom: nearBottom,
+        userScrolledAway: scrolledAway,
+      });
+    }
+  }, [markUserInteracting, panelId]);
 
   // Track when we're at the bottom using IntersectionObserver
   useEffect(() => {
     const sentinel = sentinelRef.current;
-    if (!sentinel) return;
+    if (!sentinel) {
+      return;
+    }
 
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -126,6 +182,13 @@ export function MessageList({
         if (entry.isIntersecting) {
           setHasNewMessages(false);
           userScrolledAwayRef.current = false;
+          if (panelId && storeRef.current) {
+            storeRef.current.getState().updatePaneScroll(panelId, {
+              newMessagesBelow: false,
+              userScrolledAway: false,
+              userNearBottom: true,
+            });
+          }
         }
       },
       {
@@ -138,28 +201,47 @@ export function MessageList({
     return () => observer.disconnect();
   }, []);
 
-  // Auto-scroll when new messages arrive (if at bottom)
+  // Auto-scroll when new messages arrive (compare last message identity, not count).
   useEffect(() => {
-    const hasNewMessage = messages.length > prevMessageCountRef.current;
-    prevMessageCountRef.current = messages.length;
+    const prev = prevLastMessageSigRef.current;
+    prevLastMessageSigRef.current = lastMessageSig;
 
-    if (!hasNewMessage) return;
-
-    if (isAtBottom) {
-      // Instant scroll to bottom
-      sentinelRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
-    } else {
-      // Show "new messages" badge when scrolled up
-      setHasNewMessages(true);
+    // No messages or no identity change.
+    if (!lastMessageSig || lastMessageSig === prev) {
+      return;
     }
-  }, [messages.length, isAtBottom]);
 
-  // Auto-scroll during streaming with throttling (if at bottom and user hasn't scrolled away)
+    // If the user is actively scrolling/reading, don't fight them.
+    if (userIsInteracting()) {
+      setHasNewMessages(true);
+      if (panelId && storeRef.current) {
+        storeRef.current.getState().updatePaneScroll(panelId, { newMessagesBelow: true });
+      }
+      return;
+    }
+
+    // Follow new messages without requiring a manual "New messages" click.
+    setHasNewMessages(false);
+    sentinelRef.current?.scrollIntoView({
+      behavior: isAtBottom ? "instant" : "smooth",
+      block: "end",
+    });
+  }, [isAtBottom, lastMessageSig, panelId, userIsInteracting]);
+
+  // Auto-scroll during streaming with throttling.
+  // Important: tool/thinking updates can change without streamText deltas, so include them too.
   useEffect(() => {
-    if (!isStreaming || !isAtBottom || userScrolledAwayRef.current) return;
+    if (!isStreaming) {
+      return;
+    }
+    if (userIsInteracting()) {
+      return;
+    }
 
     // Throttle: only scroll once per 120ms frame
-    if (scrollThrottleRef.current) return;
+    if (scrollThrottleRef.current) {
+      return;
+    }
 
     scrollThrottleRef.current = requestAnimationFrame(() => {
       sentinelRef.current?.scrollIntoView({ behavior: "instant", block: "end" });
@@ -167,7 +249,7 @@ export function MessageList({
         scrollThrottleRef.current = null;
       }, 120);
     });
-  }, [isStreaming, isAtBottom, streamText]); // streamText triggers re-evaluation; throttle ref rate-limits
+  }, [isStreaming, streamText, streamReasoning, activeTools.length, userIsInteracting]); // deps trigger re-evaluation; throttle ref rate-limits
 
   // Scroll to bottom handler
   const scrollToBottom = useCallback(() => {
@@ -180,6 +262,9 @@ export function MessageList({
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        onWheel={markUserInteracting}
+        onTouchMove={markUserInteracting}
+        onPointerDown={markUserInteracting}
         className={cn("flex-1 overflow-y-auto overflow-x-hidden", "px-4 py-4", className)}
         role="log"
         aria-live="polite"
@@ -213,6 +298,7 @@ export function MessageList({
                   streamReasoning={shouldShowStream ? streamReasoning : undefined}
                   activeTools={shouldShowStream && isStreaming ? activeTools : undefined}
                   showTimestamp={isEndOfTurn}
+                  thinkingVisible={thinkingVisible}
                 />
               );
             })}

@@ -156,6 +156,7 @@ export function createFollowupRunner(params: {
               config: queued.run.config,
               skillsSnapshot: queued.run.skillsSnapshot,
               prompt: queued.prompt,
+              rawMessage: queued.rawMessage ?? queued.summaryLine?.trim(),
               extraSystemPrompt: queued.run.extraSystemPrompt,
               ownerNumbers: queued.run.ownerNumbers,
               enforceFinalTag: queued.run.enforceFinalTag,

@@ -6,8 +6,9 @@
  * Uses USER_PANEL_TYPES from panel.ts as the single source of truth.
  */
 
-import { memo, useCallback } from "react";
+import { memo, useCallback, useMemo } from "react";
 import type { PanelType } from "../../types";
+import { getSupportedUserPanelTypes } from "../../lib/runtime";
 import { cn } from "../../lib/utils";
 import { usePanelStore } from "../../stores/panel-store";
 import { USER_PANEL_TYPES, PANEL_TYPE_LABELS } from "../../types/panel";
@@ -29,6 +30,7 @@ export const PanelTypeSwitcher = memo(function PanelTypeSwitcher({
   className,
 }: PanelTypeSwitcherProps) {
   const changePanelType = usePanelStore((s) => s.changePanelType);
+  const supportedPanelTypes = useMemo(() => getSupportedUserPanelTypes(USER_PANEL_TYPES), []);
 
   const handleTypeChange = useCallback(
     (newType: PanelType) => {
@@ -41,22 +43,24 @@ export const PanelTypeSwitcher = memo(function PanelTypeSwitcher({
 
   return (
     <div className={cn("flex items-center gap-1", className)}>
-      {USER_PANEL_TYPES.filter((t) => t !== currentType).map((type) => (
-        <Tooltip key={type}>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7"
-              onClick={() => handleTypeChange(type)}
-            >
-              <PanelTypeIcon type={type} className="h-4 w-4" />
-              <span className="sr-only">{PANEL_TYPE_LABELS[type]}</span>
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{PANEL_TYPE_LABELS[type]}</TooltipContent>
-        </Tooltip>
-      ))}
+      {supportedPanelTypes
+        .filter((t) => t !== currentType)
+        .map((type) => (
+          <Tooltip key={type}>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={() => handleTypeChange(type)}
+              >
+                <PanelTypeIcon type={type} className="h-4 w-4" />
+                <span className="sr-only">{PANEL_TYPE_LABELS[type]}</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{PANEL_TYPE_LABELS[type]}</TooltipContent>
+          </Tooltip>
+        ))}
     </div>
   );
 });

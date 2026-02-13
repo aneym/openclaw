@@ -2,17 +2,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, ChatStatus } from "../types";
 import { klog } from "../lib/klog";
 import { playNotificationSound } from "../lib/notification-sounds";
-import { isCronSessionKey, sessionKeysMatch } from "../lib/session-keys";
+import { isCronSessionKey, isSubagentSessionKey, sessionKeysMatch } from "../lib/session-keys";
 import { isChatVisible } from "../lib/unread";
 import { useChatStore } from "../stores/chat-store";
 import { useGatewayStore } from "../stores/gateway-store";
 import { useNotificationStore } from "../stores/notification-store";
+import { useTriageStore } from "../stores/triage-store";
 import { HOME_WORKSPACE_ID } from "../stores/workspace-store";
 
 // Tiered loading configuration
 const INITIAL_LOAD_LIMIT = 50;
 const INITIAL_ACTIVE_MINUTES = 10080; // 7 days
 const FULL_LOAD_LIMIT = 500;
+const TITLE_REFRESH_RETRY_DELAYS_MS = [3_000, 10_000] as const;
 
 type SessionRecord = Record<string, unknown>;
 
@@ -20,14 +22,20 @@ const isRecord = (value: unknown): value is SessionRecord =>
   typeof value === "object" && value !== null;
 
 const readString = (value: unknown): string | undefined => {
-  if (typeof value !== "string") return undefined;
+  if (typeof value !== "string") {
+    return undefined;
+  }
   const trimmed = value.trim();
   return trimmed ? trimmed : undefined;
 };
 
 const readTimestamp = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (value instanceof Date) {
+    return value.getTime();
+  }
   if (typeof value === "string") {
     const parsed = Date.parse(value);
     return Number.isNaN(parsed) ? undefined : parsed;
@@ -35,30 +43,75 @@ const readTimestamp = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const extractText = (message: unknown): string | undefined => {
+  if (!message || typeof message !== "object") {
+    return undefined;
+  }
+  const m = message as Record<string, unknown>;
+  const content = m.content;
+
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((p) => {
+        const item = p as Record<string, unknown>;
+        if (item.type === "text" && typeof item.text === "string") {
+          return item.text;
+        }
+        return null;
+      })
+      .filter((v): v is string => typeof v === "string");
+    if (parts.length > 0) {
+      return parts.join("\n");
+    }
+  }
+
+  if (typeof m.text === "string") {
+    return m.text;
+  }
+  return undefined;
+};
+
 const resolveSessionRecord = (payload: unknown): SessionRecord | null => {
-  if (!isRecord(payload)) return null;
-  if (isRecord(payload.session)) return payload.session;
-  if (isRecord(payload.entry)) return payload.entry;
-  if (isRecord(payload.data)) return payload.data;
+  if (!isRecord(payload)) {
+    return null;
+  }
+  if (isRecord(payload.session)) {
+    return payload.session;
+  }
+  if (isRecord(payload.entry)) {
+    return payload.entry;
+  }
+  if (isRecord(payload.data)) {
+    return payload.data;
+  }
   return payload;
 };
 
 const resolveSessionKey = (payload: unknown): string | null => {
-  if (!isRecord(payload)) return null;
+  if (!isRecord(payload)) {
+    return null;
+  }
   const direct =
     readString(payload.sessionKey) ?? readString(payload.key) ?? readString(payload.id);
-  if (direct) return direct;
-  if (isRecord(payload.session)) return resolveSessionKey(payload.session);
+  if (direct) {
+    return direct;
+  }
+  if (isRecord(payload.session)) {
+    return resolveSessionKey(payload.session);
+  }
   return null;
 };
 
 const resolveSessionTitle = (session: SessionRecord): { title: string; isExplicit: boolean } => {
   const origin = isRecord(session.origin) ? session.origin : null;
   const candidates = [
+    readString(session.label),
+    readString(session.derivedTitle),
     readString(session.title),
     readString(session.displayName),
-    readString(session.derivedTitle),
-    readString(session.label),
     origin ? readString(origin.label) : undefined,
     readString(session.subject),
   ].filter(Boolean) as string[];
@@ -94,17 +147,23 @@ const resolveSessionCreatedAt = (session: SessionRecord): number | undefined =>
 const resolveSessionChannel = (session: SessionRecord): string | undefined => {
   // Try direct channel field first
   const direct = readString(session.channel);
-  if (direct) return direct;
+  if (direct) {
+    return direct;
+  }
 
   // Try extracting from session origin
   if (isRecord(session.origin)) {
     const provider = readString(session.origin.provider);
-    if (provider) return provider;
+    if (provider) {
+      return provider;
+    }
   }
 
   // Try extracting from lastChannel field
   const lastChannel = readString(session.lastChannel);
-  if (lastChannel && lastChannel !== "webchat") return lastChannel;
+  if (lastChannel && lastChannel !== "webchat") {
+    return lastChannel;
+  }
 
   // Try extracting from session key format: agent:{agentId}:{channel}:...
   const sessionKey = readString(session.sessionId) ?? readString(session.key);
@@ -158,7 +217,14 @@ export async function loadMoreChats(): Promise<void> {
 
     for (const entry of sessions) {
       const sessionKey = resolveSessionKey(entry);
-      if (!sessionKey) continue;
+      if (!sessionKey) {
+        continue;
+      }
+      // Subagent sessions are tied to a parent/main chat; they should never appear
+      // as standalone chats in the sidebar.
+      if (isSubagentSessionKey(sessionKey)) {
+        continue;
+      }
       seen.add(sessionKey);
       // Use store's addChat/updateChat directly
       upsertChatFromSessionStandalone(entry);
@@ -176,11 +242,21 @@ export async function loadMoreChats(): Promise<void> {
       }
     }
 
+    purgeSubagentChats();
     setHasMore(false);
   } catch (err) {
     console.warn("[loadMoreChats] sessions.list failed:", err);
   } finally {
     setLoadingMore(false);
+  }
+}
+
+function purgeSubagentChats(): void {
+  const { chats, deleteChat } = useChatStore.getState();
+  for (const chat of chats.values()) {
+    if (isSubagentSessionKey(chat.sessionKey)) {
+      deleteChat(chat.id);
+    }
   }
 }
 
@@ -190,7 +266,12 @@ export async function loadMoreChats(): Promise<void> {
  */
 function upsertChatFromSessionStandalone(payload: unknown): void {
   const sessionKey = resolveSessionKey(payload);
-  if (!sessionKey) return;
+  if (!sessionKey) {
+    return;
+  }
+  if (isSubagentSessionKey(sessionKey)) {
+    return;
+  }
 
   const session = resolveSessionRecord(payload) ?? {};
   const { chats, addChat, updateChat, archiveChat } = useChatStore.getState();
@@ -259,7 +340,9 @@ function upsertChatFromSessionStandalone(payload: unknown): void {
 
 const findChatBySessionKey = (chats: Map<string, Chat>, sessionKey: string): Chat | undefined => {
   for (const chat of chats.values()) {
-    if (sessionKeysMatch(chat.sessionKey, sessionKey)) return chat;
+    if (sessionKeysMatch(chat.sessionKey, sessionKey)) {
+      return chat;
+    }
   }
   return undefined;
 };
@@ -274,6 +357,7 @@ export function useSessionSync() {
   const updateChat = useChatStore((s) => s.updateChat);
   const archiveChat = useChatStore((s) => s.archiveChat);
   const markUnread = useChatStore((s) => s.markUnread);
+  const enqueueTriage = useTriageStore((s) => s.enqueue);
   const chats = useChatStore((s) => s.chats);
   const setHasMore = useChatStore((s) => s.setHasMore);
   const setLoadingMore = useChatStore((s) => s.setLoadingMore);
@@ -292,7 +376,12 @@ export function useSessionSync() {
   const upsertChatFromSession = useCallback(
     (payload: unknown, overrides?: { status?: ChatStatus; lastMessageAt?: number }) => {
       const sessionKey = resolveSessionKey(payload);
-      if (!sessionKey) return;
+      if (!sessionKey) {
+        return;
+      }
+      if (isSubagentSessionKey(sessionKey)) {
+        return;
+      }
 
       const session = resolveSessionRecord(payload) ?? {};
       const existing = findChatBySessionKey(chatsRef.current, sessionKey);
@@ -361,12 +450,14 @@ export function useSessionSync() {
     [addChat, archiveChat, updateChat],
   );
 
-  // Track pending session refreshes by runId (for delayed auto-title refresh)
-  const pendingRefreshTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  // Track pending session refresh retries so delayed auto-title writes eventually propagate.
+  const pendingRefreshTimers = useRef<Map<string, Array<ReturnType<typeof setTimeout>>>>(new Map());
 
   // Function to refresh sessions from gateway
   const refreshSessions = useCallback(async () => {
-    if (!connected) return;
+    if (!connected) {
+      return;
+    }
 
     try {
       const result = await request<{ sessions?: unknown[] }>("sessions.list", {
@@ -384,6 +475,48 @@ export function useSessionSync() {
     }
   }, [connected, request, upsertChatFromSession]);
 
+  const clearRefreshTimers = useCallback((key: string) => {
+    const timers = pendingRefreshTimers.current.get(key);
+    if (!timers) {
+      return;
+    }
+    for (const timer of timers) {
+      clearTimeout(timer);
+    }
+    pendingRefreshTimers.current.delete(key);
+  }, []);
+
+  const scheduleSessionTitleRefresh = useCallback(
+    (sessionKey: string, runId?: string) => {
+      // Immediate refresh.
+      void refreshSessions();
+
+      const timerKey = (runId ?? sessionKey).trim();
+      if (!timerKey) {
+        return;
+      }
+
+      clearRefreshTimers(timerKey);
+      const timers: Array<ReturnType<typeof setTimeout>> = [];
+      for (const delayMs of TITLE_REFRESH_RETRY_DELAYS_MS) {
+        const timer = setTimeout(() => {
+          void refreshSessions();
+          const remaining = (pendingRefreshTimers.current.get(timerKey) ?? []).filter(
+            (value) => value !== timer,
+          );
+          if (remaining.length === 0) {
+            pendingRefreshTimers.current.delete(timerKey);
+          } else {
+            pendingRefreshTimers.current.set(timerKey, remaining);
+          }
+        }, delayMs);
+        timers.push(timer);
+      }
+      pendingRefreshTimers.current.set(timerKey, timers);
+    },
+    [clearRefreshTimers, refreshSessions],
+  );
+
   // Subscribe to actual gateway events (chat events for session state changes)
   // The gateway emits: chat, agent, presence, cron, heartbeat, etc.
   // NOT: session.list, session.created, session.updated (these don't exist)
@@ -391,13 +524,18 @@ export function useSessionSync() {
     const unsubscribes = [
       // Handle chat events to track session running state and trigger refreshes
       subscribe("chat", (payload) => {
-        if (!isRecord(payload)) return;
+        if (!isRecord(payload)) {
+          return;
+        }
 
         const sessionKey = readString(payload.sessionKey);
         const state = readString(payload.state);
         const runId = readString(payload.runId);
+        const message = payload.message;
 
-        if (!sessionKey) return;
+        if (!sessionKey) {
+          return;
+        }
 
         // Find the chat by sessionKey and update its status
         const chat = findChatBySessionKey(chatsRef.current, sessionKey);
@@ -420,6 +558,17 @@ export function useSessionSync() {
             const visibleInHome = isChatVisible(chat.id, HOME_WORKSPACE_ID);
             const visibleInWorkspace = wsId !== HOME_WORKSPACE_ID && isChatVisible(chat.id, wsId);
             if (!visibleInHome && !visibleInWorkspace) {
+              // Focused catch-up is per-thread, not per-message.
+              // Only enqueue when the thread actually becomes "needs attention" (unread + not visible).
+              enqueueTriage({
+                source: "gateway",
+                chatId: chat.id,
+                sessionKey: chat.sessionKey,
+                title: chat.title,
+                preview: extractText(message),
+                occurredAt: Date.now(),
+              });
+
               markUnread(chat.id);
 
               // Play notification sound and update dock badge
@@ -433,24 +582,7 @@ export function useSessionSync() {
 
           // Refresh sessions to pick up any changes (matching web UI pattern)
           if (state === "final") {
-            // Immediate refresh
-            void refreshSessions();
-
-            // Delayed refresh (3s) to pick up server-side auto-title
-            // Cancel any existing timer for this runId
-            if (runId) {
-              const existingTimer = pendingRefreshTimers.current.get(runId);
-              if (existingTimer) {
-                clearTimeout(existingTimer);
-              }
-
-              const timer = setTimeout(() => {
-                void refreshSessions();
-                pendingRefreshTimers.current.delete(runId);
-              }, 3000);
-
-              pendingRefreshTimers.current.set(runId, timer);
-            }
+            scheduleSessionTitleRefresh(sessionKey, runId);
           }
         }
       }),
@@ -459,12 +591,14 @@ export function useSessionSync() {
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
       // Clear any pending timers
-      for (const timer of pendingRefreshTimers.current.values()) {
-        clearTimeout(timer);
+      for (const timers of pendingRefreshTimers.current.values()) {
+        for (const timer of timers) {
+          clearTimeout(timer);
+        }
       }
       pendingRefreshTimers.current.clear();
     };
-  }, [subscribe, updateChat, markUnread, refreshSessions]);
+  }, [subscribe, updateChat, markUnread, scheduleSessionTitleRefresh, enqueueTriage]);
 
   // Initial load: fetch recent sessions only (7 days, up to 50)
   useEffect(() => {
@@ -486,7 +620,9 @@ export function useSessionSync() {
       includeLastMessage: true,
     })
       .then((result) => {
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         const sessions = Array.isArray(result?.sessions) ? result.sessions : [];
 
         // Always log session sync for debugging
@@ -508,6 +644,7 @@ export function useSessionSync() {
           upsertChatFromSession(entry);
         }
 
+        purgeSubagentChats();
         // Set hasMore if we hit the limit (server may have more)
         setHasMore(sessions.length >= INITIAL_LOAD_LIMIT);
         setInitialLoadComplete(true);
@@ -546,7 +683,12 @@ export function useSessionSync() {
       const seen = new Set<string>();
       for (const entry of sessions) {
         const sessionKey = resolveSessionKey(entry);
-        if (!sessionKey) continue;
+        if (!sessionKey) {
+          continue;
+        }
+        if (isSubagentSessionKey(sessionKey)) {
+          continue;
+        }
         seen.add(sessionKey);
         upsertChatFromSession(entry);
       }
@@ -563,6 +705,7 @@ export function useSessionSync() {
         }
       }
 
+      purgeSubagentChats();
       // No more to load (we got the full list)
       setHasMore(false);
     } catch (err) {
@@ -587,4 +730,69 @@ export function useSessionSync() {
     isLoadingMore,
     initialLoadComplete,
   };
+}
+
+// ── Session search & delete utilities ────────────────────────────────────────
+
+/** Search result from sessions.search RPC */
+export interface SessionSearchResult {
+  sessionKey: string;
+  sessionId: string;
+  score: number;
+  matchCount: number;
+  snippet: string;
+  snippetRole: "user" | "assistant";
+  updatedAt: number | null;
+  derivedTitle?: string;
+}
+
+/**
+ * Search sessions via the gateway sessions.search RPC.
+ * Returns search results with snippets and scores.
+ */
+export async function searchSessions(query: string, limit = 20): Promise<SessionSearchResult[]> {
+  const { request, connected } = useGatewayStore.getState();
+  if (!connected || !query.trim()) {
+    return [];
+  }
+
+  try {
+    const res = await request<{ results?: SessionSearchResult[] }>("sessions.search", {
+      query: query.trim(),
+      limit,
+    });
+    return Array.isArray(res?.results) ? res.results : [];
+  } catch (err) {
+    console.warn("[searchSessions] sessions.search failed:", err);
+    return [];
+  }
+}
+
+/**
+ * Delete a session via the gateway sessions.delete RPC.
+ * Also removes the corresponding chat from the local store.
+ */
+export async function deleteSession(sessionKey: string): Promise<boolean> {
+  const { request, connected } = useGatewayStore.getState();
+  if (!connected || !sessionKey) {
+    return false;
+  }
+
+  try {
+    await request("sessions.delete", { key: sessionKey, deleteTranscript: true });
+
+    // Remove from local chat store
+    const { chats, deleteChat } = useChatStore.getState();
+    for (const chat of chats.values()) {
+      if (sessionKeysMatch(chat.sessionKey, sessionKey)) {
+        deleteChat(chat.id);
+        break;
+      }
+    }
+
+    return true;
+  } catch (err) {
+    console.warn("[deleteSession] sessions.delete failed:", err);
+    return false;
+  }
 }

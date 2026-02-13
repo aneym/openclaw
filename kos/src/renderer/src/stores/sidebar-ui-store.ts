@@ -7,6 +7,10 @@ interface SidebarUIState {
   // Groups the user has explicitly toggled (expanded or collapsed)
   // If a group is not in this set, use default behavior (collapse unless active)
   userToggledGroups: Set<string>;
+  // Focus mode hides the sidebar for distraction-free chat
+  focusMode: boolean;
+  // Sidebar panel collapse state (separate from focus mode)
+  sidebarCollapsed: boolean;
 
   toggleGroup: (group: string) => void;
   /**
@@ -16,6 +20,8 @@ interface SidebarUIState {
    * @returns true if collapsed, false if expanded
    */
   isGroupCollapsed: (group: string, activeGroupKey?: string) => boolean;
+  toggleFocusMode: () => void;
+  setSidebarCollapsed: (collapsed: boolean) => void;
 }
 
 export const useSidebarUIStore = create<SidebarUIState>()(
@@ -23,6 +29,8 @@ export const useSidebarUIStore = create<SidebarUIState>()(
     (set, get) => ({
       collapsedGroups: new Set<string>(),
       userToggledGroups: new Set<string>(),
+      focusMode: false,
+      sidebarCollapsed: false,
 
       toggleGroup: (group: string) => {
         const { collapsedGroups, userToggledGroups } = get();
@@ -53,13 +61,23 @@ export const useSidebarUIStore = create<SidebarUIState>()(
         // Default: collapse everything except the group containing the active chat
         return group !== activeGroupKey;
       },
+
+      toggleFocusMode: () => {
+        set((s) => ({ focusMode: !s.focusMode }));
+      },
+
+      setSidebarCollapsed: (collapsed: boolean) => {
+        set({ sidebarCollapsed: collapsed });
+      },
     }),
     {
       name: "kos-sidebar-ui",
       storage: {
         getItem: (name) => {
           const str = localStorage.getItem(name);
-          if (!str) return null;
+          if (!str) {
+            return null;
+          }
           const { state } = JSON.parse(str);
           return {
             state: {

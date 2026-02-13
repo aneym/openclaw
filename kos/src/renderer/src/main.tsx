@@ -4,6 +4,7 @@ import "./styles/globals.css";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { getInitialThemeConfig } from "./lib/theme-storage";
 
 // Reserve space for macOS hidden-inset title bar (traffic lights)
 if (window.electron?.process?.platform === "darwin") {
@@ -13,7 +14,7 @@ if (window.electron?.process?.platform === "darwin") {
 // Apply dark/light class before React renders to prevent theme flash.
 // initialThemeConfig is loaded synchronously in preload via sendSync.
 {
-  const mode = window.api?.initialThemeConfig?.mode ?? "dark";
+  const mode = getInitialThemeConfig()?.mode ?? "dark";
   const resolved =
     mode === "system"
       ? window.matchMedia("(prefers-color-scheme: dark)").matches

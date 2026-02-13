@@ -1,23 +1,30 @@
 import { useEffect, useRef } from "react";
 import { Shell } from "./components/layout/Shell";
 import { Toaster } from "./components/ui/sonner";
+import { useAgentSync } from "./hooks/use-agent-sync";
+import { useApprovalSync } from "./hooks/use-approval-sync";
 import { useSessionSync } from "./hooks/use-session-sync";
+import { useSubagentSync } from "./hooks/use-subagent-sync";
 import { useTheme } from "./hooks/use-theme";
+import { useTriageBridge } from "./hooks/use-triage-bridge";
 import { klog } from "./lib/klog";
 import { useGatewayStore } from "./stores/gateway-store";
 import { useActiveProfile, useActiveProfileId } from "./stores/profile-store";
 import { useProjectStore } from "./stores/project-store";
 import { useThemeStore } from "./stores/theme-store";
+import {
+  DEFAULT_GATEWAY_URL,
+  resolveGatewayConnection,
+  resolveGatewayLaunchConnection,
+} from "./types/profile";
 import "./styles/globals.css";
-
-// Default gateway URL — dev uses 19001, prod uses 18789
-const DEFAULT_GATEWAY_URL = `ws://localhost:${import.meta.env.DEV ? 19001 : 18789}`;
 
 function App() {
   // Gateway state
   const connect = useGatewayStore((s) => s.connect);
   const disconnect = useGatewayStore((s) => s.disconnect);
   const connected = useGatewayStore((s) => s.connected);
+  const client = useGatewayStore((s) => s.client);
 
   // Debug: log when connected state changes
   useEffect(() => {
@@ -35,6 +42,10 @@ function App() {
   // Initialize theme system — applies CSS vars and dark/light class on <html>
   useTheme();
   useSessionSync();
+  useAgentSync();
+  useSubagentSync();
+  useApprovalSync();
+  useTriageBridge();
 
   // Toggle .liquid-glass class + apply glass tuning vars on <html>
   const liquidGlass = useThemeStore((s) => s.liquidGlass);
@@ -88,12 +99,21 @@ function App() {
       resetForProfile(activeProfileId);
     }
 
-    // Skip if already connected (unless profile changed)
-    if (connected && !isProfileSwitch) return;
+    // Skip if already connected or actively connecting (unless profile changed).
+    // Fast Refresh/HMR can reset Zustand stores while leaving the renderer alive;
+    // make sure we attempt a (re)connect when disconnected and no client exists.
+    if ((connected || client) && !isProfileSwitch) {
+      return;
+    }
 
     // Use profile's gateway URL/token, merging with Electron IPC config for missing token
-    const profileGatewayUrl = activeProfile?.gatewayUrl;
-    const profileGatewayToken = activeProfile?.gatewayToken;
+    const { gatewayUrl: profileGatewayUrl, gatewayToken: profileGatewayToken } =
+      resolveGatewayConnection({
+        gatewayUrl: activeProfile?.gatewayUrl,
+        gatewayToken: activeProfile?.gatewayToken,
+      });
+    const { gatewayUrl: launchGatewayUrl, gatewayToken: launchGatewayToken } =
+      resolveGatewayLaunchConnection(window.location);
 
     if (profileGatewayToken && profileGatewayUrl) {
       // Profile has both URL and token — use directly
@@ -106,8 +126,13 @@ function App() {
     } else if (window.api?.getGatewayConfig) {
       // Read token from Electron config (openclaw.json), use profile URL if set
       window.api.getGatewayConfig().then((config) => {
-        const url = profileGatewayUrl || config.url || DEFAULT_GATEWAY_URL;
-        const token = config.token;
+        // Avoid late async resolution racing with an already-established connection.
+        const { connected: nowConnected, client: nowClient } = useGatewayStore.getState();
+        if (nowConnected || nowClient) {
+          return;
+        }
+        const url = profileGatewayUrl || launchGatewayUrl || config.url || DEFAULT_GATEWAY_URL;
+        const token = profileGatewayToken || launchGatewayToken || config.token;
         klog.gateway("Connecting to gateway", {
           url,
           hasToken: !!token,
@@ -118,14 +143,15 @@ function App() {
       });
     } else {
       // Fallback for web preview or when API is unavailable
-      const url = profileGatewayUrl || DEFAULT_GATEWAY_URL;
+      const url = profileGatewayUrl || launchGatewayUrl || DEFAULT_GATEWAY_URL;
+      const token = profileGatewayToken || launchGatewayToken;
       klog.gateway("Connecting to gateway (web fallback)", {
         url,
-        hasToken: false,
+        hasToken: !!token,
       });
-      connect(url, undefined, "web-fallback");
+      connect(url, token, "web-fallback");
     }
-  }, [activeProfileId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeProfile, activeProfileId, client, connect, connected, disconnect, resetForProfile]);
 
   return (
     <div className="h-screen w-screen overflow-hidden">

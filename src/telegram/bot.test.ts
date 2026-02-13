@@ -13,11 +13,13 @@ import { createTelegramBot, getTelegramSequentialKey } from "./bot.js";
 import { resolveTelegramFetch } from "./fetch.js";
 
 let replyModule: typeof import("../auto-reply/reply.js");
-const { listSkillCommandsForAgents } = vi.hoisted(() => ({
+const { listSkillCommandsForAgents, listNativeSkillCommandsForAgents } = vi.hoisted(() => ({
   listSkillCommandsForAgents: vi.fn(() => []),
+  listNativeSkillCommandsForAgents: vi.fn(() => []),
 }));
 vi.mock("../auto-reply/skill-commands.js", () => ({
   listSkillCommandsForAgents,
+  listNativeSkillCommandsForAgents,
 }));
 
 const { sessionStorePath } = vi.hoisted(() => ({

@@ -1,11 +1,45 @@
 import { create } from "zustand";
 import type { Project, RepoConfig, GitHubRepo, RepoStatus } from "../types";
+import { getRendererApi, getRuntimeCapabilities } from "../lib/runtime";
 import { useProfileStore } from "./profile-store";
 import { useWorkspaceStore } from "./workspace-store";
 
 // Key for persisting active project ID (profile-prefixed)
 function getActiveProjectKey(profileId: string): string {
   return `kos-${profileId}-active-project-id`;
+}
+
+function resolveStoredActiveProjectId(profileId: string, projects: Map<string, Project>): string {
+  const storageKey = getActiveProjectKey(profileId);
+  const savedActiveId = localStorage.getItem(storageKey);
+
+  if (!savedActiveId) {
+    return "__home__";
+  }
+
+  if (savedActiveId.startsWith("__")) {
+    return savedActiveId;
+  }
+
+  const savedProject = projects.get(savedActiveId);
+  if (!savedProject) {
+    return "__home__";
+  }
+
+  if (!savedProject.profileId || savedProject.profileId === profileId) {
+    return savedActiveId;
+  }
+
+  return "__home__";
+}
+
+function requireProjectAndGitApi(): NonNullable<ReturnType<typeof getRendererApi>> {
+  const caps = getRuntimeCapabilities();
+  const api = getRendererApi();
+  if (!api || !caps.hasProjectApi || !caps.hasGitApi) {
+    throw new Error("Project management is only available in the desktop app");
+  }
+  return api;
 }
 
 interface ProjectState {
@@ -56,35 +90,33 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   repoStatuses: new Map(),
 
   initialize: async () => {
-    if (get().isInitialized) return;
+    if (get().isInitialized) {
+      return;
+    }
 
     set({ isLoading: true });
     try {
-      const projects = await window.api.projects.list();
+      const activeProfileId = useProfileStore.getState().activeProfileId;
+
+      const caps = getRuntimeCapabilities();
+      const api = getRendererApi();
+      if (!caps.hasProjectApi || !api?.projects) {
+        const activeId = resolveStoredActiveProjectId(activeProfileId, new Map());
+        set({
+          projects: new Map(),
+          activeProjectId: activeId,
+          isInitialized: true,
+        });
+        return;
+      }
+
+      const projects = await api.projects.list();
       const projectsMap = new Map<string, Project>();
       for (const project of projects) {
         projectsMap.set(project.id, project);
       }
 
-      // Get active profile for localStorage key
-      const activeProfileId = useProfileStore.getState().activeProfileId;
-      const storageKey = getActiveProjectKey(activeProfileId);
-
-      // Restore active project ID from localStorage
-      const savedActiveId = localStorage.getItem(storageKey);
-      let activeId: string | null = null;
-
-      if (savedActiveId) {
-        // Valid if it's a special ID (__home__) or an existing project
-        if (savedActiveId.startsWith("__") || projectsMap.has(savedActiveId)) {
-          activeId = savedActiveId;
-        }
-      }
-
-      // Fall back to __home__ if no valid saved ID
-      if (!activeId) {
-        activeId = "__home__";
-      }
+      const activeId = resolveStoredActiveProjectId(activeProfileId, projectsMap);
 
       set({
         projects: projectsMap,
@@ -111,27 +143,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   resetForProfile: (profileId: string) => {
     const { projects } = get();
-    const storageKey = getActiveProjectKey(profileId);
-    const savedActiveId = localStorage.getItem(storageKey);
-    let activeId: string | null = null;
-
-    if (savedActiveId) {
-      if (savedActiveId.startsWith("__") || projects.has(savedActiveId)) {
-        // Verify the project belongs to this profile
-        const project = projects.get(savedActiveId);
-        if (
-          savedActiveId.startsWith("__") ||
-          !project?.profileId ||
-          project.profileId === profileId
-        ) {
-          activeId = savedActiveId;
-        }
-      }
-    }
-
-    if (!activeId) {
-      activeId = "__home__";
-    }
+    const activeId = resolveStoredActiveProjectId(profileId, projects);
 
     set({ activeProjectId: activeId });
   },
@@ -146,13 +158,14 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   createProject: async (data) => {
-    const id = await window.api.projects.generateId();
+    const api = requireProjectAndGitApi();
+    const id = await api.projects.generateId();
     const now = Date.now();
 
     // Auto-discover repos from workspacePath
     let repositories: RepoConfig[] = [];
     if (data.workspacePath) {
-      const discovered = await window.api.git.scanForRepos(data.workspacePath);
+      const discovered = await api.git.scanForRepos(data.workspacePath);
       repositories = discovered.map((r, i) => ({
         id: `repo-${now}-${i}`,
         path: r.path,
@@ -175,7 +188,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       updatedAt: now,
     };
 
-    await window.api.projects.save(project);
+    await api.projects.save(project);
 
     // Auto-create default workspace for the project
     const workspaceId = `ws-${id}`;
@@ -200,7 +213,10 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   updateProject: async (id, updates) => {
     const { projects } = get();
     const project = projects.get(id);
-    if (!project) return;
+    if (!project) {
+      return;
+    }
+    const api = requireProjectAndGitApi();
 
     const updated: Project = {
       ...project,
@@ -208,7 +224,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       updatedAt: Date.now(),
     };
 
-    await window.api.projects.save(updated);
+    await api.projects.save(updated);
 
     const newProjects = new Map(projects);
     newProjects.set(id, updated);
@@ -216,7 +232,12 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   deleteProject: async (id) => {
-    await window.api.projects.delete(id);
+    const project = get().projects.get(id);
+    if (!project) {
+      return;
+    }
+    const api = requireProjectAndGitApi();
+    await api.projects.delete(id);
 
     // Delete associated workspaces
     const workspaceStore = useWorkspaceStore.getState();
@@ -240,10 +261,13 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   refreshRepositories: async (projectId) => {
     const { projects } = get();
     const project = projects.get(projectId);
-    if (!project?.workspacePath) return;
+    if (!project?.workspacePath) {
+      return;
+    }
+    const api = requireProjectAndGitApi();
 
     const now = Date.now();
-    const discovered = await window.api.git.scanForRepos(project.workspacePath);
+    const discovered = await api.git.scanForRepos(project.workspacePath);
     const repositories: RepoConfig[] = discovered.map((r, i) => ({
       id: `repo-${now}-${i}`,
       path: r.path,
@@ -259,7 +283,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       updatedAt: now,
     };
 
-    await window.api.projects.save(updated);
+    await api.projects.save(updated);
 
     const newProjects = new Map(projects);
     newProjects.set(projectId, updated);
@@ -276,15 +300,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   addRepository: async (projectId, repoPath) => {
     const { projects } = get();
     const project = projects.get(projectId);
-    if (!project) return;
+    if (!project) {
+      return;
+    }
+    const api = requireProjectAndGitApi();
 
-    const isRepo = await window.api.git.isRepo(repoPath);
+    const isRepo = await api.git.isRepo(repoPath);
     if (!isRepo) {
       throw new Error("Not a valid git repository");
     }
 
-    const repoInfo = await window.api.git.getRepoInfo(repoPath);
-    const displayName = await window.api.git.getDisplayName(repoPath);
+    const repoInfo = await api.git.getRepoInfo(repoPath);
+    const displayName = await api.git.getDisplayName(repoPath);
 
     const newRepo: RepoConfig = {
       id: `repo-${Date.now()}`,
@@ -301,7 +328,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       updatedAt: Date.now(),
     };
 
-    await window.api.projects.save(updated);
+    await api.projects.save(updated);
 
     const newProjects = new Map(projects);
     newProjects.set(projectId, updated);
@@ -311,14 +338,18 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
   },
 
   addRepositoryFromGitHub: async (projectId, repo, targetPath) => {
-    await window.api.git.clone(repo.sshUrl, targetPath);
+    const api = requireProjectAndGitApi();
+    await api.git.clone(repo.sshUrl, targetPath);
     await get().addRepository(projectId, targetPath);
   },
 
   removeRepository: async (projectId, repoId) => {
     const { projects } = get();
     const project = projects.get(projectId);
-    if (!project) return;
+    if (!project) {
+      return;
+    }
+    const api = requireProjectAndGitApi();
 
     const updated: Project = {
       ...project,
@@ -333,7 +364,7 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
       }
     }
 
-    await window.api.projects.save(updated);
+    await api.projects.save(updated);
 
     const newProjects = new Map(projects);
     newProjects.set(projectId, updated);
@@ -342,7 +373,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => ({
 
   refreshRepoStatus: async (repoPath) => {
     try {
-      const status = await window.api.git.getStatus(repoPath);
+      const api = getRendererApi();
+      if (!api?.git) {
+        return;
+      }
+      const status = await api.git.getStatus(repoPath);
       const { repoStatuses } = get();
       const newStatuses = new Map(repoStatuses);
       newStatuses.set(repoPath, status);

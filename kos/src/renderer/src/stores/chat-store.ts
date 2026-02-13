@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Chat, ChatStatus } from "../types";
-import { sessionKeysMatch } from "../lib/session-keys";
+import { isSubagentSessionKey, sessionKeysMatch } from "../lib/session-keys";
 
 interface ChatState {
   chats: Map<string, Chat>;
@@ -140,7 +140,9 @@ export const useChatStore = create<ChatState>()(
         deleteChat: (id: string) => {
           const { chats, activeChatByWorkspace } = get();
           const chat = chats.get(id);
-          if (!chat) return;
+          if (!chat) {
+            return;
+          }
 
           const updated = new Map(chats);
           updated.delete(id);
@@ -205,7 +207,9 @@ export const useChatStore = create<ChatState>()(
         getUnreadCount: () => {
           let count = 0;
           for (const chat of get().chats.values()) {
-            if (chat.hasUnread && !chat.isCron) count++;
+            if (chat.hasUnread && !chat.isCron) {
+              count++;
+            }
           }
           return count;
         },
@@ -257,7 +261,7 @@ export const useChatStore = create<ChatState>()(
         getChatsForWorkspace: (workspaceId: string) => {
           return Array.from(get().chats.values())
             .filter((c) => c.workspaceId === workspaceId && c.status !== "archived")
-            .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+            .toSorted((a, b) => b.lastMessageAt - a.lastMessageAt);
         },
 
         getActiveChat: (workspaceId: string) => {
@@ -271,13 +275,15 @@ export const useChatStore = create<ChatState>()(
         },
 
         getAllChats: () => {
-          return Array.from(get().chats.values()).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+          return Array.from(get().chats.values()).toSorted(
+            (a, b) => b.lastMessageAt - a.lastMessageAt,
+          );
         },
 
         getUnassignedChats: () => {
           return Array.from(get().chats.values())
             .filter((c) => !c.projectId)
-            .sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+            .toSorted((a, b) => b.lastMessageAt - a.lastMessageAt);
         },
       };
     },
@@ -287,10 +293,26 @@ export const useChatStore = create<ChatState>()(
         getItem: (name) => {
           const str = localStorage.getItem(name);
           console.log("[chat-store] getItem called, has data:", !!str);
-          if (!str) return null;
+          if (!str) {
+            return null;
+          }
           const { state } = JSON.parse(str);
           const chatsMap = new Map(state.chats || []);
           const activeMap = new Map(state.activeChatByWorkspace || []);
+
+          // Subagent sessions are internal runs tied to a parent chat; never hydrate them
+          // into the main chat list (prevents sidebar "active chat" pollution).
+          for (const [chatId, chat] of chatsMap.entries()) {
+            if (isSubagentSessionKey((chat as Chat | undefined)?.sessionKey)) {
+              chatsMap.delete(chatId);
+            }
+          }
+          for (const [wsId, chatId] of activeMap.entries()) {
+            if (!chatsMap.has(chatId)) {
+              activeMap.delete(wsId);
+            }
+          }
+
           console.log("[chat-store] Hydrating from localStorage:", {
             chatsCount: chatsMap.size,
             activeChatByWorkspaceCount: activeMap.size,

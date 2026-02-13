@@ -3,8 +3,85 @@ import type { GatewayEventFrame, GatewayHelloOk } from "../gateway/types";
 import { GatewayClient } from "../gateway/client";
 import { klog } from "../lib/klog";
 import { notifications } from "../lib/notifications";
+import { recoverAllChatSessions } from "./chat-session-store";
 
 type EventHandler = (payload: unknown) => void;
+
+// Vite HMR can replace modules without fully reloading the renderer process.
+// Keep a global reference so a "new" store instance can stop any orphan
+// GatewayClient created by the "old" store instance.
+const GLOBAL_GATEWAY_CLIENT_KEY = "__kosGatewayClient";
+
+function getGlobalGatewayClient(): GatewayClient | null {
+  return (
+    ((globalThis as unknown as Record<string, unknown>)[GLOBAL_GATEWAY_CLIENT_KEY] as
+      | GatewayClient
+      | undefined
+      | null) ?? null
+  );
+}
+
+function setGlobalGatewayClient(client: GatewayClient | null): void {
+  (globalThis as unknown as Record<string, unknown>)[GLOBAL_GATEWAY_CLIENT_KEY] = client;
+}
+
+// ── Sub-agent types ──────────────────────────────────────────────
+export interface SubagentRunInfo {
+  runId: string;
+  childSessionKey: string;
+  requesterSessionKey: string;
+  task: string;
+  label?: string;
+  createdAt: number;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
+}
+
+export interface SubagentEventPayload {
+  phase: "start" | "end" | "error";
+  runId: string;
+  requesterSessionKey: string;
+  childSessionKey: string;
+  task: string;
+  label?: string;
+  startedAt?: number;
+  endedAt?: number;
+  outcome?: { status: "ok" | "error"; error?: string };
+}
+
+// ── Approval types ───────────────────────────────────────────────
+export interface ExecApprovalRequestPayload {
+  command: string;
+  cwd?: string | null;
+  host?: string | null;
+  security?: string | null;
+  ask?: string | null;
+  agentId?: string | null;
+  resolvedPath?: string | null;
+  sessionKey?: string | null;
+}
+
+export interface ExecApprovalRequest {
+  id: string;
+  request: ExecApprovalRequestPayload;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface ToolApprovalRequestPayload {
+  toolName: string;
+  toolInput: Record<string, unknown>;
+  agentId?: string | null;
+  sessionKey?: string | null;
+}
+
+export interface ToolApprovalRequest {
+  id: string;
+  request: ToolApprovalRequestPayload;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
 
 interface GatewayState {
   client: GatewayClient | null;
@@ -17,10 +94,20 @@ interface GatewayState {
   hasToken: boolean;
   configSource: string | null;
 
+  // Sub-agent runs keyed by requesterSessionKey
+  subagentRuns: Map<string, SubagentRunInfo[]>;
+
+  // Approval queues
+  execApprovalQueue: ExecApprovalRequest[];
+  toolApprovalQueue: ToolApprovalRequest[];
+
   connect: (url: string, token?: string, source?: string) => void;
   disconnect: () => void;
   request: <T>(method: string, params?: unknown) => Promise<T>;
   subscribe: (event: string, handler: EventHandler) => () => void;
+  setSubagentRuns: (runs: Map<string, SubagentRunInfo[]>) => void;
+  setExecApprovalQueue: (queue: ExecApprovalRequest[]) => void;
+  setToolApprovalQueue: (queue: ToolApprovalRequest[]) => void;
 }
 
 export const useGatewayStore = create<GatewayState>((set, get) => ({
@@ -32,11 +119,20 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
   currentUrl: null,
   hasToken: false,
   configSource: null,
+  subagentRuns: new Map(),
+  execApprovalQueue: [],
+  toolApprovalQueue: [],
 
   connect: (url: string, token?: string, source?: string) => {
     // Track connection info for debugging
     set({ currentUrl: url, hasToken: Boolean(token), configSource: source ?? null });
     const { client: existingClient } = get();
+    const globalClient = getGlobalGatewayClient();
+    // If we have an orphan client from a previous HMR instance, stop it.
+    if (globalClient && globalClient !== existingClient) {
+      globalClient.stop();
+      setGlobalGatewayClient(null);
+    }
     if (existingClient) {
       existingClient.stop();
     }
@@ -49,6 +145,9 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
         set({ hello, connected: true, error: null });
         if (wasConnected) {
           notifications.connectionRestored();
+          // Reconnect: recover all active chat sessions (restore stop button state)
+          klog.gateway("reconnect detected, recovering chat sessions");
+          void recoverAllChatSessions(get().request);
         }
       },
       onEvent: (evt: GatewayEventFrame) => {
@@ -93,6 +192,7 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     });
 
     client.start();
+    setGlobalGatewayClient(client);
     set({ client, error: null });
   },
 
@@ -100,6 +200,10 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     const { client } = get();
     if (client) {
       client.stop();
+      const globalClient = getGlobalGatewayClient();
+      if (globalClient === client) {
+        setGlobalGatewayClient(null);
+      }
       set({ client: null, connected: false, hello: null });
     }
   },
@@ -140,4 +244,20 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
       }
     };
   },
+
+  setSubagentRuns: (runs) => set({ subagentRuns: runs }),
+  setExecApprovalQueue: (queue) => set({ execApprovalQueue: queue }),
+  setToolApprovalQueue: (queue) => set({ toolApprovalQueue: queue }),
 }));
+
+// Best-effort cleanup on HMR dispose.
+// (No-op in production builds; safe in Electron renderer.)
+if (import.meta && "hot" in import.meta && (import.meta as unknown as { hot?: unknown }).hot) {
+  (import.meta as unknown as { hot: { dispose: (cb: () => void) => void } }).hot.dispose(() => {
+    try {
+      useGatewayStore.getState().disconnect();
+    } catch {
+      // ignore
+    }
+  });
+}

@@ -1,7 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Profile } from "../types";
-import { DEFAULT_PROFILE_ID, createDefaultProfile, createPersonalProfile } from "../types/profile";
+import {
+  DEFAULT_GATEWAY_URL,
+  DEFAULT_PROFILE_ID,
+  LEGACY_DEV_GATEWAY_URL,
+  resolveGatewayConnection,
+  createDefaultProfile,
+  createPersonalProfile,
+} from "../types/profile";
 
 interface ProfileState {
   profiles: Map<string, Profile>;
@@ -21,6 +28,48 @@ interface ProfileState {
 
 function generateProfileId(): string {
   return `profile-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function migrateLegacyDefaultPorts(profiles: Map<string, Profile>): Map<string, Profile> {
+  const now = Date.now();
+  let changed = false;
+  const updated = new Map(profiles);
+
+  for (const [id, profile] of updated) {
+    const normalized = resolveGatewayConnection({
+      gatewayUrl: profile.gatewayUrl,
+      gatewayToken: profile.gatewayToken,
+    });
+    const prevToken = profile.gatewayToken ?? "";
+    const nextToken = normalized.gatewayToken ?? "";
+    if (normalized.gatewayUrl === profile.gatewayUrl && prevToken === nextToken) {
+      continue;
+    }
+
+    updated.set(id, {
+      ...profile,
+      gatewayUrl: normalized.gatewayUrl,
+      gatewayToken: normalized.gatewayToken,
+      updatedAt: now,
+    });
+    changed = true;
+  }
+
+  for (const id of [DEFAULT_PROFILE_ID, "personal"]) {
+    const profile = updated.get(id);
+    if (!profile || profile.gatewayUrl !== LEGACY_DEV_GATEWAY_URL) {
+      continue;
+    }
+
+    updated.set(id, {
+      ...profile,
+      gatewayUrl: DEFAULT_GATEWAY_URL,
+      updatedAt: now,
+    });
+    changed = true;
+  }
+
+  return changed ? updated : profiles;
 }
 
 // Initialize with Work (default) and Personal profiles
@@ -57,7 +106,9 @@ export const useProfileStore = create<ProfileState>()(
       updateProfile: (id, updates) => {
         const { profiles } = get();
         const profile = profiles.get(id);
-        if (!profile) return;
+        if (!profile) {
+          return;
+        }
 
         const updated = new Map(profiles);
         updated.set(id, {
@@ -72,11 +123,15 @@ export const useProfileStore = create<ProfileState>()(
         const { profiles, activeProfileId } = get();
 
         // Cannot delete if only one profile exists
-        if (profiles.size <= 1) return;
+        if (profiles.size <= 1) {
+          return;
+        }
 
         // Cannot delete default profile if it's the active one - switch first
         const profile = profiles.get(id);
-        if (!profile) return;
+        if (!profile) {
+          return;
+        }
 
         const updated = new Map(profiles);
         updated.delete(id);
@@ -118,8 +173,12 @@ export const useProfileStore = create<ProfileState>()(
       getAllProfiles: () =>
         Array.from(get().profiles.values()).sort((a, b) => {
           // Default profile first, then alphabetically
-          if (a.isDefault && !b.isDefault) return -1;
-          if (!a.isDefault && b.isDefault) return 1;
+          if (a.isDefault && !b.isDefault) {
+            return -1;
+          }
+          if (!a.isDefault && b.isDefault) {
+            return 1;
+          }
           return a.name.localeCompare(b.name);
         }),
     }),
@@ -128,7 +187,9 @@ export const useProfileStore = create<ProfileState>()(
       storage: {
         getItem: (name) => {
           const str = localStorage.getItem(name);
-          if (!str) return null;
+          if (!str) {
+            return null;
+          }
           const { state } = JSON.parse(str);
           return {
             state: {
@@ -154,22 +215,40 @@ export const useProfileStore = create<ProfileState>()(
       // Ensure default profile exists after rehydration
       onRehydrateStorage: () => (state) => {
         if (state) {
+          let nextProfiles = state.profiles;
+          let nextActiveProfileId = state.activeProfileId;
+          let shouldWrite = false;
+
           // Ensure at least the default profile exists
-          if (state.profiles.size === 0) {
-            state.profiles.set(DEFAULT_PROFILE_ID, createDefaultProfile());
-            state.activeProfileId = DEFAULT_PROFILE_ID;
-            useProfileStore.setState({
-              profiles: state.profiles,
-              activeProfileId: DEFAULT_PROFILE_ID,
-            });
+          if (nextProfiles.size === 0) {
+            nextProfiles.set(DEFAULT_PROFILE_ID, createDefaultProfile());
+            nextActiveProfileId = DEFAULT_PROFILE_ID;
+            shouldWrite = true;
+          }
+
+          // Migrate legacy built-in profile defaults from 19001 -> 18789.
+          const migratedProfiles = migrateLegacyDefaultPorts(nextProfiles);
+          if (migratedProfiles !== nextProfiles) {
+            nextProfiles = migratedProfiles;
+            shouldWrite = true;
           }
 
           // Ensure active profile exists
-          if (!state.profiles.has(state.activeProfileId)) {
-            const firstProfile = state.profiles.values().next().value;
+          if (!nextProfiles.has(nextActiveProfileId)) {
+            const firstProfile = nextProfiles.values().next().value;
             if (firstProfile) {
-              useProfileStore.setState({ activeProfileId: firstProfile.id });
+              nextActiveProfileId = firstProfile.id;
+              shouldWrite = true;
             }
+          }
+
+          if (shouldWrite) {
+            state.profiles = nextProfiles;
+            state.activeProfileId = nextActiveProfileId;
+            useProfileStore.setState({
+              profiles: nextProfiles,
+              activeProfileId: nextActiveProfileId,
+            });
           }
         }
       },

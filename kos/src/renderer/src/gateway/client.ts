@@ -7,6 +7,7 @@ import type {
   GatewayBrowserInfoFrame,
   Pending,
 } from "./types";
+import { getRendererApi, getRuntimeCapabilities } from "../lib/runtime";
 import { useBrowserStore } from "../stores/browser-store";
 import { usePanelStore } from "../stores/panel-store";
 import { useProjectStore } from "../stores/project-store";
@@ -38,8 +39,9 @@ const CLIENT_MODE = "webchat";
 const CLIENT_VERSION = "0.1.0";
 const ROLE = "operator";
 const SCOPES = ["operator.admin", "operator.approvals", "operator.pairing"];
-const CAPS = ["browser", "terminal", "devtools"]; // Advertise browser, terminal, and devtools capabilities
-const COMMANDS = [
+// Request tool stream events so the chat UI can render live tool call chips.
+const BASE_CAPS = ["devtools", "tool-events"];
+const TERMINAL_COMMANDS = [
   "terminal.spawn",
   "terminal.exec",
   "terminal.read",
@@ -47,11 +49,25 @@ const COMMANDS = [
   "terminal.close",
   "terminal.list",
   "terminal.write",
-  "devtools.logs",
-  "devtools.state",
-  "devtools.eval",
-  "devtools.errors",
-]; // Commands this node can handle
+];
+const DEVTOOLS_COMMANDS = ["devtools.logs", "devtools.state", "devtools.eval", "devtools.errors"];
+
+function getGatewayCapabilitiesAndCommands(): { caps: string[]; commands: string[] } {
+  const runtimeCaps = getRuntimeCapabilities();
+  const caps = [...BASE_CAPS];
+  const commands = [...DEVTOOLS_COMMANDS];
+
+  if (runtimeCaps.hasBrowserPanel) {
+    caps.push("browser");
+  }
+
+  if (runtimeCaps.hasTerminal) {
+    caps.push("terminal");
+    commands.push(...TERMINAL_COMMANDS);
+  }
+
+  return { caps, commands };
+}
 
 export class GatewayClient {
   private ws: WebSocket | null = null;
@@ -199,8 +215,7 @@ export class GatewayClient {
       },
       role: ROLE,
       scopes: SCOPES,
-      caps: CAPS,
-      commands: COMMANDS,
+      ...getGatewayCapabilitiesAndCommands(),
       device,
       auth,
       userAgent: navigator.userAgent,
@@ -294,7 +309,11 @@ export class GatewayClient {
 
   private async handleCdpCommand(cdp: GatewayCdpFrame) {
     try {
-      const result = await window.api.browser.cdp(cdp.method, cdp.params);
+      const api = getRendererApi();
+      if (!api?.browser) {
+        throw new Error("Browser commands are only available in the desktop app");
+      }
+      const result = await api.browser.cdp(cdp.method, cdp.params);
       this.send({ type: "cdp-response", id: cdp.id, result });
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
@@ -303,7 +322,9 @@ export class GatewayClient {
   }
 
   private async handleNodeInvokeRequest(payload: unknown) {
-    if (!payload || typeof payload !== "object") return;
+    if (!payload || typeof payload !== "object") {
+      return;
+    }
 
     const req = payload as {
       id: string;
@@ -325,9 +346,19 @@ export class GatewayClient {
       }).catch(console.error);
     };
 
+    const requireTerminalApi = () => {
+      const api = getRendererApi();
+      const runtimeCaps = getRuntimeCapabilities();
+      if (!api?.terminal || !runtimeCaps.hasTerminal) {
+        throw new Error("Terminal commands are only available in the desktop app");
+      }
+      return api.terminal;
+    };
+
     try {
       switch (req.command) {
         case "terminal.spawn": {
+          const terminalApi = requireTerminalApi();
           // Resolve effective cwd: explicit param > workspace path > main repo path
           let effectiveCwd = params.cwd as string | undefined;
           const projectId = useProjectStore.getState().activeProjectId;
@@ -346,7 +377,7 @@ export class GatewayClient {
             }
           }
 
-          const result = await window.api.terminal.createManaged(effectiveCwd);
+          const result = await terminalApi.createManaged(effectiveCwd);
 
           // Open a terminal panel for the managed terminal
           if (projectId) {
@@ -360,7 +391,9 @@ export class GatewayClient {
                 if (panel.type === "chat") {
                   const activeTab = panel.tabs?.find((t) => t.id === panel.activeTabId);
                   sessionKey = activeTab?.data?.sessionKey as string | undefined;
-                  if (sessionKey) break;
+                  if (sessionKey) {
+                    break;
+                  }
                 }
               }
 
@@ -375,7 +408,8 @@ export class GatewayClient {
           break;
         }
         case "terminal.exec": {
-          const result = await window.api.terminal.execManaged(
+          const terminalApi = requireTerminalApi();
+          const result = await terminalApi.execManaged(
             params.terminalId,
             params.command,
             params.timeoutMs,
@@ -384,7 +418,8 @@ export class GatewayClient {
           break;
         }
         case "terminal.read": {
-          const output = await window.api.terminal.readManaged(
+          const terminalApi = requireTerminalApi();
+          const output = await terminalApi.readManaged(
             params.terminalId,
             params.since,
             params.maxBytes,
@@ -393,22 +428,26 @@ export class GatewayClient {
           break;
         }
         case "terminal.close": {
-          await window.api.terminal.closeManaged(params.terminalId, params.force);
+          const terminalApi = requireTerminalApi();
+          await terminalApi.closeManaged(params.terminalId, params.force);
           sendResult(true, { closed: true });
           break;
         }
         case "terminal.copy": {
-          const result = await window.api.terminal.copyManaged(params.terminalId);
+          const terminalApi = requireTerminalApi();
+          const result = await terminalApi.copyManaged(params.terminalId);
           sendResult(true, result);
           break;
         }
         case "terminal.list": {
-          const terminals = await window.api.terminal.listManaged();
+          const terminalApi = requireTerminalApi();
+          const terminals = await terminalApi.listManaged();
           sendResult(true, { terminals });
           break;
         }
         case "terminal.write": {
-          await window.api.terminal.write(params.terminalId, params.text + "\n");
+          const terminalApi = requireTerminalApi();
+          await terminalApi.write(params.terminalId, params.text + "\n");
           sendResult(true, { written: true });
           break;
         }

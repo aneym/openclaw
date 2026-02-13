@@ -30,11 +30,23 @@ CONFIG="${HOME}/.openclaw/openclaw.json"
 
 # Read token from config for the dev UI URL
 TOKEN=""
+TOKEN_ENCODED=""
+GATEWAY_PORT="18789"
 if [ -f "$CONFIG" ]; then
   TOKEN=$(node -e "
     const c = JSON.parse(require('fs').readFileSync('$CONFIG','utf8'));
     process.stdout.write(c.gateway?.auth?.token ?? '');
   " 2>/dev/null || true)
+  GATEWAY_PORT=$(node -e "
+    const c = JSON.parse(require('fs').readFileSync('$CONFIG','utf8'));
+    process.stdout.write(String(c.gateway?.port ?? 18789));
+  " 2>/dev/null || true)
+fi
+if ! [[ "$GATEWAY_PORT" =~ ^[0-9]+$ ]]; then
+  GATEWAY_PORT="18789"
+fi
+if [ -n "$TOKEN" ]; then
+  TOKEN_ENCODED=$(node -e "process.stdout.write(encodeURIComponent(process.argv[1] ?? ''))" "$TOKEN" 2>/dev/null || true)
 fi
 
 # Kill stale Vite dev server if port 3636 is still held
@@ -130,10 +142,10 @@ if $KEYBOARD_RESTART_ENABLED; then
 fi
 
 sleep 4
-if [ -n "$TOKEN" ]; then
-  printf '\n  Dev UI: http://localhost:3636/?token=%s\n  Restart gateway: pnpm dev:all:gateway:restart or press "r"\n\n' "$TOKEN"
+if [ -n "$TOKEN_ENCODED" ]; then
+  printf '\n  Dev UI: http://localhost:3636/#token=%s\n  kOS Gateway: ws://localhost:%s#token=%s\n  Restart gateway: pnpm dev:all:gateway:restart or press "r"\n\n' "$TOKEN_ENCODED" "$GATEWAY_PORT" "$TOKEN_ENCODED"
 else
-  printf '\n  Dev UI: http://localhost:3636/\n  (no token configured in %s)\n  Restart gateway: pnpm dev:all:gateway:restart or press "r"\n\n' "$CONFIG"
+  printf '\n  Dev UI: http://localhost:3636/\n  kOS Gateway: ws://localhost:%s\n  (no token configured in %s)\n  Restart gateway: pnpm dev:all:gateway:restart or press "r"\n\n' "$GATEWAY_PORT" "$CONFIG"
 fi
 
 wait

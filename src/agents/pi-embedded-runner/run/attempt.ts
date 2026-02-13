@@ -725,6 +725,19 @@ export async function runEmbeddedAttempt(
               sessionKey: params.sessionKey,
               config: params.config,
             }).sessionAgentId;
+      const rawHookMessage = params.rawMessage?.trim();
+      const hookContext = {
+        agentId: hookAgentId,
+        sessionKey: params.sessionKey,
+        workspaceDir: params.workspaceDir,
+        messageProvider: params.messageProvider ?? params.messageChannel ?? undefined,
+        channelId: params.messageChannel ?? undefined,
+        accountId: params.agentAccountId ?? undefined,
+        senderId: params.senderId ?? undefined,
+        senderName: params.senderName ?? undefined,
+        senderUsername: params.senderUsername ?? undefined,
+        senderE164: params.senderE164 ?? undefined,
+      };
 
       let promptError: unknown = null;
       try {
@@ -737,14 +750,10 @@ export async function runEmbeddedAttempt(
             const hookResult = await hookRunner.runBeforeAgentStart(
               {
                 prompt: params.prompt,
+                rawMessage: rawHookMessage || undefined,
                 messages: activeSession.messages,
               },
-              {
-                agentId: hookAgentId,
-                sessionKey: params.sessionKey,
-                workspaceDir: params.workspaceDir,
-                messageProvider: params.messageProvider ?? undefined,
-              },
+              hookContext,
             );
             if (hookResult?.systemPrompt) {
               // Append hook-injected system prompt to the existing system prompt.
@@ -891,12 +900,7 @@ export async function runEmbeddedAttempt(
                 error: promptError ? describeUnknownError(promptError) : undefined,
                 durationMs: Date.now() - promptStartedAt,
               },
-              {
-                agentId: hookAgentId,
-                sessionKey: params.sessionKey,
-                workspaceDir: params.workspaceDir,
-                messageProvider: params.messageProvider ?? undefined,
-              },
+              hookContext,
             )
             .catch((err) => {
               log.warn(`agent_end hook failed: ${err}`);

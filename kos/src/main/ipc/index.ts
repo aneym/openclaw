@@ -4,6 +4,7 @@ import { registerGitHubIpc } from "./github-ipc";
 import { registerLinearIpc } from "./linear-ipc";
 import { registerProjectIpc } from "./project-ipc";
 import { registerTerminalIpc, cleanupTerminals } from "./terminal-ipc";
+import { registerTriageBridgeIpc } from "./triage-bridge-ipc";
 
 // Register all IPC handlers
 export function registerAllIpc(): void {
@@ -13,6 +14,7 @@ export function registerAllIpc(): void {
   registerGitHubIpc();
   registerLinearIpc();
   registerTerminalIpc();
+  registerTriageBridgeIpc();
 }
 
 // Cleanup function for app quit

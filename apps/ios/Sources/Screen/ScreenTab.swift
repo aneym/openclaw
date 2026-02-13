@@ -1,5 +1,6 @@
 import OpenClawKit
 import SwiftUI
+import UIKit
 
 struct ScreenTab: View {
     @Environment(NodeAppModel.self) private var appModel
@@ -18,6 +19,13 @@ struct ScreenTab: View {
                             .background(.thinMaterial)
                             .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .padding()
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { UIPasteboard.general.string = errorText }
+                            .contextMenu {
+                                Button("Copy") { UIPasteboard.general.string = errorText }
+                            }
                     }
                 }
         }

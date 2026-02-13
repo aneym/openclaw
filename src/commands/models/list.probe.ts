@@ -324,6 +324,7 @@ async function probeTarget(params: {
       agentDir,
       config: cfg,
       prompt: PROBE_PROMPT,
+      rawMessage: PROBE_PROMPT,
       provider: target.model.provider,
       model: target.model.model,
       authProfileId: target.profileId,

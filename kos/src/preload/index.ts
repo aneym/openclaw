@@ -223,6 +223,24 @@ const api = {
   setDockBadge: (count: number): void => {
     ipcRenderer.invoke("app:set-dock-badge", count);
   },
+  triageBridge: {
+    getInfo: (): Promise<{ endpoint: string; token: string } | null> =>
+      ipcRenderer.invoke("triageBridge:getInfo"),
+    onEvent: (
+      callback: (event: {
+        source: "claude" | "codex" | "terminal";
+        terminalId: string;
+        title?: string;
+        preview?: string;
+        occurredAt?: number;
+        sourceEventId?: string;
+      }) => void,
+    ) => {
+      const listener = (_: unknown, event: unknown) => callback(event as any);
+      ipcRenderer.on("triageBridge:event", listener);
+      return () => ipcRenderer.removeListener("triageBridge:event", listener);
+    },
+  },
 
   // Logs API (for debugging and agent self-iteration)
   logs: {

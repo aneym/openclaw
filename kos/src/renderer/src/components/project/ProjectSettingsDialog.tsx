@@ -1,6 +1,7 @@
 import { FolderOpen, Loader2, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { Project } from "../../types";
+import { getRendererApi, getRuntimeCapabilities } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/project-store";
 import { useSettingsStore } from "../../stores/settings-store";
 import {
@@ -36,6 +37,7 @@ interface ProjectSettingsDialogProps {
 }
 
 export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSettingsDialogProps) {
+  const runtimeCaps = getRuntimeCapabilities();
   const updateProject = useProjectStore((s) => s.updateProject);
   const deleteProject = useProjectStore((s) => s.deleteProject);
   const refreshRepositories = useProjectStore((s) => s.refreshRepositories);
@@ -78,8 +80,15 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
   }, [name, icon, linearTeamId, workspacePath, project]);
 
   const handleChangeFolder = useCallback(async () => {
-    const result = await window.api.openDirectoryDialog();
-    if (result.canceled || !result.filePaths[0]) return;
+    const api = getRendererApi();
+    if (!api?.openDirectoryDialog) {
+      return;
+    }
+
+    const result = await api.openDirectoryDialog();
+    if (result.canceled || !result.filePaths[0]) {
+      return;
+    }
 
     const path = result.filePaths[0];
     setWorkspacePath(path);
@@ -96,7 +105,9 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
   }, [project.id, updateProject, refreshRepositories]);
 
   const handleSave = useCallback(async () => {
-    if (!name.trim()) return;
+    if (!name.trim()) {
+      return;
+    }
 
     setIsSaving(true);
     try {
@@ -137,7 +148,7 @@ export function ProjectSettingsDialog({ project, open, onOpenChange }: ProjectSe
                 <Button
                   variant="outline"
                   onClick={handleChangeFolder}
-                  disabled={isChangingFolder}
+                  disabled={isChangingFolder || !runtimeCaps.hasNativeDialogs}
                   className="flex-1 justify-start font-normal"
                 >
                   {isChangingFolder ? (

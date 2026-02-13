@@ -37,6 +37,8 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   onNavigate: (view: View) => void;
   onToggleSidebar: () => void;
+  canOpenBrowserPanel: boolean;
+  canOpenTerminalPanel: boolean;
 }
 
 export function CommandPalette({
@@ -44,6 +46,8 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
   onToggleSidebar,
+  canOpenBrowserPanel,
+  canOpenTerminalPanel,
 }: CommandPaletteProps) {
   const [search, setSearch] = useState("");
 
@@ -81,15 +85,19 @@ export function CommandPalette({
   );
 
   const activeWorkspaceId = useMemo(() => {
-    if (!activeProjectId) return null;
+    if (!activeProjectId) {
+      return null;
+    }
     return activeWorkspaceByProject.get(activeProjectId);
   }, [activeProjectId, activeWorkspaceByProject]);
 
   const recentChats = useMemo(() => {
-    if (!activeWorkspaceId) return [];
+    if (!activeWorkspaceId) {
+      return [];
+    }
     return Array.from(chatsMap.values() as Iterable<Chat>)
       .filter((c) => c.workspaceId === activeWorkspaceId && c.status !== "archived")
-      .sort((a, b) => b.lastMessageAt - a.lastMessageAt)
+      .toSorted((a, b) => b.lastMessageAt - a.lastMessageAt)
       .slice(0, 10);
   }, [chatsMap, activeWorkspaceId]);
 
@@ -115,7 +123,9 @@ export function CommandPalette({
   );
 
   const handleNewChat = useCallback(() => {
-    if (!activeWorkspaceId) return;
+    if (!activeWorkspaceId) {
+      return;
+    }
     closeAndRun(() => {
       const now = Date.now();
       const uuid = crypto.randomUUID();
@@ -133,18 +143,28 @@ export function CommandPalette({
   }, [closeAndRun, activeWorkspaceId, addChat]);
 
   const handleOpenBrowser = useCallback(() => {
-    if (!activeWorkspaceId) return;
+    if (!canOpenBrowserPanel) {
+      return;
+    }
+    if (!activeWorkspaceId) {
+      return;
+    }
     closeAndRun(() => {
       spawnPanel(activeWorkspaceId, "browser", { url: "https://google.com" });
     });
-  }, [closeAndRun, activeWorkspaceId, spawnPanel]);
+  }, [canOpenBrowserPanel, closeAndRun, activeWorkspaceId, spawnPanel]);
 
   const handleOpenTerminal = useCallback(() => {
-    if (!activeWorkspaceId) return;
+    if (!canOpenTerminalPanel) {
+      return;
+    }
+    if (!activeWorkspaceId) {
+      return;
+    }
     closeAndRun(() => {
       spawnPanel(activeWorkspaceId, "terminal", {});
     });
-  }, [closeAndRun, activeWorkspaceId, spawnPanel]);
+  }, [canOpenTerminalPanel, closeAndRun, activeWorkspaceId, spawnPanel]);
 
   const browserAlreadyOpen = activeWorkspaceId ? hasPanelType(activeWorkspaceId, "browser") : false;
   const terminalAlreadyOpen = activeWorkspaceId
@@ -206,22 +226,26 @@ export function CommandPalette({
             <span>New Chat</span>
             <CommandShortcut>⌘N</CommandShortcut>
           </CommandItem>
-          <CommandItem
-            onSelect={handleOpenBrowser}
-            disabled={!activeWorkspaceId || browserAlreadyOpen}
-          >
-            <Globe className="mr-2 h-4 w-4" />
-            <span>{browserAlreadyOpen ? "Browser Open" : "Open Browser"}</span>
-            <CommandShortcut>⌘⇧B</CommandShortcut>
-          </CommandItem>
-          <CommandItem
-            onSelect={handleOpenTerminal}
-            disabled={!activeWorkspaceId || terminalAlreadyOpen}
-          >
-            <Terminal className="mr-2 h-4 w-4" />
-            <span>{terminalAlreadyOpen ? "Terminal Open" : "Open Terminal"}</span>
-            <CommandShortcut>⌘⇧T</CommandShortcut>
-          </CommandItem>
+          {canOpenBrowserPanel && (
+            <CommandItem
+              onSelect={handleOpenBrowser}
+              disabled={!activeWorkspaceId || browserAlreadyOpen}
+            >
+              <Globe className="mr-2 h-4 w-4" />
+              <span>{browserAlreadyOpen ? "Browser Open" : "Open Browser"}</span>
+              <CommandShortcut>⌘⇧B</CommandShortcut>
+            </CommandItem>
+          )}
+          {canOpenTerminalPanel && (
+            <CommandItem
+              onSelect={handleOpenTerminal}
+              disabled={!activeWorkspaceId || terminalAlreadyOpen}
+            >
+              <Terminal className="mr-2 h-4 w-4" />
+              <span>{terminalAlreadyOpen ? "Terminal Open" : "Open Terminal"}</span>
+              <CommandShortcut>⌘⇧T</CommandShortcut>
+            </CommandItem>
+          )}
           <CommandItem
             onSelect={() =>
               closeAndRun(() => {

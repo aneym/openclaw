@@ -1,5 +1,5 @@
 import { Archive, Copy, FolderInput, Inbox, MoreHorizontal } from "lucide-react";
-import { memo, useCallback } from "react";
+import { memo, useCallback, useEffect, useRef, useState } from "react";
 import type { Chat, Project } from "../../types";
 import { ChannelIcon } from "../../lib/channel-icons";
 import { ProjectIcon } from "../../lib/project-icons";
@@ -26,6 +26,7 @@ interface ChatItemProps {
   showProjectBadge?: boolean;
   projects?: Project[];
   onAssignToProject?: (chatId: string, projectId: string | null) => void;
+  onRename?: (title: string) => void | Promise<void>;
 }
 
 export const ChatItem = memo(function ChatItem({
@@ -39,7 +40,29 @@ export const ChatItem = memo(function ChatItem({
   showProjectBadge = false,
   projects,
   onAssignToProject,
+  onRename,
 }: ChatItemProps) {
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(chat.title);
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!isRenaming) {
+      setRenameValue(chat.title);
+    }
+  }, [chat.title, isRenaming]);
+
+  useEffect(() => {
+    if (!isRenaming) {
+      return;
+    }
+    const raf = window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [isRenaming]);
+
   const handleArchive = (e: React.MouseEvent) => {
     e.stopPropagation();
     onArchive();
@@ -58,32 +81,65 @@ export const ChatItem = memo(function ChatItem({
 
   // Stable click handler
   const handleClick = useCallback(
-    (e: React.MouseEvent) => onSelect({ splitPane: e.metaKey || e.ctrlKey }),
-    [onSelect],
+    (e: React.MouseEvent) => {
+      if (isRenaming) {
+        return;
+      }
+      onSelect({ splitPane: e.metaKey || e.ctrlKey });
+    },
+    [isRenaming, onSelect],
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
+        if (isRenaming) {
+          return;
+        }
         e.preventDefault();
         onSelect({ splitPane: e.metaKey || e.ctrlKey });
       }
     },
-    [onSelect],
+    [isRenaming, onSelect],
   );
+
+  const startRename = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onRename) {
+        return;
+      }
+      e.stopPropagation();
+      setRenameValue(chat.title);
+      setIsRenaming(true);
+    },
+    [chat.title, onRename],
+  );
+
+  const commitRename = useCallback(() => {
+    const next = renameValue.trim();
+    setIsRenaming(false);
+    if (!onRename || !next || next === chat.title) {
+      setRenameValue(chat.title);
+      return;
+    }
+    void onRename(next);
+  }, [chat.title, onRename, renameValue]);
+
+  const cancelRename = useCallback(() => {
+    setIsRenaming(false);
+    setRenameValue(chat.title);
+  }, [chat.title]);
 
   return (
     <div
       className={cn(
-        "group w-full py-2 rounded-md text-left text-sm transition-colors",
-        "flex items-center gap-2 relative cursor-pointer",
-        // Left border: accent for active, muted for open-in-pane, transparent for default
-        "border-l-2 pl-2.5 pr-3",
+        "group w-full rounded-md text-left text-sm transition-colors",
+        "flex items-center gap-2 relative cursor-pointer px-3 py-2",
         isActive
-          ? "border-l-primary bg-accent text-accent-foreground"
+          ? "bg-sidebar-accent text-sidebar-accent-foreground"
           : isOpenInPane
-            ? "border-l-muted-foreground/50 bg-accent/30 text-foreground"
-            : "border-l-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50",
+            ? "bg-sidebar-accent/50 text-sidebar-foreground"
+            : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
       )}
       onClick={handleClick}
       role="button"
@@ -94,7 +150,36 @@ export const ChatItem = memo(function ChatItem({
     >
       {chat.channel && <ChannelIcon channel={chat.channel} className="h-3.5 w-3.5 shrink-0" />}
       <div className="flex-1 min-w-0">
-        <div className="truncate">{chat.title}</div>
+        {isRenaming ? (
+          <input
+            ref={renameInputRef}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onBlur={commitRename}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === "Enter") {
+                e.preventDefault();
+                (e.currentTarget as HTMLInputElement).blur();
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                cancelRename();
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className={cn(
+              "h-6 w-full rounded-sm border border-border bg-background px-1.5",
+              "text-sm text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            )}
+            aria-label="Rename chat"
+          />
+        ) : (
+          <div className="truncate" onDoubleClick={startRename} title="Double-click to rename">
+            {chat.title}
+          </div>
+        )}
         {chat.subtitle && (
           <div className="text-xs text-muted-foreground truncate">{chat.subtitle}</div>
         )}

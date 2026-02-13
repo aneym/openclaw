@@ -406,7 +406,7 @@ export function attachGatewayWsMessageHandler(params: {
         const allowControlUiBypass = allowInsecureControlUi || disableControlUiDeviceAuth;
         const device = disableControlUiDeviceAuth ? null : deviceRaw;
 
-        logWsControl.info(
+        logWsControl.debug(
           `[CONNECT-DEBUG] conn=${connId} client=${clientLabel} isControlUi=${isControlUi} ` +
             `hasDevice=${!!device} hasDeviceRaw=${!!deviceRaw} isLocalClient=${isLocalClient} ` +
             `hasToken=${hasTokenAuth} hasPassword=${hasPasswordAuth} ` +
@@ -436,7 +436,14 @@ export function attachGatewayWsMessageHandler(params: {
           (sharedAuthResult.method === "token" || sharedAuthResult.method === "password");
         const rejectUnauthorized = () => {
           setHandshakeState("failed");
-          logWsControl.warn(
+          // Loopback webchat often retries while the token UI is being filled in.
+          // Keep those retries in debug to avoid flooding normal operator logs.
+          const isLocalTokenRetry =
+            isLocalClient &&
+            isWebchat &&
+            (authResult.reason === "token_missing" || authResult.reason === "token_mismatch");
+          const logUnauthorized = isLocalTokenRetry ? logWsControl.debug : logWsControl.warn;
+          logUnauthorized(
             `unauthorized conn=${connId} remote=${remoteAddr ?? "?"} client=${clientLabel} ${connectParams.client.mode} v${connectParams.client.version} reason=${authResult.reason ?? "unknown"}`,
           );
           const authProvided: AuthProvidedKind = connectParams.auth?.token
@@ -468,14 +475,14 @@ export function attachGatewayWsMessageHandler(params: {
           });
           close(1008, truncateCloseReason(authMessage));
         };
-        logWsControl.info(
+        logWsControl.debug(
           `[CONNECT-DEBUG] conn=${connId} authResult.ok=${authResult.ok} authResult.reason=${authResult.reason ?? "n/a"} ` +
             `authResult.method=${authResult.method ?? "n/a"} sharedAuthOk=${sharedAuthOk} authOk=${authOk}`,
         );
 
         if (!device) {
           const canSkipDevice = sharedAuthOk;
-          logWsControl.info(
+          logWsControl.debug(
             `[CONNECT-DEBUG] conn=${connId} NO DEVICE — canSkipDevice=${canSkipDevice} ` +
               `isControlUi=${isControlUi} allowBypass=${allowControlUiBypass} ` +
               `isLocalClient=${isLocalClient} → willReject=${isControlUi && !allowControlUiBypass && !(isLocalClient && canSkipDevice)}`,
@@ -524,7 +531,7 @@ export function attachGatewayWsMessageHandler(params: {
           }
         }
         if (device) {
-          logWsControl.info(
+          logWsControl.debug(
             `[CONNECT-DEBUG] conn=${connId} HAS DEVICE deviceId=${device.id} nonce=${device.nonce ?? "(none)"}`,
           );
           const derivedId = deriveDeviceIdFromPublicKey(device.publicKey);
@@ -688,14 +695,14 @@ export function attachGatewayWsMessageHandler(params: {
           }
         }
         if (!authOk) {
-          logWsControl.info(
+          logWsControl.debug(
             `[CONNECT-DEBUG] conn=${connId} REJECTING — authOk=false authMethod=${authMethod} reason=${authResult.reason ?? "n/a"}`,
           );
           rejectUnauthorized();
           return;
         }
 
-        logWsControl.info(
+        logWsControl.debug(
           `[CONNECT-DEBUG] conn=${connId} AUTH OK method=${authMethod} → proceeding to pairing check`,
         );
         const skipPairing = allowControlUiBypass && sharedAuthOk;
@@ -990,7 +997,7 @@ export function attachGatewayWsMessageHandler(params: {
           stateVersion: snapshot.stateVersion.presence,
         });
 
-        logWsControl.info(
+        logWsControl.debug(
           `[CONNECT-DEBUG] conn=${connId} SENDING hello-ok protocol=${PROTOCOL_VERSION} methods=${gatewayMethods.length} events=${events.length}`,
         );
         send({ type: "res", id: frame.id, ok: true, payload: helloOk });

@@ -35,6 +35,7 @@ export type OpenClawSkillMetadata = {
 export type SkillInvocationPolicy = {
   userInvocable: boolean;
   disableModelInvocation: boolean;
+  nativeCommand: boolean;
 };
 
 export type SkillCommandDispatchSpec = {
@@ -52,6 +53,8 @@ export type SkillCommandSpec = {
   name: string;
   skillName: string;
   description: string;
+  /** Whether this skill should appear in native channel command menus (Telegram, Discord, Slack). */
+  nativeCommand: boolean;
   /** Optional deterministic dispatch behavior for this command. */
   dispatch?: SkillCommandDispatchSpec;
 };

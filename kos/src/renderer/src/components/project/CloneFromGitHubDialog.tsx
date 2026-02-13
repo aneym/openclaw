@@ -1,6 +1,7 @@
 import { FolderOpen, Loader2, Lock, Search } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import type { GitHubRepo } from "../../types";
+import { getRendererApi } from "../../lib/runtime";
 import { useSettingsStore } from "../../stores/settings-store";
 import { Button } from "../ui/button";
 import {
@@ -35,8 +36,13 @@ export function CloneFromGitHubDialog({ open, onOpenChange, onClone }: CloneFrom
   // Load repos when dialog opens
   useEffect(() => {
     if (open && isGitHubConnected) {
+      const api = getRendererApi();
+      if (!api?.github) {
+        setError("GitHub integration is only available in the desktop app");
+        return;
+      }
       setIsLoading(true);
-      window.api.github
+      api.github
         .listRepos()
         .then(setRepos)
         .catch((err) => setError(err.message))
@@ -46,8 +52,14 @@ export function CloneFromGitHubDialog({ open, onOpenChange, onClone }: CloneFrom
 
   // Listen for clone progress
   useEffect(() => {
-    if (!isCloning) return;
-    const unsubscribe = window.api.git.onCloneProgress((message) => {
+    if (!isCloning) {
+      return;
+    }
+    const api = getRendererApi();
+    if (!api?.git) {
+      return;
+    }
+    const unsubscribe = api.git.onCloneProgress((message) => {
       setCloneProgress(message);
     });
     return unsubscribe;
@@ -70,14 +82,20 @@ export function CloneFromGitHubDialog({ open, onOpenChange, onClone }: CloneFrom
   );
 
   const handleSelectPath = useCallback(async () => {
-    const result = await window.api.openDirectoryDialog();
+    const api = getRendererApi();
+    if (!api?.openDirectoryDialog) {
+      return;
+    }
+    const result = await api.openDirectoryDialog();
     if (!result.canceled && result.filePaths[0]) {
       setTargetPath(result.filePaths[0]);
     }
   }, []);
 
   const handleClone = useCallback(async () => {
-    if (!selectedRepo || !targetPath) return;
+    if (!selectedRepo || !targetPath) {
+      return;
+    }
 
     setIsCloning(true);
     setError(null);

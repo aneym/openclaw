@@ -60,6 +60,11 @@ export type RunEmbeddedPiAgentParams = {
   config?: OpenClawConfig;
   skillsSnapshot?: SkillSnapshot;
   prompt: string;
+  /**
+   * Raw inbound user message without envelope/system context.
+   * Used by plugin hooks (e.g. memory recall) to avoid oversized prompt wrappers.
+   */
+  rawMessage?: string;
   images?: ImageContent[];
   /** Optional client-provided tools (OpenResponses hosted tools). */
   clientTools?: ClientToolDefinition[];

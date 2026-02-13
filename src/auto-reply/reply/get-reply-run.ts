@@ -191,6 +191,13 @@ export async function runPreparedReply(
   const baseBody = sessionCtx.BodyStripped ?? sessionCtx.Body ?? "";
   // Use CommandBody/RawBody for bare reset detection (clean message without structural context).
   const rawBodyTrimmed = (ctx.CommandBody ?? ctx.RawBody ?? ctx.Body ?? "").trim();
+  // Use clean command-parsing text for hook recall queries (avoid envelope-shaped Body fallback).
+  const rawBodyForHooks = (
+    sessionCtx.BodyForCommands ??
+    sessionCtx.CommandBody ??
+    sessionCtx.RawBody ??
+    ""
+  ).trim();
   const baseBodyTrimmedRaw = baseBody.trim();
   if (
     allowTextCommands &&
@@ -361,6 +368,7 @@ export async function runPreparedReply(
   const authProfileIdSource = sessionEntry?.authProfileOverrideSource;
   const followupRun = {
     prompt: queuedBody,
+    rawMessage: rawBodyForHooks || undefined,
     messageId: sessionCtx.MessageSidFull ?? sessionCtx.MessageSid,
     summaryLine: baseBodyTrimmedRaw,
     enqueuedAt: Date.now(),

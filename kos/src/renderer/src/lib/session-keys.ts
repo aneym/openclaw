@@ -5,9 +5,13 @@ type ParsedAgentSessionKey = {
 
 export function parseAgentSessionKey(key: string): ParsedAgentSessionKey | null {
   const trimmed = key.trim();
-  if (!trimmed) return null;
+  if (!trimmed) {
+    return null;
+  }
   const match = trimmed.match(/^agent:([^:]+):(.+)$/i);
-  if (!match) return null;
+  if (!match) {
+    return null;
+  }
   return {
     agentId: match[1]?.toLowerCase() ?? "",
     rest: match[2] ?? "",
@@ -15,9 +19,13 @@ export function parseAgentSessionKey(key: string): ParsedAgentSessionKey | null 
 }
 
 export function normalizeSessionKey(key: string | undefined | null): string {
-  if (!key) return "";
+  if (!key) {
+    return "";
+  }
   const trimmed = key.trim();
-  if (!trimmed) return "";
+  if (!trimmed) {
+    return "";
+  }
   const parsed = parseAgentSessionKey(trimmed);
   return parsed ? parsed.rest : trimmed;
 }
@@ -26,10 +34,14 @@ export function sessionKeysMatch(
   a: string | undefined | null,
   b: string | undefined | null,
 ): boolean {
-  if (!a || !b) return false;
+  if (!a || !b) {
+    return false;
+  }
   const aTrim = a.trim();
   const bTrim = b.trim();
-  if (!aTrim || !bTrim) return false;
+  if (!aTrim || !bTrim) {
+    return false;
+  }
 
   const aParsed = parseAgentSessionKey(aTrim);
   const bParsed = parseAgentSessionKey(bTrim);
@@ -48,9 +60,27 @@ export function sessionKeysMatch(
  * Cron keys follow the pattern: agent:main:cron:... or cron:...
  */
 export function isCronSessionKey(key: string | undefined | null): boolean {
-  if (!key) return false;
+  if (!key) {
+    return false;
+  }
   const lower = key.toLowerCase().trim();
   return lower.includes(":cron:") || lower.includes(":cron-") || lower.startsWith("cron:");
+}
+
+/**
+ * Check if a session key belongs to a sub-agent session.
+ * Subagent keys follow the pattern: agent:{agentId}:subagent:{uuid} or subagent:{uuid}.
+ */
+export function isSubagentSessionKey(key: string | undefined | null): boolean {
+  const raw = (key ?? "").trim();
+  if (!raw) {
+    return false;
+  }
+  if (raw.toLowerCase().startsWith("subagent:")) {
+    return true;
+  }
+  const parsed = parseAgentSessionKey(raw);
+  return Boolean((parsed?.rest ?? "").toLowerCase().startsWith("subagent:"));
 }
 
 /**
@@ -59,6 +89,8 @@ export function isCronSessionKey(key: string | undefined | null): boolean {
  */
 export function buildSessionKey(agentId: string, rest: string): string {
   // Already prefixed — return as-is
-  if (rest.startsWith("agent:")) return rest;
+  if (rest.startsWith("agent:")) {
+    return rest;
+  }
   return `agent:${agentId}:${rest}`;
 }

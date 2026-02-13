@@ -15,6 +15,7 @@ interface ChatGroupSectionProps {
   openPaneChatIds?: Set<string>;
   onSelectChat: (chat: Chat, options?: { splitPane?: boolean }) => void;
   onArchiveChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, title: string) => void | Promise<void>;
   onCopySessionId: (sessionKey: string) => void;
   projectsMap?: Map<string, Project>;
   showProjectBadges?: boolean;
@@ -31,13 +32,16 @@ export const ChatGroupSection = memo(function ChatGroupSection({
   openPaneChatIds,
   onSelectChat,
   onArchiveChat,
+  onRenameChat,
   onCopySessionId,
   projectsMap,
   showProjectBadges = false,
   projects,
   onAssignToProject,
 }: ChatGroupSectionProps) {
-  if (chats.length === 0) return null;
+  if (chats.length === 0) {
+    return null;
+  }
 
   return (
     <div className="mb-2">
@@ -62,6 +66,7 @@ export const ChatGroupSection = memo(function ChatGroupSection({
               isOpenInPane={openPaneChatIds?.has(chat.id) ?? false}
               onSelectChat={onSelectChat}
               onArchiveChat={onArchiveChat}
+              onRenameChat={onRenameChat}
               onCopySessionId={onCopySessionId}
               projectsMap={projectsMap}
               showProjectBadges={showProjectBadges}
@@ -82,6 +87,7 @@ interface ChatItemWrapperProps {
   isOpenInPane: boolean;
   onSelectChat: (chat: Chat, options?: { splitPane?: boolean }) => void;
   onArchiveChat: (chatId: string) => void;
+  onRenameChat: (chatId: string, title: string) => void | Promise<void>;
   onCopySessionId: (sessionKey: string) => void;
   projectsMap?: Map<string, Project>;
   showProjectBadges: boolean;
@@ -95,6 +101,7 @@ const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
   isOpenInPane,
   onSelectChat,
   onArchiveChat,
+  onRenameChat,
   onCopySessionId,
   projectsMap,
   showProjectBadges,
@@ -107,6 +114,10 @@ const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
     [chat, onSelectChat],
   );
   const handleArchive = useCallback(() => onArchiveChat(chat.id), [chat.id, onArchiveChat]);
+  const handleRename = useCallback(
+    (title: string) => onRenameChat(chat.id, title),
+    [chat.id, onRenameChat],
+  );
   const handleCopySessionId = useCallback(
     () => onCopySessionId(chat.sessionKey),
     [chat.sessionKey, onCopySessionId],
@@ -126,6 +137,7 @@ const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
         isOpenInPane={isOpenInPane}
         onSelect={handleSelect}
         onArchive={handleArchive}
+        onRename={handleRename}
         onCopySessionId={handleCopySessionId}
         project={project}
         showProjectBadge={showProjectBadges}
@@ -138,6 +150,8 @@ const MemoizedChatItemWrapper = memo(function ChatItemWrapper({
 
 // Helper to find project for a chat - now uses projectId directly
 function findProjectForChat(chat: Chat, projectsMap: Map<string, Project>): Project | undefined {
-  if (!chat.projectId) return undefined;
+  if (!chat.projectId) {
+    return undefined;
+  }
   return projectsMap.get(chat.projectId);
 }

@@ -12,6 +12,7 @@ const WS_LOG_REDACT_OPTIONS = {
   mode: "tools" as const,
   patterns: getDefaultRedactPatterns(),
 };
+const ROUTINE_SUCCESS_METHODS = new Set(["chat.history"]);
 
 type WsInflightEntry = {
   ts: number;
@@ -90,6 +91,25 @@ export function formatForLog(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function shouldSkipRoutineSuccessLog(params: {
+  direction: "in" | "out";
+  kind: string;
+  method?: string;
+  ok?: boolean;
+  durationMs?: number;
+}): boolean {
+  if (params.direction !== "out" || params.kind !== "res" || params.ok !== true) {
+    return false;
+  }
+  if (!params.method || !ROUTINE_SUCCESS_METHODS.has(params.method)) {
+    return false;
+  }
+  if (typeof params.durationMs === "number" && params.durationMs >= DEFAULT_WS_SLOW_MS) {
+    return false;
+  }
+  return true;
 }
 
 function compactPreview(input: string, maxLen = 160): string {
@@ -227,6 +247,10 @@ export function logWs(direction: "in" | "out", kind: string, meta?: Record<strin
           return now - startedAt;
         })()
       : undefined;
+
+  if (shouldSkipRoutineSuccessLog({ direction, kind, method, ok, durationMs })) {
+    return;
+  }
 
   const dirArrow = direction === "in" ? "←" : "→";
   const dirColor = direction === "in" ? chalk.greenBright : chalk.cyanBright;
@@ -405,6 +429,11 @@ function logWsCompact(direction: "in" | "out", kind: string, meta?: Record<strin
   }
   const durationToken =
     typeof startedAt === "number" ? chalk.dim(`${now - startedAt}ms`) : undefined;
+  const durationMs = typeof startedAt === "number" ? now - startedAt : undefined;
+
+  if (shouldSkipRoutineSuccessLog({ direction, kind, method, ok, durationMs })) {
+    return;
+  }
 
   const headline =
     (kind === "req" || kind === "res") && method

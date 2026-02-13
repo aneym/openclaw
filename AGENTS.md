@@ -155,6 +155,16 @@
 ## Agent-Specific Notes
 
 - Vocabulary: "makeup" = "mac app".
+- Iteration loop (always): after doing work, end the message with a compact **Work Summary** section (bullets only).
+- Work Summary must include `What I did:` and `Next steps / questions:` and stay under ~12 lines total.
+- Work Summary example:
+  ```
+  **Work Summary**
+  - What I did: updated catch-up dedupe to be per-thread (`kos/src/...`)
+  - Next steps / questions: confirm catch-up shows one item per unread thread; should “Open” also mark-read?
+  ```
+- For kOS UX/triage work, prioritize manual click-through validation over adding tests unless explicitly requested.
+- Do not create GitHub issues, PRs, or comments unless the user explicitly asks.
 - Never edit `node_modules` (global/Homebrew/npm/git installs too). Updates overwrite. Skill notes go in `tools.md` or `AGENTS.md`.
 - When adding a new `AGENTS.md` anywhere in the repo, also add a `CLAUDE.md` symlink pointing to it (example: `ln -s AGENTS.md CLAUDE.md`).
 - Signal: "update fly" => `fly ssh console -a flawd-bot -C "bash -lc 'cd /data/clawd/openclaw && git pull --rebase origin main'"` then `fly machines restart e825232f34d058 -a flawd-bot`.

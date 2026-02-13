@@ -82,6 +82,44 @@ struct OpenClawChatComposer: View {
         #endif
     }
 
+    #if os(iOS)
+    private var overflowMenu: some View {
+        Menu {
+            Section("Thinking") {
+                Picker("Thinking", selection: self.$viewModel.thinkingLevel) {
+                    Text("Off").tag("off")
+                    Text("Low").tag("low")
+                    Text("Medium").tag("medium")
+                    Text("High").tag("high")
+                }
+            }
+
+            Divider()
+
+            Button {
+                self.viewModel.refresh()
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+
+            Divider()
+
+            Button {} label: {
+                Label(
+                    self.viewModel.healthOK ? "Connected" : "Connecting…",
+                    systemImage: self.viewModel.healthOK ? "checkmark.circle" : "circle.dotted")
+            }
+            .disabled(true)
+        } label: {
+            Image(systemName: "slider.horizontal.3")
+        }
+        .buttonStyle(.plain)
+        .padding(6)
+        .background(Circle().fill(OpenClawChatTheme.subtleCard))
+        .help("Options")
+    }
+    #endif
+
     private var thinkingPicker: some View {
         Picker("Thinking", selection: self.$viewModel.thinkingLevel) {
             Text("Off").tag("off")
@@ -131,8 +169,9 @@ struct OpenClawChatComposer: View {
             Image(systemName: "paperclip")
         }
         .help("Add Image")
-        .buttonStyle(.bordered)
-        .controlSize(.small)
+        .buttonStyle(.plain)
+        .padding(6)
+        .background(Circle().fill(OpenClawChatTheme.subtleCard))
         .onChange(of: self.pickerItems) { _, newItems in
             Task { await self.loadPhotosPickerItems(newItems) }
         }
@@ -186,11 +225,24 @@ struct OpenClawChatComposer: View {
                 .padding(.horizontal, 2)
 
             HStack(alignment: .center, spacing: 8) {
+                #if os(iOS)
+                if self.style == .standard {
+                    Circle()
+                        .fill(self.viewModel.healthOK ? .green : .orange)
+                        .frame(width: 8, height: 8)
+                        .accessibilityLabel(self.viewModel.healthOK ? "Connected" : "Connecting")
+                }
+                Spacer(minLength: 0)
+                self.overflowMenu
+                self.attachmentPicker
+                self.sendButton
+                #else
                 if self.showsConnectionPill {
                     self.connectionPill
                 }
                 Spacer(minLength: 0)
                 self.sendButton
+                #endif
             }
         }
         .padding(.horizontal, 10)
@@ -308,7 +360,11 @@ struct OpenClawChatComposer: View {
     }
 
     private var showsToolbar: Bool {
+        #if os(iOS)
+        false
+        #else
         self.style == .standard
+        #endif
     }
 
     private var showsAttachments: Bool {
@@ -316,7 +372,11 @@ struct OpenClawChatComposer: View {
     }
 
     private var showsConnectionPill: Bool {
+        #if os(iOS)
+        false
+        #else
         self.style == .standard
+        #endif
     }
 
     private var composerPadding: CGFloat {

@@ -4,17 +4,17 @@ import type { TelegramAccountConfig } from "../config/types.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { registerTelegramNativeCommands } from "./bot-native-commands.js";
 
-const { listSkillCommandsForAgents } = vi.hoisted(() => ({
-  listSkillCommandsForAgents: vi.fn(() => []),
+const { listNativeSkillCommandsForAgents } = vi.hoisted(() => ({
+  listNativeSkillCommandsForAgents: vi.fn(() => []),
 }));
 
 vi.mock("../auto-reply/skill-commands.js", () => ({
-  listSkillCommandsForAgents,
+  listNativeSkillCommandsForAgents,
 }));
 
 describe("registerTelegramNativeCommands", () => {
   beforeEach(() => {
-    listSkillCommandsForAgents.mockReset();
+    listNativeSkillCommandsForAgents.mockReset();
   });
 
   const buildParams = (cfg: OpenClawConfig, accountId = "default") => ({
@@ -61,7 +61,7 @@ describe("registerTelegramNativeCommands", () => {
 
     registerTelegramNativeCommands(buildParams(cfg, "bot-a"));
 
-    expect(listSkillCommandsForAgents).toHaveBeenCalledWith({
+    expect(listNativeSkillCommandsForAgents).toHaveBeenCalledWith({
       cfg,
       agentIds: ["butler"],
     });
@@ -76,7 +76,7 @@ describe("registerTelegramNativeCommands", () => {
 
     registerTelegramNativeCommands(buildParams(cfg, "bot-a"));
 
-    expect(listSkillCommandsForAgents).toHaveBeenCalledWith({ cfg });
+    expect(listNativeSkillCommandsForAgents).toHaveBeenCalledWith({ cfg });
   });
 
   it("truncates Telegram command registration to 100 commands", () => {

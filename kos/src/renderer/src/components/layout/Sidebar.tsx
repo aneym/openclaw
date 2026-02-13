@@ -8,6 +8,7 @@ import { notifications } from "../../lib/notifications";
 import { cn } from "../../lib/utils";
 import { useChatStore } from "../../stores/chat-store";
 import { useDashboardStore } from "../../stores/dashboard-store";
+import { useGatewayStore } from "../../stores/gateway-store";
 import { usePanelStore, getPanelChatId } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useSidebarUIStore } from "../../stores/sidebar-ui-store";
@@ -21,9 +22,19 @@ interface SidebarProps {
   onNavigate: (view: View) => void;
   currentView: View;
   isHome: boolean;
+  canOpenBrowserPanel: boolean;
+  canOpenTerminalPanel: boolean;
 }
 
-export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHome }: SidebarProps) {
+export function Sidebar({
+  projectId,
+  workspaceId,
+  onNavigate,
+  currentView,
+  isHome,
+  canOpenBrowserPanel,
+  canOpenTerminalPanel,
+}: SidebarProps) {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -37,9 +48,14 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   const activeChatByWorkspace = useChatStore((s) => s.activeChatByWorkspace);
   const setActiveChat = useChatStore((s) => s.setActiveChat);
   const addChat = useChatStore((s) => s.addChat);
+  const updateChat = useChatStore((s) => s.updateChat);
   const archiveChat = useChatStore((s) => s.archiveChat);
   const unarchiveChat = useChatStore((s) => s.unarchiveChat);
   const assignChatToProject = useChatStore((s) => s.assignChatToProject);
+
+  // Gateway state
+  const request = useGatewayStore((s) => s.request);
+  const connected = useGatewayStore((s) => s.connected);
 
   // Project state
   const projectsMap = useProjectStore((s) => s.projects);
@@ -61,6 +77,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   const getFocusedChatPanelId = usePanelStore((s) => s.getFocusedChatPanelId);
   const layoutsMap = usePanelStore((s) => s.layouts);
   const focusedPanelIds = usePanelStore((s) => s.focusedPanelIds);
+  const closePanelsForChat = usePanelStore((s) => s.closePanelsForChat);
 
   // Pagination state
   const hasMore = useChatStore((s) => s.hasMore);
@@ -70,32 +87,40 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   const showWorkspaces = !isHome && projectId ? shouldShowWorkspaceUI(projectId) : false;
 
   const workspaces = useMemo(() => {
-    if (isHome || !projectId) return [];
+    if (isHome || !projectId) {
+      return [];
+    }
     return Array.from(workspacesMap.values() as Iterable<Workspace>)
       .filter((w) => w.projectId === projectId)
-      .sort((a, b) => {
-        if (a.isDefault && !b.isDefault) return -1;
-        if (!a.isDefault && b.isDefault) return 1;
+      .toSorted((a, b) => {
+        if (a.isDefault && !b.isDefault) {
+          return -1;
+        }
+        if (!a.isDefault && b.isDefault) {
+          return 1;
+        }
         return a.name.localeCompare(b.name);
       });
   }, [workspacesMap, projectId, isHome]);
 
   // All projects for assign-to-project menu
   const projects = useMemo(() => {
-    return Array.from(projectsMap.values() as Iterable<Project>).sort((a, b) =>
+    return Array.from(projectsMap.values() as Iterable<Project>).toSorted((a, b) =>
       a.name.localeCompare(b.name),
     );
   }, [projectsMap]);
 
   // Active project (for Linear integration)
   const activeProject = useMemo(() => {
-    if (!projectId) return null;
+    if (!projectId) {
+      return null;
+    }
     return projectsMap.get(projectId) || null;
   }, [projectsMap, projectId]);
 
   // Chats for the current context
   const allChats = useMemo(() => {
-    return Array.from(chatsMap.values() as Iterable<Chat>).sort(
+    return Array.from(chatsMap.values() as Iterable<Chat>).toSorted(
       (a, b) => b.lastMessageAt - a.lastMessageAt,
     );
   }, [chatsMap]);
@@ -108,9 +133,15 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
       // Project mode: show chats that belong to this project
       // Match by workspaceId OR by direct projectId assignment
       filtered = allChats.filter((c) => {
-        if (c.status === "archived") return false;
-        if (workspaceId && c.workspaceId === workspaceId) return true;
-        if (projectId && c.projectId === projectId) return true;
+        if (c.status === "archived") {
+          return false;
+        }
+        if (workspaceId && c.workspaceId === workspaceId) {
+          return true;
+        }
+        if (projectId && c.projectId === projectId) {
+          return true;
+        }
         return false;
       });
     }
@@ -132,15 +163,21 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   // Collect all chat IDs that are open in any pane
   const openPaneChatIds = useMemo(() => {
     const wsId = isHome ? HOME_WORKSPACE_ID : workspaceId;
-    if (!wsId) return new Set<string>();
+    if (!wsId) {
+      return new Set<string>();
+    }
 
     const layout = layoutsMap.get(wsId);
-    if (!layout) return new Set<string>();
+    if (!layout) {
+      return new Set<string>();
+    }
 
     const ids = new Set<string>();
     for (const [, panel] of layout.panels) {
       const chatId = getPanelChatId(panel);
-      if (chatId) ids.add(chatId);
+      if (chatId) {
+        ids.add(chatId);
+      }
     }
     return ids;
   }, [layoutsMap, isHome, workspaceId]);
@@ -148,10 +185,14 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   // Derive active chat from what the focused panel is actually rendering
   const activeChatId = useMemo(() => {
     const wsId = isHome ? HOME_WORKSPACE_ID : workspaceId;
-    if (!wsId) return null;
+    if (!wsId) {
+      return null;
+    }
 
     const layout = layoutsMap.get(wsId);
-    if (!layout) return null;
+    if (!layout) {
+      return null;
+    }
 
     // Check focused panel first
     const focusedId = focusedPanelIds.get(wsId);
@@ -159,14 +200,18 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
       const panel = layout.panels.get(focusedId);
       if (panel) {
         const chatId = getPanelChatId(panel);
-        if (chatId) return chatId;
+        if (chatId) {
+          return chatId;
+        }
       }
     }
 
     // Fallback: first chat panel with content
     for (const [, panel] of layout.panels) {
       const chatId = getPanelChatId(panel);
-      if (chatId) return chatId;
+      if (chatId) {
+        return chatId;
+      }
     }
 
     // Last resort: dashboard/chat store (for fresh app start with no panels yet)
@@ -182,7 +227,9 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
 
   // Find which group contains the active chat (for auto-expand)
   const activeGroupKey = useMemo(() => {
-    if (!activeChatId) return undefined;
+    if (!activeChatId) {
+      return undefined;
+    }
     const prefix = isHome ? "dashboard" : "sidebar";
     for (const group of CHAT_GROUPS) {
       if (groupedChats[group as ChatGroup].some((c) => c.id === activeChatId)) {
@@ -197,6 +244,11 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     // If user has explicitly toggled this group, respect their choice
     if (userToggledGroups.has(group)) {
       return collapsedGroups.has(group);
+    }
+    // If the active chat isn't part of the rendered list (e.g. filtered/hidden/internal),
+    // don't collapse everything; keep the "Active" group open by default.
+    if (!activeGroupKey) {
+      return !group.endsWith("-Active");
     }
     // Default: collapse everything except the group containing the active chat
     return group !== activeGroupKey;
@@ -217,11 +269,13 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     [toggleGroup],
   );
 
-  // Unread count for triage badge (excludes cron/automated sessions)
+  // Unread count for catch-up badge (excludes cron/automated sessions)
   const unreadCount = useMemo(() => {
     let count = 0;
     for (const chat of chatsMap.values()) {
-      if (chat.hasUnread && !chat.isCron) count++;
+      if (chat.hasUnread && !chat.isCron) {
+        count++;
+      }
     }
     return count;
   }, [chatsMap]);
@@ -373,6 +427,10 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
     (chatId: string) => {
       const chat = chatsMap.get(chatId);
       const chatTitle = chat?.title || "Chat";
+
+      // Close any panels showing this chat
+      closePanelsForChat(chatId);
+
       archiveChat(chatId);
       toast("Chat archived", {
         description: chatTitle,
@@ -382,7 +440,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
         },
       });
     },
-    [chatsMap, archiveChat, unarchiveChat],
+    [chatsMap, archiveChat, unarchiveChat, closePanelsForChat],
   );
 
   const handleCopySessionId = useCallback((sessionKey: string) => {
@@ -390,6 +448,37 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
       notifications.error("Failed to copy session ID");
     });
   }, []);
+
+  const handleRenameChat = useCallback(
+    async (chatId: string, title: string) => {
+      const trimmed = title.trim();
+      if (!trimmed) {
+        return;
+      }
+
+      const chat = chatsMap.get(chatId);
+      if (!chat || trimmed === chat.title) {
+        return;
+      }
+
+      if (!connected) {
+        notifications.error("Not connected", "Cannot rename chat while disconnected");
+        return;
+      }
+
+      try {
+        await request("sessions.patch", {
+          key: chat.sessionKey,
+          label: trimmed,
+        });
+        updateChat(chatId, { title: trimmed });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        notifications.rpcError("sessions.patch", message);
+      }
+    },
+    [chatsMap, connected, request, updateChat],
+  );
 
   const handleAssignToProject = useCallback(
     (chatId: string, targetProjectId: string | null) => {
@@ -399,19 +488,16 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
   );
 
   return (
-    <div
-      className="h-full border-r border-border/50 flex flex-col"
-      style={{ background: "var(--glass-sidebar-bg)" }}
-    >
+    <div className="h-full border-r border-sidebar-border flex flex-col bg-sidebar">
       {/* Session search */}
-      <div className="shrink-0 border-b border-border px-3 py-2">
+      <div className="shrink-0 border-b border-sidebar-border px-3 py-2">
         <SessionSearch query={searchQuery} onChange={setSearchQuery} />
       </div>
 
       {/* Workspaces section (conditional, only in project mode) */}
       {showWorkspaces && (
-        <div className="shrink-0 border-b border-border">
-          <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider">
+        <div className="shrink-0 border-b border-sidebar-border">
+          <div className="px-4 py-2 text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider">
             Workspaces
           </div>
           <div className="px-2 pb-2 space-y-0.5">
@@ -423,8 +509,8 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
                   "w-full px-3 py-1.5 rounded-md text-left text-sm transition-colors",
                   "flex items-center gap-2",
                   ws.id === workspaceId
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                    : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                 )}
               >
                 <GitBranch className="h-3.5 w-3.5 shrink-0" />
@@ -437,11 +523,11 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
 
       {/* Chats section */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="px-4 py-2 text-xs font-semibold text-muted-foreground/70 uppercase tracking-wider flex items-center justify-between">
+        <div className="px-4 py-2 text-xs font-semibold text-sidebar-foreground/70 uppercase tracking-wider flex items-center justify-between">
           <span>Chats</span>
           <button
             onClick={handleNewChat}
-            className="text-muted-foreground hover:text-foreground transition-colors"
+            className="text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors"
             title="New chat"
           >
             <Plus className="h-3.5 w-3.5" />
@@ -464,6 +550,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
                   openPaneChatIds={openPaneChatIds}
                   onSelectChat={handleSelectChat}
                   onArchiveChat={handleArchiveChat}
+                  onRenameChat={handleRenameChat}
                   onCopySessionId={handleCopySessionId}
                   projectsMap={projectsMap}
                   showProjectBadges={true}
@@ -486,6 +573,7 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
                   openPaneChatIds={openPaneChatIds}
                   onSelectChat={handleSelectChat}
                   onArchiveChat={handleArchiveChat}
+                  onRenameChat={handleRenameChat}
                   onCopySessionId={handleCopySessionId}
                   projectsMap={projectsMap}
                   showProjectBadges={false}
@@ -502,8 +590,8 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
               onClick={loadMoreChats}
               disabled={isLoadingMore}
               className={cn(
-                "w-full mt-2 px-3 py-2 text-xs text-muted-foreground",
-                "hover:text-foreground hover:bg-accent/50 rounded-md transition-colors",
+                "w-full mt-2 px-3 py-2 text-xs text-sidebar-foreground/70",
+                "hover:text-sidebar-foreground hover:bg-sidebar-accent/50 rounded-md transition-colors",
                 "flex items-center justify-center gap-2",
                 "disabled:opacity-50 disabled:cursor-not-allowed",
               )}
@@ -522,31 +610,37 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
       </div>
 
       {/* Bottom nav */}
-      <div className="shrink-0 border-t border-border px-2 py-2 space-y-0.5">
+      <div className="shrink-0 border-t border-sidebar-border px-2 py-2 space-y-0.5">
         <button
           onClick={() => onNavigate("triage")}
           className={cn(
             "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
             "flex items-center gap-2",
             currentView === "triage"
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
           )}
         >
           <Inbox className="h-4 w-4 shrink-0" />
-          <span>Triage</span>
+          <span>Catch Up</span>
           {unreadCount > 0 && (
-            <span className="ml-auto text-xs bg-primary text-primary-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
+            <span className="ml-auto text-xs bg-sidebar-primary text-sidebar-primary-foreground rounded-full px-1.5 py-0.5 min-w-[1.25rem] text-center">
               {unreadCount}
             </span>
           )}
         </button>
         <button
           onClick={() => {
-            if (!workspaceId) return;
-            if (hasPanelType(workspaceId, "tasks")) return;
+            if (!workspaceId) {
+              return;
+            }
+            if (hasPanelType(workspaceId, "tasks")) {
+              return;
+            }
             // projectId should always exist when in project view (not home)
-            if (!projectId) return;
+            if (!projectId) {
+              return;
+            }
             spawnPanel(workspaceId, "tasks", {
               teamId: activeProject?.linearTeamId,
               projectId: projectId,
@@ -563,70 +657,82 @@ export function Sidebar({ projectId, workspaceId, onNavigate, currentView, isHom
           className={cn(
             "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
             "flex items-center gap-2",
-            "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+            "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
             "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
           )}
         >
           <ListTodo className="h-4 w-4 shrink-0" />
           <span>Tasks</span>
         </button>
-        <button
-          onClick={() => {
-            if (!workspaceId) return;
-            if (hasPanelType(workspaceId, "browser")) return;
-            spawnPanel(workspaceId, "browser", { url: "https://google.com" });
-          }}
-          disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "browser") : false)}
-          title={
-            !workspaceId
-              ? "Select a project first"
-              : workspaceId && hasPanelType(workspaceId, "browser")
-                ? "Browser already open"
-                : "Open browser panel"
-          }
-          className={cn(
-            "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
-            "flex items-center gap-2",
-            "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-            "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
-          )}
-        >
-          <Globe className="h-4 w-4 shrink-0" />
-          <span>Browser</span>
-        </button>
-        <button
-          onClick={() => {
-            if (!workspaceId) return;
-            if (hasPanelType(workspaceId, "terminal")) return;
-            // Pass project's workspacePath as the terminal cwd (undefined defaults to homedir)
-            spawnPanel(workspaceId, "terminal", { cwd: activeProject?.workspacePath });
-          }}
-          disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "terminal") : false)}
-          title={
-            !workspaceId
-              ? "Select a workspace first"
-              : workspaceId && hasPanelType(workspaceId, "terminal")
-                ? "Terminal already open"
-                : "Open terminal panel"
-          }
-          className={cn(
-            "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
-            "flex items-center gap-2",
-            "text-muted-foreground hover:text-foreground hover:bg-accent/50",
-            "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
-          )}
-        >
-          <Terminal className="h-4 w-4 shrink-0" />
-          <span>Terminal</span>
-        </button>
+        {canOpenBrowserPanel && (
+          <button
+            onClick={() => {
+              if (!workspaceId) {
+                return;
+              }
+              if (hasPanelType(workspaceId, "browser")) {
+                return;
+              }
+              spawnPanel(workspaceId, "browser", { url: "https://google.com" });
+            }}
+            disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "browser") : false)}
+            title={
+              !workspaceId
+                ? "Select a project first"
+                : workspaceId && hasPanelType(workspaceId, "browser")
+                  ? "Browser already open"
+                  : "Open browser panel"
+            }
+            className={cn(
+              "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
+              "flex items-center gap-2",
+              "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
+            )}
+          >
+            <Globe className="h-4 w-4 shrink-0" />
+            <span>Browser</span>
+          </button>
+        )}
+        {canOpenTerminalPanel && (
+          <button
+            onClick={() => {
+              if (!workspaceId) {
+                return;
+              }
+              if (hasPanelType(workspaceId, "terminal")) {
+                return;
+              }
+              // Pass project's workspacePath as the terminal cwd (undefined defaults to homedir)
+              spawnPanel(workspaceId, "terminal", { cwd: activeProject?.workspacePath });
+            }}
+            disabled={!workspaceId || (workspaceId ? hasPanelType(workspaceId, "terminal") : false)}
+            title={
+              !workspaceId
+                ? "Select a workspace first"
+                : workspaceId && hasPanelType(workspaceId, "terminal")
+                  ? "Terminal already open"
+                  : "Open terminal panel"
+            }
+            className={cn(
+              "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
+              "flex items-center gap-2",
+              "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+              "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent",
+            )}
+          >
+            <Terminal className="h-4 w-4 shrink-0" />
+            <span>Terminal</span>
+          </button>
+        )}
         <button
           onClick={() => onNavigate("settings")}
           className={cn(
             "w-full px-3 py-2 rounded-md text-left text-sm transition-colors",
             "flex items-center gap-2",
             currentView === "settings"
-              ? "bg-accent text-accent-foreground"
-              : "text-muted-foreground hover:text-foreground hover:bg-accent/50",
+              ? "bg-sidebar-accent text-sidebar-accent-foreground"
+              : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
           )}
         >
           <Settings className="h-4 w-4 shrink-0" />

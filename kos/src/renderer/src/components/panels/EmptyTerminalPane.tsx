@@ -7,6 +7,7 @@
 
 import { Keyboard, Play, FolderOpen } from "lucide-react";
 import { useCallback, useState, useMemo } from "react";
+import { getRendererApi, getRuntimeCapabilities } from "../../lib/runtime";
 import { usePanelStore } from "../../stores/panel-store";
 import { useProjectStore } from "../../stores/project-store";
 import { useWorkspaceStore } from "../../stores/workspace-store";
@@ -22,6 +23,7 @@ interface EmptyTerminalPaneProps {
 
 export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTerminalPaneProps) {
   const startTerminalTab = usePanelStore((s) => s.startTerminalTab);
+  const runtimeCaps = getRuntimeCapabilities();
 
   // Get workspace and project for default cwd
   const workspacesMap = useWorkspaceStore((s) => s.workspaces);
@@ -37,13 +39,20 @@ export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTer
   const [selectedCwd, setSelectedCwd] = useState(defaultCwd);
 
   const handleStartTerminal = useCallback(() => {
-    if (!tabId) return;
+    if (!tabId) {
+      return;
+    }
     startTerminalTab(workspaceId, panelId, tabId, selectedCwd);
   }, [workspaceId, panelId, tabId, selectedCwd, startTerminalTab]);
 
   const handleSelectDirectory = useCallback(async () => {
     try {
-      const result = await window.api.openDirectoryDialog();
+      const api = getRendererApi();
+      if (!api?.openDirectoryDialog) {
+        return;
+      }
+
+      const result = await api.openDirectoryDialog();
       if (!result.canceled && result.filePaths[0]) {
         setSelectedCwd(result.filePaths[0]);
       }
@@ -72,7 +81,12 @@ export function EmptyTerminalPane({ workspaceId, panelId, tabId, cwd }: EmptyTer
         )}
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={handleSelectDirectory}>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSelectDirectory}
+            disabled={!runtimeCaps.hasNativeDialogs}
+          >
             <FolderOpen className="h-4 w-4 mr-1" />
             Choose Directory
           </Button>

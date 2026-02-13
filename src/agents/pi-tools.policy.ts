@@ -81,6 +81,7 @@ const DEFAULT_SUBAGENT_TOOL_DENY = [
   "sessions_list",
   "sessions_history",
   "sessions_send",
+  "sessions_transfer",
   "sessions_spawn",
   // System admin - dangerous from subagent
   "gateway",

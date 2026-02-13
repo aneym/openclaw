@@ -51,7 +51,10 @@ import {
   resolveWorkdir,
   truncateMiddle,
 } from "./bash-tools.shared.js";
-import { maybeRegisterCodingSession } from "./coding-session-detect.js";
+import {
+  maybeRegisterCodingSession,
+  type CodingSessionRegistrationContext,
+} from "./coding-session-detect.js";
 import { buildCursorPositionResponse, stripDsrRequests } from "./pty-dsr.js";
 import { getShellConfig, sanitizeBinaryOutput } from "./shell-utils.js";
 import { callGatewayTool } from "./tools/gateway.js";
@@ -181,6 +184,9 @@ export type ExecToolDefaults = {
   scopeKey?: string;
   sessionKey?: string;
   messageProvider?: string;
+  messageTo?: string;
+  messageThreadId?: string | number;
+  messageAccountId?: string;
   notifyOnExit?: boolean;
   cwd?: string;
 };
@@ -320,6 +326,71 @@ function normalizePathPrepend(entries?: string[]) {
   return normalized;
 }
 
+function normalizeExecCallbackContext(params: {
+  sessionKey?: string;
+  channel?: string;
+  to?: string;
+  threadId?: string | number;
+  accountId?: string;
+}): CodingSessionRegistrationContext | undefined {
+  const sessionKey =
+    typeof params.sessionKey === "string" && params.sessionKey.trim()
+      ? params.sessionKey.trim()
+      : undefined;
+  const channel =
+    typeof params.channel === "string" && params.channel.trim() ? params.channel.trim() : undefined;
+  const to = typeof params.to === "string" && params.to.trim() ? params.to.trim() : undefined;
+  const accountId =
+    typeof params.accountId === "string" && params.accountId.trim()
+      ? params.accountId.trim()
+      : undefined;
+  const threadId =
+    typeof params.threadId === "number" && Number.isFinite(params.threadId)
+      ? Math.trunc(params.threadId)
+      : typeof params.threadId === "string" && params.threadId.trim()
+        ? params.threadId.trim()
+        : undefined;
+  if (!sessionKey && !channel && !to && !accountId && threadId == null) {
+    return undefined;
+  }
+  return {
+    sessionKey,
+    channel,
+    to,
+    threadId,
+    accountId,
+  };
+}
+
+function setEnvIfMissing(env: Record<string, string>, key: string, value?: string | number) {
+  if (value == null) {
+    return;
+  }
+  if (Object.prototype.hasOwnProperty.call(env, key)) {
+    return;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return;
+  }
+  env[key] = text;
+}
+
+function injectExecCallbackEnv(params: {
+  env: Record<string, string>;
+  context?: CodingSessionRegistrationContext;
+}) {
+  const context = params.context;
+  if (!context) {
+    return;
+  }
+  setEnvIfMissing(params.env, "OPENCLAW_SESSION_KEY", context.sessionKey);
+  setEnvIfMissing(params.env, "OPENCLAW_MESSAGE_CHANNEL", context.channel);
+  setEnvIfMissing(params.env, "OPENCLAW_MESSAGE_TO", context.to);
+  setEnvIfMissing(params.env, "OPENCLAW_MESSAGE_THREAD_ID", context.threadId);
+  setEnvIfMissing(params.env, "OPENCLAW_MESSAGE_ACCOUNT_ID", context.accountId);
+}
+
 function mergePathPrepend(existing: string | undefined, prepend: string[]) {
   if (prepend.length === 0) {
     return existing;
@@ -432,6 +503,7 @@ async function runExecProcess(opts: {
   notifyOnExit: boolean;
   scopeKey?: string;
   sessionKey?: string;
+  codingContext?: CodingSessionRegistrationContext;
   timeoutSec: number;
   onUpdate?: (partialResult: AgentToolResult<ExecToolDetails>) => void;
 }): Promise<ExecProcessHandle> {
@@ -600,7 +672,7 @@ async function runExecProcess(opts: {
   addSession(session);
 
   // Auto-register coding sessions (claude/codex/cc/kimi commands)
-  maybeRegisterCodingSession(opts.command, sessionId, opts.workdir);
+  maybeRegisterCodingSession(opts.command, sessionId, opts.workdir, opts.codingContext);
 
   let settled = false;
   let timeoutTimer: NodeJS.Timeout | null = null;
@@ -991,6 +1063,18 @@ export function createExecTool(
             containerWorkdir: containerWorkdir ?? sandbox.containerWorkdir,
           })
         : mergedEnv;
+
+      const codingContext = normalizeExecCallbackContext({
+        sessionKey: notifySessionKey,
+        channel: defaults?.messageProvider,
+        to: defaults?.messageTo,
+        threadId: defaults?.messageThreadId,
+        accountId: defaults?.messageAccountId,
+      });
+      injectExecCallbackEnv({
+        env,
+        context: codingContext,
+      });
 
       if (!sandbox && host === "gateway" && !params.env?.PATH) {
         const shellPath = getShellPathFromLoginShell({
@@ -1525,6 +1609,7 @@ export function createExecTool(
         notifyOnExit,
         scopeKey: defaults?.scopeKey,
         sessionKey: notifySessionKey,
+        codingContext,
         timeoutSec: effectiveTimeout,
         onUpdate,
       });

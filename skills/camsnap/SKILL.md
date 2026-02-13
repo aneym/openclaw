@@ -2,6 +2,7 @@
 name: camsnap
 description: Capture frames or clips from RTSP/ONVIF cameras.
 homepage: https://camsnap.ai
+native-command: true
 metadata:
   {
     "openclaw":

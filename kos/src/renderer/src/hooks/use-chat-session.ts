@@ -47,6 +47,8 @@ interface UseChatSessionReturn {
   streamStartedAt: number | null;
   activeTools: ActiveTool[];
   awaitingResponse: boolean;
+  isCompacting: boolean;
+  thinkingVisible: boolean;
 
   // Queue
   queue: QueuedMessage[];
@@ -61,6 +63,7 @@ interface UseChatSessionReturn {
   abort: () => Promise<void>;
   enqueue: (text: string, attachments?: unknown[]) => void;
   removeFromQueue: (messageId: string) => void;
+  toggleThinkingVisible: () => void;
 }
 
 // Default empty state for when no store exists
@@ -75,6 +78,8 @@ const emptyState: Pick<
   | "streamStartedAt"
   | "activeTools"
   | "awaitingResponse"
+  | "isCompacting"
+  | "thinkingVisible"
   | "queue"
   | "sending"
 > = {
@@ -87,6 +92,8 @@ const emptyState: Pick<
   streamStartedAt: null,
   activeTools: [],
   awaitingResponse: false,
+  isCompacting: false,
+  thinkingVisible: false,
   queue: [],
   sending: false,
 };
@@ -98,6 +105,7 @@ const emptyActions = {
   abort: async () => {},
   enqueue: () => {},
   removeFromQueue: () => {},
+  toggleThinkingVisible: () => {},
 };
 
 // Stable selectors (defined outside component to avoid re-creation)
@@ -110,6 +118,8 @@ const selectStreamReasoning = (s: ChatSessionState) => s.streamReasoning;
 const selectStreamStartedAt = (s: ChatSessionState) => s.streamStartedAt;
 const selectActiveTools = (s: ChatSessionState) => s.activeTools;
 const selectAwaitingResponse = (s: ChatSessionState) => s.awaitingResponse;
+const selectIsCompacting = (s: ChatSessionState) => s.isCompacting;
+const selectThinkingVisible = (s: ChatSessionState) => s.thinkingVisible;
 const selectQueue = (s: ChatSessionState) => s.queue;
 const selectSending = (s: ChatSessionState) => s.sending;
 
@@ -124,14 +134,18 @@ function useStoreSelector<T>(
 ): T {
   const subscribeCallback = useCallback(
     (onStoreChange: () => void) => {
-      if (!store) return () => {};
+      if (!store) {
+        return () => {};
+      }
       return store.subscribe(onStoreChange);
     },
     [store],
   );
 
   const getSnapshot = useCallback(() => {
-    if (!store) return fallback;
+    if (!store) {
+      return fallback;
+    }
     return selector(store.getState());
   }, [store, selector, fallback]);
 
@@ -146,25 +160,36 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
 
   // Get or create the session store (keyed by chatId — stable).
   // sessionKey is intentionally NOT a dependency: the store is keyed by chatId,
-  // and sessionKey changes are handled by updating the existing store via
-  // getChatSessionStore (which sets the new key internally). Including sessionKey
-  // here caused a split-brain bug with StrictMode: cleanup deleted store_A from
-  // the Map, another component created store_B, and when sessionKey changed the
-  // useMemo re-ran and found store_B (empty) instead of store_A (with messages).
+  // and sessionKey changes are applied via an effect below (updates store state).
+  //
+  // We *do* depend on whether a sessionKey exists to ensure the store is created
+  // once the chat metadata arrives (chatId can be known before sessionKey).
   const store = useMemo(() => {
     if (!sessionKey || !chatId) {
       return null;
     }
     return getChatSessionStore(sessionKey, chatId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId]);
+  }, [chatId, Boolean(sessionKey)]);
 
   // Track previous connected state for reconnect detection
   const wasConnectedRef = useRef(false);
 
+  // Keep the store's sessionKey in sync when it changes (e.g. canonicalization).
+  useEffect(() => {
+    if (!store || !sessionKey) {
+      return;
+    }
+    if (store.getState().sessionKey !== sessionKey) {
+      store.setState({ sessionKey });
+    }
+  }, [store, sessionKey]);
+
   // Set request function when store or request changes
   useEffect(() => {
-    if (!store || !request) return;
+    if (!store || !request) {
+      return;
+    }
     store.getState().setRequest(request);
   }, [store, request]);
 
@@ -197,7 +222,9 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
 
   // Load history when connected (and on reconnect with status catch-up)
   useEffect(() => {
-    if (!store || !sessionKey) return;
+    if (!store || !sessionKey) {
+      return;
+    }
 
     const state = store.getState();
     const justReconnected = connected && !wasConnectedRef.current;
@@ -262,6 +289,12 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
     selectAwaitingResponse,
     emptyState.awaitingResponse,
   );
+  const isCompacting = useStoreSelector(store, selectIsCompacting, emptyState.isCompacting);
+  const thinkingVisible = useStoreSelector(
+    store,
+    selectThinkingVisible,
+    emptyState.thinkingVisible,
+  );
   const queue = useStoreSelector(store, selectQueue, emptyState.queue);
   const sending = useStoreSelector(store, selectSending, emptyState.sending);
 
@@ -283,6 +316,7 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
       abort: state.abort,
       enqueue: state.enqueue,
       removeFromQueue: state.removeFromQueue,
+      toggleThinkingVisible: state.toggleThinkingVisible,
     };
   }, [store]);
 
@@ -297,6 +331,8 @@ export function useChatSession(sessionKey: string, chatId: string): UseChatSessi
     streamStartedAt,
     activeTools,
     awaitingResponse,
+    isCompacting,
+    thinkingVisible,
     queue,
     sending,
 

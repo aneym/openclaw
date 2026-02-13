@@ -352,4 +352,9 @@ enum GatewayDiagnostics {
             try? FileManager.default.removeItem(at: url)
         }
     }
+
+    static func read() -> String? {
+        guard let url = fileURL else { return nil }
+        return try? String(contentsOf: url, encoding: .utf8)
+    }
 }

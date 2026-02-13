@@ -6,6 +6,9 @@ export type PanelType =
   | "preview" // iOS simulator, web preview
   | "tasks" // kanban board
   | "code" // diff view, file browser
+  | "artifact" // file preview with tabs (auto-opens on Write/Edit)
+  | "git" // git status, staging, diff, commit
+  | "gateway-tasks" // gateway task management kanban
   | "empty"; // placeholder
 
 /** Panel types that support tabs within the panel */
@@ -16,7 +19,15 @@ export const TABBED_PANEL_TYPES: PanelType[] = ["chat", "terminal"];
  * Single source of truth — used by split menu, type switcher, and command palette.
  * Only include types with working implementations.
  */
-export const USER_PANEL_TYPES: PanelType[] = ["chat", "terminal", "browser", "tasks"];
+export const USER_PANEL_TYPES: PanelType[] = [
+  "chat",
+  "terminal",
+  "browser",
+  "tasks",
+  "artifact",
+  "git",
+  "gateway-tasks",
+];
 
 /** Tab within a panel (for chat and terminal panels) */
 export interface PanelTab {
@@ -63,5 +74,8 @@ export const PANEL_TYPE_LABELS: Record<PanelType, string> = {
   preview: "Preview",
   tasks: "Tasks",
   code: "Code",
+  artifact: "Artifact",
+  git: "Git",
+  "gateway-tasks": "Gateway Tasks",
   empty: "Empty",
 };

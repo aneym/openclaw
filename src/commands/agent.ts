@@ -439,6 +439,7 @@ export async function agentCommand(
             config: cfg,
             skillsSnapshot,
             prompt: body,
+            rawMessage: body,
             images: opts.images,
             clientTools: opts.clientTools,
             provider: providerOverride,

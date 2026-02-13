@@ -12,7 +12,7 @@ import {
 } from "../../auto-reply/commands-registry.js";
 import { finalizeInboundContext } from "../../auto-reply/reply/inbound-context.js";
 import { dispatchReplyWithDispatcher } from "../../auto-reply/reply/provider-dispatcher.js";
-import { listSkillCommandsForAgents } from "../../auto-reply/skill-commands.js";
+import { listNativeSkillCommandsForAgents } from "../../auto-reply/skill-commands.js";
 import { formatAllowlistMatchMeta } from "../../channels/allowlist-match.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../../channels/command-gating.js";
 import { resolveConversationLabel } from "../../channels/conversation-label.js";
@@ -504,7 +504,7 @@ export function registerSlackMonitorSlashCommands(params: {
     globalSetting: cfg.commands?.nativeSkills,
   });
   const skillCommands =
-    nativeEnabled && nativeSkillsEnabled ? listSkillCommandsForAgents({ cfg }) : [];
+    nativeEnabled && nativeSkillsEnabled ? listNativeSkillCommandsForAgents({ cfg }) : [];
   const nativeCommands = nativeEnabled
     ? listNativeCommandSpecsForConfig(cfg, { skillCommands, provider: "slack" })
     : [];

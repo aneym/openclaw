@@ -191,6 +191,10 @@ struct SettingsTab: View {
                             GatewayDiscoveryDebugLogView()
                         }
 
+                        NavigationLink("Gateway Diagnostics") {
+                            GatewayDiagnosticsLogView()
+                        }
+
                         Toggle("Debug Canvas Status", isOn: self.$canvasDebugStatusEnabled)
 
                         TextField("Gateway Token", text: self.$gatewayToken)

@@ -12,13 +12,82 @@ import { logInfo } from "../logger.js";
 /** Pattern to detect coding agent commands. */
 const CODING_AGENT_RE = /^(claude|codex|cc|kimi)\b/;
 
+export type CodingSessionRegistrationContext = {
+  sessionKey?: string;
+  channel?: string;
+  to?: string;
+  threadId?: string | number;
+  accountId?: string;
+};
+
+function normalizeContext(context?: CodingSessionRegistrationContext):
+  | {
+      sessionKey?: string;
+      channel?: string;
+      to?: string;
+      threadId?: string | number;
+      accountId?: string;
+    }
+  | undefined {
+  if (!context) {
+    return undefined;
+  }
+  const sessionKey =
+    typeof context.sessionKey === "string" && context.sessionKey.trim()
+      ? context.sessionKey.trim()
+      : undefined;
+  const channel =
+    typeof context.channel === "string" && context.channel.trim()
+      ? context.channel.trim()
+      : undefined;
+  const to = typeof context.to === "string" && context.to.trim() ? context.to.trim() : undefined;
+  const accountId =
+    typeof context.accountId === "string" && context.accountId.trim()
+      ? context.accountId.trim()
+      : undefined;
+  const threadIdRaw =
+    typeof context.threadId === "number" && Number.isFinite(context.threadId)
+      ? Math.trunc(context.threadId)
+      : typeof context.threadId === "string" && context.threadId.trim()
+        ? context.threadId.trim()
+        : undefined;
+  const hasAny =
+    Boolean(sessionKey) ||
+    Boolean(channel) ||
+    Boolean(to) ||
+    Boolean(accountId) ||
+    threadIdRaw != null;
+  if (!hasAny) {
+    return undefined;
+  }
+  return {
+    sessionKey,
+    channel,
+    to,
+    threadId: threadIdRaw,
+    accountId,
+  };
+}
+
+export function isCodingAgentCommand(command: string): boolean {
+  return CODING_AGENT_RE.test(command.trim());
+}
+
 /** Resolve tool name from the command binary. */
 function detectCodingTool(command: string): "claude-code" | "codex" | "kimi" | null {
   const trimmed = command.trim();
-  if (/^claude\b/.test(trimmed)) return "claude-code";
-  if (/^(cc)\b/.test(trimmed)) return "claude-code";
-  if (/^codex\b/.test(trimmed)) return "codex";
-  if (/^kimi\b/.test(trimmed)) return "kimi";
+  if (/^claude\b/.test(trimmed)) {
+    return "claude-code";
+  }
+  if (/^(cc)\b/.test(trimmed)) {
+    return "claude-code";
+  }
+  if (/^codex\b/.test(trimmed)) {
+    return "codex";
+  }
+  if (/^kimi\b/.test(trimmed)) {
+    return "kimi";
+  }
   return null;
 }
 
@@ -31,7 +100,9 @@ function getStateFilePath(): string {
 function readState(): { sessions: Record<string, unknown> } {
   const path = getStateFilePath();
   try {
-    if (!existsSync(path)) return { sessions: {} };
+    if (!existsSync(path)) {
+      return { sessions: {} };
+    }
     return JSON.parse(readFileSync(path, "utf-8"));
   } catch {
     return { sessions: {} };
@@ -41,7 +112,9 @@ function readState(): { sessions: Record<string, unknown> } {
 function writeState(state: { sessions: Record<string, unknown> }) {
   const path = getStateFilePath();
   const dir = dirname(path);
-  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
   writeFileSync(path, JSON.stringify(state, null, 2) + "\n");
 }
 
@@ -53,12 +126,31 @@ export function maybeRegisterCodingSession(
   command: string,
   execSessionId: string,
   workDir: string,
+  context?: CodingSessionRegistrationContext,
 ): void {
   const trimmed = command.trim();
-  if (!CODING_AGENT_RE.test(trimmed)) return;
+  if (!isCodingAgentCommand(trimmed)) {
+    return;
+  }
 
   const tool = detectCodingTool(trimmed);
-  if (!tool) return;
+  if (!tool) {
+    return;
+  }
+  const normalizedContext = normalizeContext(context);
+  const deliveryContext =
+    normalizedContext &&
+    (normalizedContext.channel ||
+      normalizedContext.to ||
+      normalizedContext.accountId ||
+      normalizedContext.threadId != null)
+      ? {
+          channel: normalizedContext.channel,
+          to: normalizedContext.to,
+          accountId: normalizedContext.accountId,
+          threadId: normalizedContext.threadId,
+        }
+      : undefined;
 
   const id = `coding-${execSessionId}`;
   const session = {
@@ -70,6 +162,12 @@ export function maybeRegisterCodingSession(
     startedAt: new Date().toISOString(),
     workDir,
     command: trimmed,
+    sessionKey: normalizedContext?.sessionKey,
+    channel: normalizedContext?.channel,
+    to: normalizedContext?.to,
+    threadId: normalizedContext?.threadId,
+    accountId: normalizedContext?.accountId,
+    deliveryContext,
   };
 
   try {

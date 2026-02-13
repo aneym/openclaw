@@ -61,6 +61,8 @@ const SUBSYSTEM_COLOR_OVERRIDES: Record<string, (typeof SUBSYSTEM_COLORS)[number
 const SUBSYSTEM_PREFIXES_TO_DROP = ["gateway", "channels", "providers"] as const;
 const SUBSYSTEM_MAX_SEGMENTS = 2;
 const CHANNEL_SUBSYSTEM_PREFIXES = new Set<string>(CHAT_CHANNEL_ORDER);
+const CONSOLE_MESSAGE_MAX_CHARS = 500;
+const CONSOLE_MESSAGE_MAX_LINES = 3;
 
 function pickSubsystemColor(color: ChalkInstance, subsystem: string): ChalkInstance {
   const override = SUBSYSTEM_COLOR_OVERRIDES[subsystem];
@@ -141,6 +143,26 @@ export function stripRedundantSubsystemPrefixForConsole(
     i += 1;
   }
   return message.slice(i);
+}
+
+export function compactConsoleMessageForDisplay(message: string): string {
+  if (!message) {
+    return message;
+  }
+  const hasConversationMarkers = /\[role:\s*(user|assistant|toolresult|system)\]/i.test(message);
+  const lineCount = message.split(/\r?\n/).length;
+  const shouldCompact =
+    hasConversationMarkers || lineCount > CONSOLE_MESSAGE_MAX_LINES || message.length > 1200;
+  if (!shouldCompact) {
+    return message;
+  }
+
+  const oneLine = message.replace(/\s+/g, " ").trim();
+  if (oneLine.length <= CONSOLE_MESSAGE_MAX_CHARS) {
+    return oneLine;
+  }
+  const hiddenChars = oneLine.length - CONSOLE_MESSAGE_MAX_CHARS;
+  return `${oneLine.slice(0, CONSOLE_MESSAGE_MAX_CHARS)}… [${hiddenChars} chars truncated]`;
 }
 
 function formatConsoleLine(opts: {
@@ -254,7 +276,10 @@ export function createSubsystemLogger(subsystem: string): SubsystemLogger {
     if (!shouldLogSubsystemToConsole(subsystem)) {
       return;
     }
-    const consoleMessage = consoleMessageOverride ?? message;
+    let consoleMessage = consoleMessageOverride ?? message;
+    if (!isVerbose() && consoleSettings.style !== "json") {
+      consoleMessage = compactConsoleMessageForDisplay(consoleMessage);
+    }
     if (
       !isVerbose() &&
       subsystem === "agent/embedded" &&

@@ -328,3 +328,30 @@ body {
   --error-border: var(--destructive);
   --error-text: var(--destructive-foreground);
 }
+
+/* Sub-agent "done" flash animation */
+@keyframes done-flash {
+  0% {
+    background-color: oklch(0.85 0.1 145);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-done-flash {
+  animation: done-flash 4s ease-out;
+}
+
+.dark .animate-done-flash {
+  animation: done-flash-dark 4s ease-out;
+}
+
+@keyframes done-flash-dark {
+  0% {
+    background-color: oklch(0.35 0.08 145);
+  }
+  100% {
+    background-color: transparent;
+  }
+}

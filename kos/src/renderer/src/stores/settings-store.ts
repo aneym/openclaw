@@ -1,5 +1,14 @@
 import { create } from "zustand";
 import type { GlobalConfig, GitHubConfig, LinearConfig, LinearUser } from "../types";
+import { getRendererApi, getRuntimeCapabilities } from "../lib/runtime";
+import { DEFAULT_GATEWAY_URL } from "../types/profile";
+
+const DEFAULT_GLOBAL_CONFIG: GlobalConfig = {
+  version: 1,
+  defaultGatewayUrl: DEFAULT_GATEWAY_URL,
+  theme: "dark",
+  sidebarWidth: 280,
+};
 
 interface SettingsState {
   globalConfig: GlobalConfig | null;
@@ -29,14 +38,38 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   isInitialized: false,
 
   initialize: async () => {
-    if (get().isInitialized) return;
+    if (get().isInitialized) {
+      return;
+    }
 
     set({ isLoading: true });
     try {
+      const caps = getRuntimeCapabilities();
+      if (!caps.hasSettingsApi) {
+        set({
+          globalConfig: DEFAULT_GLOBAL_CONFIG,
+          gitHubConfig: null,
+          linearConfig: null,
+          isInitialized: true,
+        });
+        return;
+      }
+
+      const api = getRendererApi();
+      if (!api) {
+        set({
+          globalConfig: DEFAULT_GLOBAL_CONFIG,
+          gitHubConfig: null,
+          linearConfig: null,
+          isInitialized: true,
+        });
+        return;
+      }
+
       const [globalConfig, gitHubConfig, linearConfig] = await Promise.all([
-        window.api.config.getGlobal(),
-        window.api.config.getGitHub(),
-        window.api.config.getLinear(),
+        api.config.getGlobal(),
+        api.config.getGitHub(),
+        api.config.getLinear(),
       ]);
       set({
         globalConfig,
@@ -52,7 +85,23 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   connectGitHub: async (token: string) => {
     set({ isLoading: true });
     try {
-      const result = await window.api.github.validate(token);
+      const caps = getRuntimeCapabilities();
+      if (!caps.hasGitHubApi || !caps.hasSettingsApi) {
+        return {
+          success: false,
+          error: "GitHub integration is only available in the desktop app",
+        };
+      }
+
+      const api = getRendererApi();
+      if (!api) {
+        return {
+          success: false,
+          error: "GitHub integration bridge is unavailable",
+        };
+      }
+
+      const result = await api.github.validate(token);
       if (!result.valid || !result.username) {
         return { success: false, error: result.error || "Invalid token" };
       }
@@ -62,7 +111,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
         username: result.username,
         validatedAt: Date.now(),
       };
-      await window.api.config.saveGitHub(config);
+      await api.config.saveGitHub(config);
       set({ gitHubConfig: config });
 
       return { success: true };
@@ -75,7 +124,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   disconnectGitHub: async () => {
-    await window.api.config.clearGitHub();
+    const api = getRendererApi();
+    if (api?.config) {
+      await api.config.clearGitHub();
+    }
     set({ gitHubConfig: null });
   },
 
@@ -84,7 +136,23 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   connectLinear: async (apiKey: string) => {
     set({ isLoading: true });
     try {
-      const result = await window.api.linear.validate(apiKey);
+      const caps = getRuntimeCapabilities();
+      if (!caps.hasLinearApi || !caps.hasSettingsApi) {
+        return {
+          success: false,
+          error: "Linear integration is only available in the desktop app",
+        };
+      }
+
+      const api = getRendererApi();
+      if (!api) {
+        return {
+          success: false,
+          error: "Linear integration bridge is unavailable",
+        };
+      }
+
+      const result = await api.linear.validate(apiKey);
       if (!result.valid || !result.user) {
         return { success: false, error: result.error || "Invalid API key" };
       }
@@ -96,7 +164,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
         userName: user.displayName,
         validatedAt: Date.now(),
       };
-      await window.api.config.saveLinear(config);
+      await api.config.saveLinear(config);
       set({ linearConfig: config });
 
       return { success: true };
@@ -109,7 +177,10 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   },
 
   disconnectLinear: async () => {
-    await window.api.config.clearLinear();
+    const api = getRendererApi();
+    if (api?.config) {
+      await api.config.clearLinear();
+    }
     set({ linearConfig: null });
   },
 
@@ -117,10 +188,15 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
 
   updateGlobalConfig: async (updates: Partial<GlobalConfig>) => {
     const { globalConfig } = get();
-    if (!globalConfig) return;
+    if (!globalConfig) {
+      return;
+    }
 
     const newConfig = { ...globalConfig, ...updates };
-    await window.api.config.saveGlobal(newConfig);
+    const api = getRendererApi();
+    if (api?.config) {
+      await api.config.saveGlobal(newConfig);
+    }
     set({ globalConfig: newConfig });
   },
 }));

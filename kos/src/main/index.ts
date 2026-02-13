@@ -7,8 +7,10 @@ import { join } from "path";
 import icon from "../../resources/icon.png?asset";
 import { initBrowserPanel } from "./browser-panel";
 import { registerAllIpc, cleanupTerminals } from "./ipc";
+import { setTriageBridgeInfo } from "./ipc/triage-bridge-ipc";
 import { installConsoleInterceptor, getLogsAsText } from "./log-buffer";
 import { getTerminalsWithProcesses, cleanupOldScrollback } from "./services/terminal-service";
+import { startTriageBridge } from "./services/triage-bridge";
 import { restoreWindowState, trackWindowState } from "./window-state";
 
 // Install console interceptor early to capture all logs
@@ -53,6 +55,7 @@ protocol.registerSchemesAsPrivileged([
 ipcMain.handle("get-gateway-config", () => {
   const prodPath = join(homedir(), ".openclaw", "openclaw.json");
   const devPath = join(homedir(), ".openclaw-dev", "openclaw.json");
+  const defaultPort = 18789;
 
   // Check for OPENCLAW_STATE_DIR override (always takes priority)
   const stateDir = process.env.OPENCLAW_STATE_DIR;
@@ -61,7 +64,7 @@ ipcMain.handle("get-gateway-config", () => {
       const configPath = join(stateDir, "openclaw.json");
       const raw = readFileSync(configPath, "utf-8");
       const config = JSON.parse(raw);
-      const port = config?.gateway?.port ?? 18789;
+      const port = config?.gateway?.port ?? defaultPort;
       const token = config?.gateway?.auth?.token;
       return { url: `ws://localhost:${port}`, token, source: configPath };
     } catch {
@@ -69,14 +72,9 @@ ipcMain.handle("get-gateway-config", () => {
     }
   }
 
-  // Dev instance → dev config first (port 19001), then prod fallback
-  // Prod instance → prod config first (port 18789), then dev fallback
-  const primary = is.dev
-    ? { path: devPath, defaultPort: 19001 }
-    : { path: prodPath, defaultPort: 18789 };
-  const fallback = is.dev
-    ? { path: prodPath, defaultPort: 18789 }
-    : { path: devPath, defaultPort: 19001 };
+  // Prefer shared dev/prod config (~/.openclaw), then legacy dev config.
+  const primary = { path: prodPath, defaultPort };
+  const fallback = { path: devPath, defaultPort: 19001 };
 
   for (const source of [primary, fallback]) {
     try {
@@ -90,7 +88,7 @@ ipcMain.handle("get-gateway-config", () => {
     }
   }
 
-  return { url: `ws://localhost:${is.dev ? 19001 : 18789}`, source: "default" };
+  return { url: `ws://localhost:${defaultPort}`, source: "default" };
 });
 
 // Dock badge (macOS)
@@ -140,34 +138,46 @@ ${mainLogs}`;
 const activeCaptures = new Map<number, () => void>();
 
 ipcMain.handle("simulator:list-windows", async () => {
-  if (!kosNative) return [];
+  if (!kosNative) {
+    return [];
+  }
   return kosNative.listSimulatorWindows();
 });
 
 ipcMain.handle("simulator:has-screen-permission", () => {
-  if (!kosNative) return false;
+  if (!kosNative) {
+    return false;
+  }
   return kosNative.hasScreenRecordingPermission();
 });
 
 ipcMain.handle("simulator:request-screen-permission", () => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.requestScreenRecordingPermission();
 });
 
 ipcMain.handle("simulator:has-accessibility-permission", () => {
-  if (!kosNative) return false;
+  if (!kosNative) {
+    return false;
+  }
   return kosNative.hasAccessibilityPermission();
 });
 
 ipcMain.handle("simulator:request-accessibility-permission", () => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.requestAccessibilityPermission();
 });
 
 ipcMain.handle(
   "simulator:start-capture",
   async (event, windowId: number, config: { fps?: number; scaleFactor?: number }) => {
-    if (!kosNative) return { success: false, error: "Native addon not available" };
+    if (!kosNative) {
+      return { success: false, error: "Native addon not available" };
+    }
 
     // Stop any existing capture for this window
     const existingStop = activeCaptures.get(windowId);
@@ -212,7 +222,9 @@ ipcMain.handle("simulator:stop-capture", (_, windowId: number) => {
 });
 
 ipcMain.handle("simulator:inject-tap", (_, windowId: number, x: number, y: number) => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.injectTap(windowId, x, y);
 });
 
@@ -227,13 +239,17 @@ ipcMain.handle(
     endY: number,
     durationMs: number,
   ) => {
-    if (!kosNative) return;
+    if (!kosNative) {
+      return;
+    }
     kosNative.injectSwipe(windowId, startX, startY, endX, endY, durationMs);
   },
 );
 
 ipcMain.handle("simulator:inject-text", (_, windowId: number, text: string) => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.injectText(windowId, text);
 });
 
@@ -297,7 +313,9 @@ function createMenu(): void {
           accelerator: "CmdOrCtrl+Shift+F12",
           click: (): void => {
             const win = BrowserWindow.getFocusedWindow();
-            if (!win) return;
+            if (!win) {
+              return;
+            }
             win.webContents
               .executeJavaScript(
                 `(function() {
@@ -425,6 +443,28 @@ function createMenu(): void {
   Menu.setApplicationMenu(menu);
 }
 
+function resolveRendererDevUrl(baseUrl: string): string {
+  const launchHash = (process.env["KOS_DEV_RENDERER_HASH"] ?? "").trim();
+  if (!launchHash) {
+    return baseUrl;
+  }
+
+  try {
+    const parsed = new URL(baseUrl);
+    const existingHash = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const mergedHash = new URLSearchParams(existingHash);
+    const launchParams = new URLSearchParams(launchHash);
+    launchParams.forEach((value, key) => {
+      mergedHash.set(key, value);
+    });
+    const nextHash = mergedHash.toString();
+    parsed.hash = nextHash ? `#${nextHash}` : "";
+    return parsed.toString();
+  } catch {
+    return baseUrl;
+  }
+}
+
 function createWindow(): void {
   const saved = restoreWindowState();
 
@@ -492,7 +532,8 @@ function createWindow(): void {
   });
 
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    const rendererDevUrl = resolveRendererDevUrl(process.env["ELECTRON_RENDERER_URL"]);
+    mainWindow.loadURL(rendererDevUrl);
     // Open DevTools detached — docked DevTools break window transparency
     mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
@@ -503,6 +544,30 @@ function createWindow(): void {
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
 app.whenReady().then(() => {
+  // Start loopback triage bridge for structured terminal completion events.
+  // This lets Codex/Claude hooks post "done" events tied to a specific terminalId.
+  startTriageBridge({
+    onEvent: (event) => {
+      const win = BrowserWindow.getAllWindows()[0];
+      if (!win || win.isDestroyed()) {
+        return;
+      }
+      win.webContents.send("triageBridge:event", event);
+    },
+  })
+    .then(({ info }) => {
+      setTriageBridgeInfo(info);
+
+      // Make endpoint/token available to any PTY spawned by kOS.
+      // Individual terminals also receive KOS_TERMINAL_ID at spawn time.
+      process.env.KOS_TRIAGE_ENDPOINT = info.endpoint;
+      process.env.KOS_TRIAGE_TOKEN = info.token;
+      console.log("[triage-bridge] ready", { endpoint: info.endpoint });
+    })
+    .catch((err) => {
+      console.warn("[triage-bridge] failed to start", err);
+    });
+
   // Handle kos-media:// requests — serve local files to the renderer
   protocol.handle("kos-media", async (request) => {
     // URL format: kos-media://local/var/folders/.../file.mp3 → /var/folders/.../file.mp3
@@ -551,7 +616,9 @@ app.whenReady().then(() => {
   app.on("activate", function () {
     // On macOS it's common to re-create a window in the app when the
     // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
   });
 });
 

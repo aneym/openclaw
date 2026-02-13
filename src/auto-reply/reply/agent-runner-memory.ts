@@ -134,6 +134,7 @@ export async function runMemoryFlushIfNeeded(params: {
           config: params.followupRun.run.config,
           skillsSnapshot: params.followupRun.run.skillsSnapshot,
           prompt: memoryFlushSettings.prompt,
+          rawMessage: memoryFlushSettings.prompt,
           extraSystemPrompt: flushSystemPrompt,
           ownerNumbers: params.followupRun.run.ownerNumbers,
           enforceFinalTag: resolveEnforceFinalTag(params.followupRun.run, provider),

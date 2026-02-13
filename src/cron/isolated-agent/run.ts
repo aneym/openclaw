@@ -431,6 +431,7 @@ export async function runCronIsolatedAgentTurn(params: {
           config: cfgWithAgentDefaults,
           skillsSnapshot,
           prompt: commandBody,
+          rawMessage: commandBody,
           lane: params.lane ?? "cron",
           provider: providerOverride,
           model: modelOverride,

@@ -225,8 +225,11 @@
       "@napi-rs/canvas",
       "@whiskeysockets/baileys",
       "authenticate-pam",
+      "electron",
       "esbuild",
+      "kos-native",
       "node-llama-cpp",
+      "node-pty",
       "protobufjs",
       "sharp"
     ]

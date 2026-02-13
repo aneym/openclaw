@@ -16,11 +16,13 @@ import { getVisibleChatId } from "../lib/unread";
 import { useChatStore } from "../stores/chat-store";
 import { useNotificationStore } from "../stores/notification-store";
 import { usePanelStore } from "../stores/panel-store";
+import { useTriageStore } from "../stores/triage-store";
 
 const DEBOUNCE_MS = 300;
 
 export function useMarkRead(workspaceId: string | undefined) {
   const markRead = useChatStore((s) => s.markRead);
+  const markTriageHandled = useTriageStore((s) => s.markHandled);
 
   // Derive stable primitives from panel store instead of subscribing to full Maps.
   // This avoids re-running the effect on every layout resize or chat delta.
@@ -34,9 +36,13 @@ export function useMarkRead(workspaceId: string | undefined) {
 
   // Derive the active tab ID of the focused panel (changes when user switches tabs)
   const activeTabId = useMemo(() => {
-    if (!workspaceId || !focusedPanelId) return null;
+    if (!workspaceId || !focusedPanelId) {
+      return null;
+    }
     const layout = layouts.get(workspaceId);
-    if (!layout) return null;
+    if (!layout) {
+      return null;
+    }
     const panel = layout.panels.get(focusedPanelId) as PanelState | undefined;
     return panel?.activeTabId ?? null;
   }, [layouts, workspaceId, focusedPanelId]);
@@ -44,7 +50,9 @@ export function useMarkRead(workspaceId: string | undefined) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (!workspaceId) return;
+    if (!workspaceId) {
+      return;
+    }
 
     const checkAndClear = () => {
       // Cancel pending debounce
@@ -54,11 +62,29 @@ export function useMarkRead(workspaceId: string | undefined) {
 
       timerRef.current = setTimeout(() => {
         const chatId = getVisibleChatId(workspaceId);
-        if (!chatId) return;
+        if (!chatId) {
+          return;
+        }
 
         const chat = useChatStore.getState().chats.get(chatId);
         if (chat?.hasUnread) {
           markRead(chatId);
+
+          // Keep focused catch-up aligned with unread state:
+          // once a thread is visible/read, it shouldn't remain in the catch-up queue.
+          const triageEvents = useTriageStore.getState().events;
+          for (const e of triageEvents) {
+            if (e.state !== "pending") {
+              continue;
+            }
+            if (e.source !== "gateway") {
+              continue;
+            }
+            if (e.chatId !== chatId) {
+              continue;
+            }
+            markTriageHandled(e.id);
+          }
 
           // Update dock badge
           if (useNotificationStore.getState().dockBadgeEnabled) {
@@ -82,5 +108,5 @@ export function useMarkRead(workspaceId: string | undefined) {
         clearTimeout(timerRef.current);
       }
     };
-  }, [workspaceId, markRead, focusedPanelId, activeTabId]);
+  }, [workspaceId, markRead, markTriageHandled, focusedPanelId, activeTabId]);
 }

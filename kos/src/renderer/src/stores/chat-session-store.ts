@@ -34,6 +34,12 @@ export interface QueuedMessage {
   createdAt: number;
 }
 
+export interface PaneScrollState {
+  userNearBottom: boolean;
+  userScrolledAway: boolean;
+  newMessagesBelow: boolean;
+}
+
 export interface ChatSessionState {
   // Session identity
   sessionKey: string;
@@ -43,6 +49,9 @@ export interface ChatSessionState {
   messages: ChatMessage[];
   loading: boolean;
   error: string | null;
+
+  // Per-pane scroll tracking (keyed by panelId for split-view independence)
+  paneScrollState: Map<string, PaneScrollState>;
 
   // Optimistic user messages (tracked separately for reconciliation)
   _optimisticIds: Set<string>;
@@ -60,6 +69,12 @@ export interface ChatSessionState {
 
   // Awaiting response (true from send until first delta)
   awaitingResponse: boolean;
+
+  // Context compaction indicator
+  isCompacting: boolean;
+
+  // Thinking visibility (per-session toggle)
+  thinkingVisible: boolean;
 
   // Pending abort (for reconnect retry)
   pendingAbort: boolean;
@@ -113,6 +128,15 @@ export interface ChatSessionState {
 
   /** Query gateway for active run status (reconnect catch-up) */
   queryChatStatus: () => Promise<void>;
+
+  /** Toggle thinking block visibility */
+  toggleThinkingVisible: () => void;
+
+  /** Update scroll state for a specific pane */
+  updatePaneScroll: (panelId: string, state: Partial<PaneScrollState>) => void;
+
+  /** Clean up scroll state for a pane (on unmount) */
+  clearPaneScroll: (panelId: string) => void;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -152,6 +176,15 @@ interface SessionHistoryResponse {
 // ─────────────────────────────────────────────────────────────────────────────
 // Helper Functions
 // ─────────────────────────────────────────────────────────────────────────────
+
+function sortMessagesStableByCreatedAt(messages: ChatMessage[]): ChatMessage[] {
+  // chat.history can include "pending_user" shims that may be appended out-of-order.
+  // Sorting by timestamp (stable for ties) keeps the transcript chronological.
+  return messages
+    .map((m, idx) => ({ m, idx }))
+    .toSorted((a, b) => a.m.createdAt - b.m.createdAt || a.idx - b.idx)
+    .map(({ m }) => m);
+}
 
 /**
  * Extract text from a message object.
@@ -204,7 +237,9 @@ function separateThinkingFromText(text: string): { cleanText: string; reasoning:
   const parts: string[] = [];
   const clean = text.replace(thinkRegex, (_, content) => {
     const t = (content as string).trim();
-    if (t) parts.push(t);
+    if (t) {
+      parts.push(t);
+    }
     return "";
   });
   // Strip unclosed opening tag at end (mid-stream)
@@ -232,6 +267,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
     loading: true,
     error: null,
 
+    // Pane scroll tracking
+    paneScrollState: new Map(),
+
     // Optimistic tracking
     _optimisticIds: new Set(),
 
@@ -248,6 +286,12 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
     // Awaiting response
     awaitingResponse: false,
+
+    // Context compaction
+    isCompacting: false,
+
+    // Thinking visibility (per-session toggle). Hidden by default in kOS.
+    thinkingVisible: false,
 
     // Pending abort
     pendingAbort: false,
@@ -284,7 +328,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         });
 
         const { chatId } = get();
-        const normalized = history.messages.map((m) => normalizeMessage(m, chatId));
+        const normalized = sortMessagesStableByCreatedAt(
+          history.messages.map((m) => normalizeMessage(m, chatId)),
+        );
 
         klog.session("loadHistory complete", {
           count: normalized.length,
@@ -303,7 +349,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           _optimisticIds.size > 0 ? currentMessages.filter((m) => _optimisticIds.has(m.id)) : [];
 
         if (optimistic.length > 0) {
-          const merged = [...normalized, ...optimistic];
+          const merged = sortMessagesStableByCreatedAt([...normalized, ...optimistic]);
           set({
             messages: merged,
             loading: false,
@@ -394,7 +440,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         });
 
         // Cancel any pending tool throttle timer
-        if (state._toolThrottleTimer) clearTimeout(state._toolThrottleTimer);
+        if (state._toolThrottleTimer) {
+          clearTimeout(state._toolThrottleTimer);
+        }
 
         // For "final": keep streamText as a bridge to prevent flash between
         // "stream cleared" and "history loaded". loadHistory clears it.
@@ -406,6 +454,7 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           activeTools: [],
           pendingAbort: false,
           awaitingResponse: false,
+          isCompacting: false,
           _pendingToolUpdates: [],
           _toolThrottleTimer: null,
           // Clear optimistic IDs — server has the user message by now.
@@ -447,8 +496,14 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
         const toolName = (payload.data.toolName ?? payload.data.name) as string | undefined;
         const toolInput = payload.data.toolInput ?? payload.data.args;
 
+        // Detect context compaction tool
+        const isCompactTool = toolName && /compact/i.test(toolName);
+
         if (phase === "start" && toolCallId && toolName) {
           klog.streaming("tool started", { toolCallId, toolName });
+          if (isCompactTool) {
+            set({ isCompacting: true });
+          }
           // Queue the add operation
           const pendingUpdates = [
             ...get()._pendingToolUpdates,
@@ -460,6 +515,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
           set({ _pendingToolUpdates: pendingUpdates });
         } else if ((phase === "end" || phase === "result") && toolCallId) {
           klog.streaming("tool ended", { toolCallId });
+          if (isCompactTool) {
+            set({ isCompacting: false });
+          }
           // Queue the remove operation
           const pendingUpdates = [
             ...get()._pendingToolUpdates,
@@ -621,7 +679,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
     dequeue: () => {
       const state = get();
-      if (state.queue.length === 0) return undefined;
+      if (state.queue.length === 0) {
+        return undefined;
+      }
 
       const first = state.queue[0];
       set((s) => ({ queue: s.queue.slice(1) }));
@@ -677,7 +737,9 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
     queryChatStatus: async () => {
       const { sessionKey, _request } = get();
-      if (!sessionKey || !_request) return;
+      if (!sessionKey || !_request) {
+        return;
+      }
       try {
         const res = await _request<{
           activeRun: { runId: string; streamText: string | null } | null;
@@ -707,12 +769,39 @@ function createChatSessionStore(sessionKey: string, chatId: string): StoreApi<Ch
 
       // Get next message from queue
       const next = state.dequeue();
-      if (!next) return;
+      if (!next) {
+        return;
+      }
 
       klog.compose("flushQueue: sending queued message", { id: next.id });
 
       // Send the queued message
       await state.sendNow(next.text, next.attachments);
+    },
+
+    toggleThinkingVisible: () => {
+      set((s) => ({ thinkingVisible: !s.thinkingVisible }));
+    },
+
+    updatePaneScroll: (panelId, scrollState) => {
+      set((s) => {
+        const next = new Map(s.paneScrollState);
+        const current = next.get(panelId) ?? {
+          userNearBottom: true,
+          userScrolledAway: false,
+          newMessagesBelow: false,
+        };
+        next.set(panelId, { ...current, ...scrollState });
+        return { paneScrollState: next };
+      });
+    },
+
+    clearPaneScroll: (panelId) => {
+      set((s) => {
+        const next = new Map(s.paneScrollState);
+        next.delete(panelId);
+        return { paneScrollState: next };
+      });
     },
   }));
 }
@@ -765,8 +854,52 @@ export function cleanupChatSessionStore(_sessionKey: string, chatId: string): vo
 }
 
 /**
+ * Get an existing chat session store without creating one or mutating its sessionKey.
+ * Useful for components that need to read/write auxiliary state (e.g. per-pane scroll)
+ * but should not affect session identity.
+ */
+export function peekChatSessionStore(chatId: string): StoreApi<ChatSessionState> | null {
+  return stores.get(chatId) ?? null;
+}
+
+/**
  * Get all active session store keys (for debugging).
  */
 export function getActiveChatSessionKeys(): string[] {
   return Array.from(stores.keys());
+}
+
+/**
+ * Reconnect recovery: call queryChatStatus on all active session stores.
+ * Restores the stop button and streaming state for sessions that don't
+ * have a mounted useChatSession hook (e.g. background tabs).
+ */
+export async function recoverAllChatSessions(
+  request: <T>(method: string, params?: unknown) => Promise<T>,
+): Promise<void> {
+  const entries = Array.from(stores.entries());
+  if (entries.length === 0) {
+    return;
+  }
+
+  klog.session("recoverAllChatSessions: recovering", { count: entries.length });
+
+  // Set the request function on all stores first
+  for (const [, store] of entries) {
+    const state = store.getState();
+    if (!state._request) {
+      state.setRequest(request);
+    }
+  }
+
+  // Query chat status for all active sessions in parallel
+  const promises = entries.map(async ([key, store]) => {
+    try {
+      await store.getState().queryChatStatus();
+    } catch {
+      klog.sessionError("recoverAllChatSessions: failed for", key);
+    }
+  });
+
+  await Promise.allSettled(promises);
 }

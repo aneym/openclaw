@@ -164,6 +164,7 @@ export function resolveSkillInvocationPolicy(
       getFrontmatterValue(frontmatter, "disable-model-invocation"),
       false,
     ),
+    nativeCommand: parseFrontmatterBool(getFrontmatterValue(frontmatter, "native-command"), false),
   };
 }
 

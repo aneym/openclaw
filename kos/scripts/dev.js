@@ -7,10 +7,87 @@
  */
 
 const { spawn, execSync } = require("child_process");
+const { existsSync, readFileSync } = require("fs");
+const { homedir } = require("os");
+const { join } = require("path");
 const readline = require("readline");
 
 let electronProcess = null;
 let isRestarting = false;
+
+const DEFAULT_GATEWAY_PORT = 18789;
+const LEGACY_DEV_GATEWAY_PORT = 19001;
+const DEFAULT_RENDERER_PORT = 5175;
+
+function parseGatewayConfig(path, defaultPort) {
+  if (!existsSync(path)) {
+    return null;
+  }
+  try {
+    const raw = readFileSync(path, "utf-8");
+    const config = JSON.parse(raw);
+    const configuredPort = Number(config?.gateway?.port ?? defaultPort);
+    const port =
+      Number.isInteger(configuredPort) && configuredPort > 0 ? configuredPort : defaultPort;
+    const rawToken = config?.gateway?.auth?.token;
+    const token = typeof rawToken === "string" ? rawToken.trim() : "";
+    return {
+      url: `ws://localhost:${port}`,
+      token: token || undefined,
+      source: path,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveGatewayConfig() {
+  const stateDir = process.env.OPENCLAW_STATE_DIR?.trim();
+  const candidates = [];
+
+  if (stateDir) {
+    candidates.push({
+      path: join(stateDir, "openclaw.json"),
+      defaultPort: DEFAULT_GATEWAY_PORT,
+    });
+  }
+
+  candidates.push(
+    {
+      path: join(homedir(), ".openclaw", "openclaw.json"),
+      defaultPort: DEFAULT_GATEWAY_PORT,
+    },
+    {
+      path: join(homedir(), ".openclaw-dev", "openclaw.json"),
+      defaultPort: LEGACY_DEV_GATEWAY_PORT,
+    },
+  );
+
+  for (const candidate of candidates) {
+    const parsed = parseGatewayConfig(candidate.path, candidate.defaultPort);
+    if (parsed) {
+      return parsed;
+    }
+  }
+
+  return {
+    url: `ws://localhost:${DEFAULT_GATEWAY_PORT}`,
+    source: "default",
+  };
+}
+
+function buildRendererLaunchHash(gatewayConfig) {
+  const params = new URLSearchParams();
+  params.set("gateway", gatewayConfig.url);
+  if (gatewayConfig.token) {
+    params.set("token", gatewayConfig.token);
+  }
+  return params.toString();
+}
+
+const gatewayConfig = resolveGatewayConfig();
+const rendererLaunchHash = buildRendererLaunchHash(gatewayConfig);
+const rendererLaunchUrl = `http://localhost:${DEFAULT_RENDERER_PORT}/#${rendererLaunchHash}`;
 
 function killProcessTree(pid) {
   if (process.platform === "win32") {
@@ -44,6 +121,10 @@ function startElectron() {
     stdio: ["inherit", "inherit", "inherit"],
     shell: true,
     detached: process.platform !== "win32",
+    env: {
+      ...process.env,
+      KOS_DEV_RENDERER_HASH: rendererLaunchHash,
+    },
   });
 
   electronProcess.on("close", (code) => {
@@ -60,7 +141,9 @@ function startElectron() {
 }
 
 function restartElectron() {
-  if (isRestarting) return;
+  if (isRestarting) {
+    return;
+  }
   isRestarting = true;
 
   console.log("\n\x1b[36m[dev]\x1b[0m Restarting Electron...\n");
@@ -133,6 +216,28 @@ console.log("\x1b[36m━━━━━━━━━━━━━━━━━━━�
 console.log("  \x1b[33mr\x1b[0m - Restart Electron (hard reload)");
 console.log("  \x1b[33mc\x1b[0m - Clear terminal");
 console.log("  \x1b[33mq\x1b[0m - Quit");
+console.log(`  \x1b[33mlink\x1b[0m - ${rendererLaunchUrl}`);
+console.log(
+  `  \x1b[33mgateway\x1b[0m - ${
+    gatewayConfig.token
+      ? `${gatewayConfig.url}#token=${encodeURIComponent(gatewayConfig.token)}`
+      : gatewayConfig.url
+  }`,
+);
+console.log(`  \x1b[33msource\x1b[0m - ${gatewayConfig.source}`);
 console.log("\x1b[36m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
 
-startElectron();
+if (process.argv.includes("--no-electron")) {
+  console.log("\n\x1b[36m[dev]\x1b[0m --no-electron mode: renderer only (no Electron)\n");
+  const viteProcess = spawn("npx", ["electron-vite", "dev", "--rendererOnly"], {
+    stdio: ["inherit", "inherit", "inherit"],
+    shell: true,
+    env: {
+      ...process.env,
+      KOS_DEV_RENDERER_HASH: rendererLaunchHash,
+    },
+  });
+  viteProcess.on("close", (code) => process.exit(code ?? 0));
+} else {
+  startElectron();
+}

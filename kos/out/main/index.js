@@ -7,12 +7,13 @@ var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __copyProps = (to, from, except, desc) => {
   if ((from && typeof from === "object") || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
+    for (let key of __getOwnPropNames(from)) {
       if (!__hasOwnProp.call(to, key) && key !== except)
         __defProp(to, key, {
           get: () => from[key],
           enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable,
         });
+    }
   }
   return to;
 };
@@ -38,6 +39,7 @@ const path = require("path");
 const child_process = require("child_process");
 const crypto = require("crypto");
 const pty = require("node-pty");
+const http = require("http");
 function _interopNamespaceDefault(e) {
   const n = Object.create(null, { [Symbol.toStringTag]: { value: "Module" } });
   if (e) {
@@ -84,11 +86,15 @@ function createBrowserView() {
   });
 }
 function getActiveView() {
-  if (!activeTabId) return null;
+  if (!activeTabId) {
+    return null;
+  }
   return tabs.get(activeTabId)?.view ?? null;
 }
 function showTab(tabId) {
-  if (!mainWindow || !currentBounds) return;
+  if (!mainWindow || !currentBounds) {
+    return;
+  }
   for (const tab2 of tabs.values()) {
     tab2.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
   }
@@ -130,7 +136,9 @@ function initBrowserPanel(window) {
     return activeTabId;
   });
   electron.ipcMain.handle("browser:create-tab", (_, url) => {
-    if (!mainWindow || !currentBounds) throw new Error("Browser not initialized");
+    if (!mainWindow || !currentBounds) {
+      throw new Error("Browser not initialized");
+    }
     const id = generateTabId();
     const view = createBrowserView();
     mainWindow.addBrowserView(view);
@@ -144,7 +152,9 @@ function initBrowserPanel(window) {
   });
   electron.ipcMain.handle("browser:close-tab", (_, tabId) => {
     const tab = tabs.get(tabId);
-    if (!tab || !mainWindow) return false;
+    if (!tab || !mainWindow) {
+      return false;
+    }
     try {
       tab.view.webContents.debugger.detach();
     } catch {}
@@ -161,7 +171,9 @@ function initBrowserPanel(window) {
     return true;
   });
   electron.ipcMain.handle("browser:switch-tab", (_, tabId) => {
-    if (!tabs.has(tabId)) return false;
+    if (!tabs.has(tabId)) {
+      return false;
+    }
     showTab(tabId);
     return true;
   });
@@ -182,7 +194,9 @@ function initBrowserPanel(window) {
     }
   });
   electron.ipcMain.handle("browser:destroy", () => {
-    if (!mainWindow) return;
+    if (!mainWindow) {
+      return;
+    }
     for (const tab of tabs.values()) {
       try {
         tab.view.webContents.debugger.detach();
@@ -200,7 +214,9 @@ function initBrowserPanel(window) {
   });
   electron.ipcMain.handle("browser:navigate", (_, url, tabId) => {
     const targetId = tabId || activeTabId;
-    if (!targetId) return;
+    if (!targetId) {
+      return;
+    }
     const tab = tabs.get(targetId);
     if (tab) {
       tab.url = url;
@@ -209,21 +225,31 @@ function initBrowserPanel(window) {
   });
   electron.ipcMain.handle("browser:cdp", async (_, method, params, tabId) => {
     const targetId = tabId || activeTabId;
-    if (!targetId) throw new Error("No active tab");
+    if (!targetId) {
+      throw new Error("No active tab");
+    }
     const tab = tabs.get(targetId);
-    if (!tab) throw new Error("Tab not found");
+    if (!tab) {
+      throw new Error("Tab not found");
+    }
     return tab.view.webContents.debugger.sendCommand(method, params);
   });
   electron.ipcMain.handle("browser:devtools", (_, tabId) => {
     const targetId = tabId || activeTabId;
-    if (!targetId) return;
+    if (!targetId) {
+      return;
+    }
     tabs.get(targetId)?.view.webContents.openDevTools({ mode: "detach" });
   });
   electron.ipcMain.handle("browser:get-cdp-url", async (_, tabId) => {
     const targetId = tabId || activeTabId;
-    if (!targetId) return null;
+    if (!targetId) {
+      return null;
+    }
     const tab = tabs.get(targetId);
-    if (!tab) return null;
+    if (!tab) {
+      return null;
+    }
     try {
       const response = await fetch("http://localhost:9222/json");
       const targets = await response.json();
@@ -248,7 +274,9 @@ function initBrowserPanel(window) {
   });
   electron.ipcMain.handle("browser:get-tab", (_, tabId) => {
     const tab = tabs.get(tabId);
-    if (!tab) return null;
+    if (!tab) {
+      return null;
+    }
     return getTabInfo(tab);
   });
   electron.ipcMain.handle("browser:get-active-tab", () => {
@@ -279,7 +307,9 @@ function ensureKosDir() {
 }
 function readJsonFile(path2) {
   try {
-    if (!fs.existsSync(path2)) return null;
+    if (!fs.existsSync(path2)) {
+      return null;
+    }
     const raw = fs.readFileSync(path2, "utf-8");
     return JSON.parse(raw);
   } catch {
@@ -379,11 +409,13 @@ function runGit(args, cwd) {
       .trim();
   } catch (err) {
     const error = err;
-    throw new Error(error.stderr || error.message || "Git command failed");
+    throw new Error(error.stderr || error.message || "Git command failed", { cause: err });
   }
 }
 function isGitRepo(path2) {
-  if (!fs.existsSync(path2)) return false;
+  if (!fs.existsSync(path2)) {
+    return false;
+  }
   try {
     runGit(["rev-parse", "--git-dir"], path2);
     return true;
@@ -585,7 +617,9 @@ const SKIP_DIRS = /* @__PURE__ */ new Set([
 function scanForGitRepos(rootPath, maxDepth = 3) {
   const discovered = [];
   function scan(currentPath, depth) {
-    if (depth > maxDepth) return;
+    if (depth > maxDepth) {
+      return;
+    }
     const gitPath = path.join(currentPath, ".git");
     if (fs.existsSync(gitPath)) {
       const info = getRepoInfo(currentPath);
@@ -604,9 +638,15 @@ function scanForGitRepos(rootPath, maxDepth = 3) {
       return;
     }
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
-      if (entry.name.startsWith(".") && depth > 0) continue;
-      if (SKIP_DIRS.has(entry.name)) continue;
+      if (!entry.isDirectory()) {
+        continue;
+      }
+      if (entry.name.startsWith(".") && depth > 0) {
+        continue;
+      }
+      if (SKIP_DIRS.has(entry.name)) {
+        continue;
+      }
       scan(path.join(currentPath, entry.name), depth + 1);
     }
   }
@@ -820,7 +860,7 @@ async function listTeams(apiKey) {
         position: s.position,
         type: s.type,
       }))
-      .sort((a, b) => a.position - b.position),
+      .toSorted((a, b) => a.position - b.position),
   }));
 }
 async function getTeamIssues(teamId, apiKey) {
@@ -981,10 +1021,14 @@ function listProjects() {
     const entries = fs.readdirSync(projectsDir, { withFileTypes: true });
     const projects = [];
     for (const entry of entries) {
-      if (!entry.isDirectory()) continue;
+      if (!entry.isDirectory()) {
+        continue;
+      }
       const projectId = entry.name;
       const configPath = getProjectConfigPath(projectId);
-      if (!fs.existsSync(configPath)) continue;
+      if (!fs.existsSync(configPath)) {
+        continue;
+      }
       try {
         const raw = fs.readFileSync(configPath, "utf-8");
         const configFile = JSON.parse(raw);
@@ -996,14 +1040,16 @@ function listProjects() {
         continue;
       }
     }
-    return projects.sort((a, b) => a.name.localeCompare(b.name));
+    return projects.toSorted((a, b) => a.name.localeCompare(b.name));
   } catch {
     return [];
   }
 }
 function getProject(id) {
   const configPath = getProjectConfigPath(id);
-  if (!fs.existsSync(configPath)) return null;
+  if (!fs.existsSync(configPath)) {
+    return null;
+  }
   try {
     const raw = fs.readFileSync(configPath, "utf-8");
     const configFile = JSON.parse(raw);
@@ -1099,7 +1145,9 @@ function cleanupOldScrollback() {
     const maxAge = 7 * 24 * 60 * 60 * 1e3;
     const files = fs.readdirSync(SCROLLBACK_DIR);
     for (const file of files) {
-      if (!file.endsWith(".scrollback")) continue;
+      if (!file.endsWith(".scrollback")) {
+        continue;
+      }
       const filePath = path.join(SCROLLBACK_DIR, file);
       const stat = fs.statSync(filePath);
       if (now - stat.mtimeMs > maxAge) {
@@ -1173,6 +1221,8 @@ function createTerminal(cwd, cols, rows, onData, onExit, existingId) {
       ...process.env,
       TERM: "xterm-256color",
       COLORTERM: "truecolor",
+      // Used by Codex/Claude hooks to post completion events back into kOS.
+      KOS_TERMINAL_ID: id,
     },
   });
   console.log(`[terminal-service] Terminal created: id=${id}, pid=${ptyProcess.pid}`);
@@ -1203,14 +1253,18 @@ function createTerminal(cwd, cols, rows, onData, onExit, existingId) {
       const removed = entry.scrollback.shift();
       entry.scrollbackBytes -= removed.length;
     }
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     entry.saveTimeout = setTimeout(() => {
       saveScrollback(id, entry.scrollback);
     }, 5e3);
     entry.onData?.(data);
   });
   ptyProcess.onExit(({ exitCode }) => {
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     saveScrollback(id, entry.scrollback);
     const exitCallback = entry.onExit;
     terminals.delete(id);
@@ -1256,7 +1310,9 @@ function resizeTerminal(id, cols, rows) {
 function killTerminal(id, preserveScrollback = true) {
   const entry = terminals.get(id);
   if (entry) {
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     if (preserveScrollback) {
       saveScrollback(id, entry.scrollback);
     } else {
@@ -1271,13 +1327,17 @@ function clearTerminalScrollback(id) {
   if (entry) {
     entry.scrollback = [];
     entry.scrollbackBytes = 0;
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     deleteScrollback(id);
   }
 }
 function getTerminalInfo(id) {
   const entry = terminals.get(id);
-  if (!entry) return null;
+  if (!entry) {
+    return null;
+  }
   return {
     id,
     pid: entry.pty.pid,
@@ -1288,7 +1348,9 @@ function getTerminalInfo(id) {
 }
 function killAllTerminals() {
   for (const [id, entry] of terminals) {
-    if (entry.saveTimeout) clearTimeout(entry.saveTimeout);
+    if (entry.saveTimeout) {
+      clearTimeout(entry.saveTimeout);
+    }
     saveScrollback(id, entry.scrollback);
     entry.pty.kill();
     terminals.delete(id);
@@ -1296,13 +1358,17 @@ function killAllTerminals() {
 }
 function getTerminalChildProcesses(id) {
   const entry = terminals.get(id);
-  if (!entry) return [];
+  if (!entry) {
+    return [];
+  }
   try {
     const { execSync } = require("child_process");
     const result = execSync(`pgrep -P ${entry.pty.pid} 2>/dev/null || true`, {
       encoding: "utf-8",
     }).trim();
-    if (!result) return [];
+    if (!result) {
+      return [];
+    }
     const childPids = result.split("\n").filter(Boolean);
     const names = [];
     for (const pid of childPids) {
@@ -1310,7 +1376,9 @@ function getTerminalChildProcesses(id) {
         const name = execSync(`ps -p ${pid} -o comm= 2>/dev/null || true`, {
           encoding: "utf-8",
         }).trim();
-        if (name) names.push(name);
+        if (name) {
+          names.push(name);
+        }
       } catch {}
     }
     return names;
@@ -1353,8 +1421,12 @@ function createManagedTerminal(cwd, onOutput) {
 }
 async function execInManagedTerminal(id, command, timeoutMs = 3e4) {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
   return new Promise((resolve) => {
     let output = "";
     const originalOnData = entry.onData;
@@ -1386,13 +1458,19 @@ async function execInManagedTerminal(id, command, timeoutMs = 3e4) {
 }
 function readManagedTerminalOutput(id, _since, maxBytes = 5e4) {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
   const fullOutput = entry.scrollback.join("");
   return fullOutput.slice(-maxBytes);
 }
 function closeManagedTerminal(id, force = false) {
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
   console.log(`[terminal-service] Closing managed terminal: id=${id}, force=${force}`);
   managedTerminals.delete(id);
   killTerminal(id, !force);
@@ -1417,8 +1495,12 @@ function listManagedTerminals() {
 }
 function copyManagedTerminalOutput(id, maxBytes = 5e4) {
   const entry = terminals.get(id);
-  if (!entry) throw new Error(`Terminal ${id} not found`);
-  if (!managedTerminals.has(id)) throw new Error(`Terminal ${id} is not managed`);
+  if (!entry) {
+    throw new Error(`Terminal ${id} not found`);
+  }
+  if (!managedTerminals.has(id)) {
+    throw new Error(`Terminal ${id} is not managed`);
+  }
   const fullOutput = entry.scrollback.join("");
   return fullOutput.slice(-maxBytes);
 }
@@ -1468,7 +1550,9 @@ function registerTerminalIpc() {
   });
   electron.ipcMain.handle("terminal:createManaged", async (event, cwd) => {
     const win = electron.BrowserWindow.fromWebContents(event.sender);
-    if (!win) throw new Error("No window");
+    if (!win) {
+      throw new Error("No window");
+    }
     const onOutput = (data) => {
       if (!win.isDestroyed()) {
         win.webContents.send("terminal:managed-output", data);
@@ -1500,6 +1584,15 @@ function registerTerminalIpc() {
 function cleanupTerminals() {
   killAllTerminals();
 }
+let currentInfo = null;
+function setTriageBridgeInfo(info) {
+  currentInfo = info;
+}
+function registerTriageBridgeIpc() {
+  electron.ipcMain.handle("triageBridge:getInfo", () => {
+    return currentInfo;
+  });
+}
 function registerAllIpc() {
   registerConfigIpc();
   registerProjectIpc();
@@ -1507,6 +1600,7 @@ function registerAllIpc() {
   registerGitHubIpc();
   registerLinearIpc();
   registerTerminalIpc();
+  registerTriageBridgeIpc();
 }
 const MAX_BUFFER_SIZE = 500;
 const buffer = [];
@@ -1533,13 +1627,22 @@ function isNoise(message) {
   return NOISE_PATTERNS.some((pattern) => pattern.test(message));
 }
 function formatArg(arg) {
-  if (arg === void 0) return "undefined";
-  if (arg === null) return "null";
-  if (typeof arg === "string") return arg;
-  if (typeof arg === "number" || typeof arg === "boolean") return String(arg);
-  if (arg instanceof Error)
+  if (arg === void 0) {
+    return "undefined";
+  }
+  if (arg === null) {
+    return "null";
+  }
+  if (typeof arg === "string") {
+    return arg;
+  }
+  if (typeof arg === "number" || typeof arg === "boolean") {
+    return String(arg);
+  }
+  if (arg instanceof Error) {
     return `${arg.name}: ${arg.message}
 ${arg.stack || ""}`;
+  }
   try {
     return JSON.stringify(arg, null, 2);
   } catch {
@@ -1589,7 +1692,9 @@ function getFilteredLogs() {
   let lastMessage = "";
   for (const entry of buffer) {
     const message = entry.args.map(formatArg).join(" ");
-    if (isNoise(message)) continue;
+    if (isNoise(message)) {
+      continue;
+    }
     if (
       message === lastMessage &&
       filtered.length > 0 &&
@@ -1604,8 +1709,87 @@ function getFilteredLogs() {
 }
 function getLogsAsText() {
   const filtered = getFilteredLogs();
-  if (filtered.length === 0) return "(no main process logs)";
+  if (filtered.length === 0) {
+    return "(no main process logs)";
+  }
   return filtered.map(formatEntry).join("\n");
+}
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    req.setEncoding("utf8");
+    req.on("data", (chunk) => {
+      data += chunk;
+      if (data.length > 256 * 1024) {
+        reject(new Error("payload too large"));
+        req.destroy();
+      }
+    });
+    req.on("end", () => resolve(data));
+    req.on("error", reject);
+  });
+}
+async function startTriageBridge(opts) {
+  const token = crypto.randomBytes(24).toString("hex");
+  const server = http.createServer(async (req, res) => {
+    try {
+      if (req.method !== "POST" || req.url !== "/triage/event") {
+        res.statusCode = 404;
+        res.end("not found");
+        return;
+      }
+      const auth = String(req.headers["authorization"] ?? "");
+      if (auth !== `Bearer ${token}`) {
+        res.statusCode = 401;
+        res.end("unauthorized");
+        return;
+      }
+      const raw = await readBody(req);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        res.statusCode = 400;
+        res.end("bad request");
+        return;
+      }
+      if (parsed.source !== "claude" && parsed.source !== "codex" && parsed.source !== "terminal") {
+        res.statusCode = 400;
+        res.end("bad source");
+        return;
+      }
+      if (!parsed.terminalId || typeof parsed.terminalId !== "string") {
+        res.statusCode = 400;
+        res.end("missing terminalId");
+        return;
+      }
+      opts.onEvent({
+        source: parsed.source,
+        terminalId: parsed.terminalId,
+        title: typeof parsed.title === "string" ? parsed.title : void 0,
+        preview: typeof parsed.preview === "string" ? parsed.preview : void 0,
+        occurredAt: typeof parsed.occurredAt === "number" ? parsed.occurredAt : void 0,
+        sourceEventId: typeof parsed.sourceEventId === "string" ? parsed.sourceEventId : void 0,
+      });
+      res.statusCode = 200;
+      res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ ok: true }));
+    } catch (err) {
+      res.statusCode = 500;
+      res.end("error");
+    }
+  });
+  await new Promise((resolve, reject) => {
+    server.listen(0, "127.0.0.1", () => resolve());
+    server.on("error", reject);
+  });
+  const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("triage bridge failed to bind");
+  }
+  const endpoint = `http://127.0.0.1:${address.port}/triage/event`;
+  const close = async () => {
+    await new Promise((resolve) => server.close(() => resolve()));
+  };
+  return { info: { endpoint, token }, close };
 }
 const STATE_FILE = path.join(getKosDir(), "window-state.json");
 let debounceTimer = null;
@@ -1672,23 +1856,20 @@ electron.protocol.registerSchemesAsPrivileged([
 electron.ipcMain.handle("get-gateway-config", () => {
   const prodPath = path.join(os.homedir(), ".openclaw", "openclaw.json");
   const devPath = path.join(os.homedir(), ".openclaw-dev", "openclaw.json");
+  const defaultPort = 18789;
   const stateDir = process.env.OPENCLAW_STATE_DIR;
   if (stateDir) {
     try {
       const configPath = path.join(stateDir, "openclaw.json");
       const raw = fs.readFileSync(configPath, "utf-8");
       const config = JSON.parse(raw);
-      const port = config?.gateway?.port ?? 18789;
+      const port = config?.gateway?.port ?? defaultPort;
       const token = config?.gateway?.auth?.token;
       return { url: `ws://localhost:${port}`, token, source: configPath };
     } catch {}
   }
-  const primary = utils.is.dev
-    ? { path: devPath, defaultPort: 19001 }
-    : { path: prodPath, defaultPort: 18789 };
-  const fallback = utils.is.dev
-    ? { path: prodPath, defaultPort: 18789 }
-    : { path: devPath, defaultPort: 19001 };
+  const primary = { path: prodPath, defaultPort };
+  const fallback = { path: devPath, defaultPort: 19001 };
   for (const source of [primary, fallback]) {
     try {
       const raw = fs.readFileSync(source.path, "utf-8");
@@ -1698,7 +1879,7 @@ electron.ipcMain.handle("get-gateway-config", () => {
       return { url: `ws://localhost:${port}`, token, source: source.path };
     } catch {}
   }
-  return { url: `ws://localhost:${utils.is.dev ? 19001 : 18789}`, source: "default" };
+  return { url: `ws://localhost:${defaultPort}`, source: "default" };
 });
 electron.ipcMain.handle("app:set-dock-badge", (_, count) => {
   if (process.platform === "darwin" && electron.app.dock) {
@@ -1736,27 +1917,39 @@ ${mainLogs}`;
 });
 const activeCaptures = /* @__PURE__ */ new Map();
 electron.ipcMain.handle("simulator:list-windows", async () => {
-  if (!kosNative) return [];
+  if (!kosNative) {
+    return [];
+  }
   return kosNative.listSimulatorWindows();
 });
 electron.ipcMain.handle("simulator:has-screen-permission", () => {
-  if (!kosNative) return false;
+  if (!kosNative) {
+    return false;
+  }
   return kosNative.hasScreenRecordingPermission();
 });
 electron.ipcMain.handle("simulator:request-screen-permission", () => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.requestScreenRecordingPermission();
 });
 electron.ipcMain.handle("simulator:has-accessibility-permission", () => {
-  if (!kosNative) return false;
+  if (!kosNative) {
+    return false;
+  }
   return kosNative.hasAccessibilityPermission();
 });
 electron.ipcMain.handle("simulator:request-accessibility-permission", () => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.requestAccessibilityPermission();
 });
 electron.ipcMain.handle("simulator:start-capture", async (event, windowId, config) => {
-  if (!kosNative) return { success: false, error: "Native addon not available" };
+  if (!kosNative) {
+    return { success: false, error: "Native addon not available" };
+  }
   const existingStop = activeCaptures.get(windowId);
   if (existingStop) {
     existingStop();
@@ -1793,18 +1986,24 @@ electron.ipcMain.handle("simulator:stop-capture", (_, windowId) => {
   }
 });
 electron.ipcMain.handle("simulator:inject-tap", (_, windowId, x, y) => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.injectTap(windowId, x, y);
 });
 electron.ipcMain.handle(
   "simulator:inject-swipe",
   (_, windowId, startX, startY, endX, endY, durationMs) => {
-    if (!kosNative) return;
+    if (!kosNative) {
+      return;
+    }
     kosNative.injectSwipe(windowId, startX, startY, endX, endY, durationMs);
   },
 );
 electron.ipcMain.handle("simulator:inject-text", (_, windowId, text) => {
-  if (!kosNative) return;
+  if (!kosNative) {
+    return;
+  }
   kosNative.injectText(windowId, text);
 });
 function createMenu() {
@@ -1866,7 +2065,9 @@ function createMenu() {
           accelerator: "CmdOrCtrl+Shift+F12",
           click: () => {
             const win = electron.BrowserWindow.getFocusedWindow();
-            if (!win) return;
+            if (!win) {
+              return;
+            }
             win.webContents
               .executeJavaScript(
                 `(function() {
@@ -1987,6 +2188,26 @@ function createMenu() {
   const menu = electron.Menu.buildFromTemplate(template);
   electron.Menu.setApplicationMenu(menu);
 }
+function resolveRendererDevUrl(baseUrl) {
+  const launchHash = (process.env["KOS_DEV_RENDERER_HASH"] ?? "").trim();
+  if (!launchHash) {
+    return baseUrl;
+  }
+  try {
+    const parsed = new URL(baseUrl);
+    const existingHash = parsed.hash.startsWith("#") ? parsed.hash.slice(1) : parsed.hash;
+    const mergedHash = new URLSearchParams(existingHash);
+    const launchParams = new URLSearchParams(launchHash);
+    launchParams.forEach((value, key) => {
+      mergedHash.set(key, value);
+    });
+    const nextHash = mergedHash.toString();
+    parsed.hash = nextHash ? `#${nextHash}` : "";
+    return parsed.toString();
+  } catch {
+    return baseUrl;
+  }
+}
 function createWindow() {
   const saved = restoreWindowState();
   const mainWindow2 = new electron.BrowserWindow({
@@ -2034,13 +2255,32 @@ function createWindow() {
     }
   });
   if (utils.is.dev && process.env["ELECTRON_RENDERER_URL"]) {
-    mainWindow2.loadURL(process.env["ELECTRON_RENDERER_URL"]);
+    const rendererDevUrl = resolveRendererDevUrl(process.env["ELECTRON_RENDERER_URL"]);
+    mainWindow2.loadURL(rendererDevUrl);
     mainWindow2.webContents.openDevTools({ mode: "detach" });
   } else {
     mainWindow2.loadFile(path.join(__dirname, "../renderer/index.html"));
   }
 }
 electron.app.whenReady().then(() => {
+  startTriageBridge({
+    onEvent: (event) => {
+      const win = electron.BrowserWindow.getAllWindows()[0];
+      if (!win || win.isDestroyed()) {
+        return;
+      }
+      win.webContents.send("triageBridge:event", event);
+    },
+  })
+    .then(({ info }) => {
+      setTriageBridgeInfo(info);
+      process.env.KOS_TRIAGE_ENDPOINT = info.endpoint;
+      process.env.KOS_TRIAGE_TOKEN = info.token;
+      console.log("[triage-bridge] ready", { endpoint: info.endpoint });
+    })
+    .catch((err) => {
+      console.warn("[triage-bridge] failed to start", err);
+    });
   electron.protocol.handle("kos-media", async (request) => {
     const url = new URL(request.url);
     const filePath = decodeURIComponent(url.pathname);
@@ -2067,7 +2307,9 @@ electron.app.whenReady().then(() => {
   });
   createWindow();
   electron.app.on("activate", function () {
-    if (electron.BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (electron.BrowserWindow.getAllWindows().length === 0) {
+      createWindow();
+    }
   });
 });
 electron.app.on("window-all-closed", () => {

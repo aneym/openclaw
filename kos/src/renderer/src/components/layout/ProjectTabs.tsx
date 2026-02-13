@@ -31,6 +31,7 @@ interface ProjectTabsProps {
   onSelectProject: (projectId: string) => void;
   onSettings: () => void;
   onCreateProject: () => void;
+  canCreateProject?: boolean;
   onProjectSettings?: (projectId: string) => void;
   onDeleteProject?: (projectId: string) => void;
   onOpenProfileSettings?: () => void;
@@ -43,6 +44,7 @@ export function ProjectTabs({
   onSelectProject,
   onSettings,
   onCreateProject,
+  canCreateProject = true,
   onProjectSettings,
   onDeleteProject,
   onOpenProfileSettings,
@@ -150,16 +152,18 @@ ${mainLogs}`;
             </ContextMenuContent>
           </ContextMenu>
         ))}
-        <button
-          onClick={onCreateProject}
-          className={cn(
-            "px-2 py-1.5 rounded-md text-muted-foreground",
-            "hover:text-foreground hover:bg-background/50 transition-colors",
-          )}
-          title="Add project"
-        >
-          <Plus className="h-4 w-4" />
-        </button>
+        {canCreateProject && (
+          <button
+            onClick={onCreateProject}
+            className={cn(
+              "px-2 py-1.5 rounded-md text-muted-foreground",
+              "hover:text-foreground hover:bg-background/50 transition-colors",
+            )}
+            title="Add project"
+          >
+            <Plus className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       <div className="flex-1" />

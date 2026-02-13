@@ -14,17 +14,41 @@ export type SessionsState = {
   sessionsIncludeUnknown: boolean;
 };
 
-export async function loadSessions(
-  state: SessionsState,
-  overrides?: {
-    activeMinutes?: number;
-    limit?: number;
-    includeGlobal?: boolean;
-    includeUnknown?: boolean;
-  },
-) {
-  if (!state.client || !state.connected) return;
-  if (state.sessionsLoading) return;
+type SessionsLoadOverrides = {
+  activeMinutes?: number;
+  limit?: number;
+  includeGlobal?: boolean;
+  includeUnknown?: boolean;
+};
+
+// Coalesce refresh requests that arrive while a sessions.list call is already in flight.
+// This prevents "lost" title updates when chat events fire quickly.
+const pendingLoadOverrides = new WeakMap<SessionsState, SessionsLoadOverrides>();
+
+function mergeOverrides(
+  base: SessionsLoadOverrides | undefined,
+  next: SessionsLoadOverrides | undefined,
+): SessionsLoadOverrides | undefined {
+  if (!next) {
+    return base;
+  }
+  return {
+    ...base,
+    ...next,
+  };
+}
+
+export async function loadSessions(state: SessionsState, overrides?: SessionsLoadOverrides) {
+  if (!state.client || !state.connected) {
+    return;
+  }
+  if (state.sessionsLoading) {
+    pendingLoadOverrides.set(
+      state,
+      mergeOverrides(pendingLoadOverrides.get(state), overrides) ?? {},
+    );
+    return;
+  }
   state.sessionsLoading = true;
   state.sessionsError = null;
   try {
@@ -37,16 +61,28 @@ export async function loadSessions(
       includeUnknown,
       includeDerivedTitles: true,
     };
-    if (activeMinutes > 0) params.activeMinutes = activeMinutes;
-    if (limit > 0) params.limit = limit;
-    const res = (await state.client.request("sessions.list", params)) as
-      | SessionsListResult
-      | undefined;
-    if (res) state.sessionsResult = res;
+    if (activeMinutes > 0) {
+      params.activeMinutes = activeMinutes;
+    }
+    if (limit > 0) {
+      params.limit = limit;
+    }
+    const res = await state.client.request("sessions.list", params);
+    if (res) {
+      state.sessionsResult = res;
+    }
   } catch (err) {
     state.sessionsError = String(err);
   } finally {
     state.sessionsLoading = false;
+    const pending = pendingLoadOverrides.get(state);
+    if (pending) {
+      pendingLoadOverrides.delete(state);
+      // Trigger one follow-up refresh with the latest requested overrides.
+      queueMicrotask(() => {
+        void loadSessions(state, pending);
+      });
+    }
   }
 }
 
@@ -63,15 +99,31 @@ export async function patchSession(
     archived?: boolean | null;
   },
 ) {
-  if (!state.client || !state.connected) return;
+  if (!state.client || !state.connected) {
+    return;
+  }
   const params: Record<string, unknown> = { key };
-  if ("label" in patch) params.label = patch.label;
-  if ("icon" in patch) params.icon = patch.icon;
-  if ("thinkingLevel" in patch) params.thinkingLevel = patch.thinkingLevel;
-  if ("verboseLevel" in patch) params.verboseLevel = patch.verboseLevel;
-  if ("reasoningLevel" in patch) params.reasoningLevel = patch.reasoningLevel;
-  if ("model" in patch) params.model = patch.model;
-  if ("archived" in patch) params.archived = patch.archived;
+  if ("label" in patch) {
+    params.label = patch.label;
+  }
+  if ("icon" in patch) {
+    params.icon = patch.icon;
+  }
+  if ("thinkingLevel" in patch) {
+    params.thinkingLevel = patch.thinkingLevel;
+  }
+  if ("verboseLevel" in patch) {
+    params.verboseLevel = patch.verboseLevel;
+  }
+  if ("reasoningLevel" in patch) {
+    params.reasoningLevel = patch.reasoningLevel;
+  }
+  if ("model" in patch) {
+    params.model = patch.model;
+  }
+  if ("archived" in patch) {
+    params.archived = patch.archived;
+  }
   try {
     await state.client.request("sessions.patch", params);
     await loadSessions(state);
@@ -81,12 +133,18 @@ export async function patchSession(
 }
 
 export async function deleteSession(state: SessionsState, key: string) {
-  if (!state.client || !state.connected) return;
-  if (state.sessionsLoading) return;
+  if (!state.client || !state.connected) {
+    return;
+  }
+  if (state.sessionsLoading) {
+    return;
+  }
   const confirmed = window.confirm(
     `Delete session "${key}"?\n\nDeletes the session entry and archives its transcript.`,
   );
-  if (!confirmed) return;
+  if (!confirmed) {
+    return;
+  }
   state.sessionsLoading = true;
   state.sessionsError = null;
   try {

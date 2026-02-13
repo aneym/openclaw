@@ -10,7 +10,10 @@ import type {
   PanelLeaf,
   PanelTab,
 } from "../types";
+import { getRendererApi, supportsPanelType } from "../lib/runtime";
+import { parseAgentSessionKey } from "../lib/session-keys";
 import { TABBED_PANEL_TYPES } from "../types";
+import { useChatStore } from "./chat-store";
 
 function generatePanelId(): string {
   return `panel-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -37,21 +40,84 @@ function createDefaultLayout(): PanelLayout {
   };
 }
 
+function toChatPanel(panel: PanelState): PanelState {
+  const newTabId = generateTabId();
+  return {
+    id: panel.id,
+    type: "chat",
+    isUserOpened: panel.isUserOpened,
+    tabs: [{ id: newTabId }],
+    activeTabId: newTabId,
+  };
+}
+
+function sanitizeLayoutForRuntime(layout: PanelLayout): PanelLayout {
+  let changed = false;
+  let hasChat = false;
+  const panels = new Map<string, PanelState>();
+
+  for (const [panelId, panel] of layout.panels) {
+    let nextPanel = panel;
+    if (!supportsPanelType(panel.type)) {
+      nextPanel = toChatPanel(panel);
+      changed = true;
+    }
+    if (nextPanel.type === "chat") {
+      hasChat = true;
+    }
+    panels.set(panelId, nextPanel);
+  }
+
+  if (!hasChat) {
+    const fallbackPanelId = findFirstLeaf(layout.root);
+    if (fallbackPanelId) {
+      const fallbackPanel = panels.get(fallbackPanelId);
+      if (fallbackPanel) {
+        panels.set(fallbackPanelId, toChatPanel(fallbackPanel));
+        changed = true;
+      }
+    }
+  }
+
+  if (!changed) {
+    return layout;
+  }
+
+  return {
+    ...layout,
+    panels,
+  };
+}
+
+function killTerminalIfAvailable(id: string) {
+  const api = getRendererApi();
+  if (!api?.terminal) {
+    return;
+  }
+  api.terminal.kill(id).catch(() => {});
+}
+
 function findFirstLeaf(node: PanelNode): string | null {
-  if (node.type === "leaf") return node.panelId;
+  if (node.type === "leaf") {
+    return node.panelId;
+  }
   return findFirstLeaf(node.children[0]) || findFirstLeaf(node.children[1]);
 }
 
 // Collect all leaf panel IDs in tree order (left-to-right, top-to-bottom)
 function collectAllLeafIds(node: PanelNode): string[] {
-  if (node.type === "leaf") return [node.panelId];
+  if (node.type === "leaf") {
+    return [node.panelId];
+  }
   return [...collectAllLeafIds(node.children[0]), ...collectAllLeafIds(node.children[1])];
 }
 
 // Find first chat panel ID
 function findFirstChatPanel(panels: Map<string, PanelState>): string | null {
   for (const [id, panel] of panels) {
-    if (panel.type === "chat") return id;
+    if (panel.type === "chat") {
+      return id;
+    }
   }
   return null;
 }
@@ -68,8 +134,12 @@ function removeLeafFromTree(node: PanelNode, panelId: string): PanelNode | null 
   const newRight = removeLeafFromTree(right, panelId);
 
   // If one child was removed, return the other
-  if (newLeft === null) return newRight;
-  if (newRight === null) return newLeft;
+  if (newLeft === null) {
+    return newRight;
+  }
+  if (newRight === null) {
+    return newLeft;
+  }
 
   // Both children still exist
   return {
@@ -114,12 +184,18 @@ function insertLeafBeside(
 
 /** Extract the chatId a panel is currently displaying */
 export function getPanelChatId(panel: PanelState): string | null {
-  if (panel.type !== "chat") return null;
+  if (panel.type !== "chat") {
+    return null;
+  }
   const fromData = panel.data?.chatId as string | undefined;
-  if (fromData) return fromData;
+  if (fromData) {
+    return fromData;
+  }
   if (panel.tabs && panel.activeTabId) {
     const activeTab = panel.tabs.find((t) => t.id === panel.activeTabId);
-    if (activeTab?.contentId) return activeTab.contentId;
+    if (activeTab?.contentId) {
+      return activeTab.contentId;
+    }
   }
   return null;
 }
@@ -190,6 +266,9 @@ interface PanelStoreState {
   // Clear a chat panel's chatId (both data.chatId and active tab contentId)
   clearPanelChat: (workspaceId: string, panelId: string) => void;
 
+  // Close all panels showing a specific chat (used when archiving/deleting)
+  closePanelsForChat: (chatId: string) => void;
+
   // Start a terminal in a tab (assigns contentId + cwd to the tab)
   startTerminalTab: (workspaceId: string, panelId: string, tabId: string, cwd?: string) => void;
 
@@ -224,6 +303,11 @@ interface PanelStoreState {
     cwd?: string,
     opts?: { label?: string; target?: "tab" | "pane"; sessionKey?: string },
   ) => void;
+  openTerminalById: (
+    workspaceId: string,
+    terminalId: string,
+    opts?: { cwd?: string; label?: string; target?: "tab" | "pane"; sessionKey?: string },
+  ) => void;
 }
 
 export const usePanelStore = create<PanelStoreState>()(
@@ -234,7 +318,9 @@ export const usePanelStore = create<PanelStoreState>()(
 
       getLayout: (workspaceId: string) => {
         const existing = get().layouts.get(workspaceId);
-        if (existing) return existing;
+        if (existing) {
+          return existing;
+        }
 
         // Create default layout on first access
         const defaultLayout = createDefaultLayout();
@@ -326,7 +412,9 @@ export const usePanelStore = create<PanelStoreState>()(
       closePanel: (workspaceId: string, panelId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+          return;
+        }
 
         // Can't close the last panel
         if (layout.root.type === "leaf") {
@@ -350,23 +438,23 @@ export const usePanelStore = create<PanelStoreState>()(
             for (const tab of panel.tabs) {
               if (tab.contentId) {
                 console.log(`[panel-store] Killing terminal tab: ${tab.contentId}`);
-                window.api.terminal.kill(tab.contentId).catch(() => {});
+                killTerminalIfAvailable(tab.contentId);
               }
             }
           }
           // Also kill the panel-based terminal ID (non-tabbed fallback)
           const terminalId = `term-${panelId}`;
           console.log(`[panel-store] Killing terminal: ${terminalId}`);
-          window.api.terminal.kill(terminalId).catch(() => {
-            // Terminal may not exist (e.g., never connected)
-          });
+          killTerminalIfAvailable(terminalId);
         }
 
         let siblingPanelId: string | null = null;
 
         const removePanel = (node: PanelNode): PanelNode | null => {
           if (node.type === "leaf") {
-            if (node.panelId === panelId) return null;
+            if (node.panelId === panelId) {
+              return null;
+            }
             return node;
           }
 
@@ -461,7 +549,9 @@ export const usePanelStore = create<PanelStoreState>()(
       updatePanelData: (workspaceId: string, panelId: string, data: Record<string, unknown>) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+          return;
+        }
 
         const newPanels = new Map(layout.panels);
         newPanels.set(panelId, {
@@ -486,11 +576,15 @@ export const usePanelStore = create<PanelStoreState>()(
 
       getFocusedPanelId: (workspaceId: string) => {
         const focusedId = get().focusedPanelIds.get(workspaceId);
-        if (focusedId) return focusedId;
+        if (focusedId) {
+          return focusedId;
+        }
 
         // Fallback: find first leaf
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return null;
+        if (!layout) {
+          return null;
+        }
         return findFirstLeaf(layout.root);
       },
 
@@ -502,7 +596,9 @@ export const usePanelStore = create<PanelStoreState>()(
 
       hasPanelType: (workspaceId: string, type: PanelType) => {
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return false;
+        if (!layout) {
+          return false;
+        }
         // Only check panels that are actually in the render tree (not orphaned in the Map)
         const leafIds = new Set(collectAllLeafIds(layout.root));
         return [...layout.panels.entries()].some(([id, p]) => p.type === type && leafIds.has(id));
@@ -567,11 +663,18 @@ export const usePanelStore = create<PanelStoreState>()(
           );
         }
 
+        // Derive agentId from the chat's session key for context propagation
+        // (enables duplicated/split panes to inherit the agent filter)
+        const chatObj = useChatStore.getState().chats.get(chatId);
+        const agentId = chatObj?.sessionKey
+          ? parseAgentSessionKey(chatObj.sessionKey)?.agentId
+          : undefined;
+
         const newPanels = new Map(layout.panels);
         newPanels.set(panelId, {
           ...panel,
           tabs: updatedTabs,
-          data: { ...panel.data, chatId },
+          data: { ...panel.data, chatId, agentId },
         });
 
         get().setLayout(workspaceId, {
@@ -602,24 +705,36 @@ export const usePanelStore = create<PanelStoreState>()(
             }
           }
         }
-        // Use existing splitPanel with chat type and chatId in data
-        get().splitPanel(workspaceId, panelId, direction, "chat", { chatId });
+        // Derive agentId from chat session key for context propagation
+        const chatObj = useChatStore.getState().chats.get(chatId);
+        const agentId = chatObj?.sessionKey
+          ? parseAgentSessionKey(chatObj.sessionKey)?.agentId
+          : undefined;
+
+        // Use existing splitPanel with chat type and chatId + agentId in data
+        get().splitPanel(workspaceId, panelId, direction, "chat", { chatId, agentId });
       },
 
       // Get all leaf panel IDs in tree order
       getAllLeafIds: (workspaceId: string) => {
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return [];
+        if (!layout) {
+          return [];
+        }
         return collectAllLeafIds(layout.root);
       },
 
       // Focus next panel (cycles through all leaves)
       focusNextPanel: (workspaceId: string) => {
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return;
+        if (!layout) {
+          return;
+        }
 
         const leafIds = collectAllLeafIds(layout.root);
-        if (leafIds.length === 0) return;
+        if (leafIds.length === 0) {
+          return;
+        }
 
         const currentFocused = get().getFocusedPanelId(workspaceId);
         const currentIndex = currentFocused ? leafIds.indexOf(currentFocused) : -1;
@@ -631,10 +746,14 @@ export const usePanelStore = create<PanelStoreState>()(
       // Focus previous panel (cycles through all leaves)
       focusPrevPanel: (workspaceId: string) => {
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return;
+        if (!layout) {
+          return;
+        }
 
         const leafIds = collectAllLeafIds(layout.root);
-        if (leafIds.length === 0) return;
+        if (leafIds.length === 0) {
+          return;
+        }
 
         const currentFocused = get().getFocusedPanelId(workspaceId);
         const currentIndex = currentFocused ? leafIds.indexOf(currentFocused) : 0;
@@ -646,12 +765,16 @@ export const usePanelStore = create<PanelStoreState>()(
       // Get the focused panel if it's a chat, otherwise find first chat panel
       getFocusedChatPanelId: (workspaceId: string) => {
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return null;
+        if (!layout) {
+          return null;
+        }
 
         const focusedId = get().getFocusedPanelId(workspaceId);
         if (focusedId) {
           const panel = layout.panels.get(focusedId);
-          if (panel?.type === "chat") return focusedId;
+          if (panel?.type === "chat") {
+            return focusedId;
+          }
         }
 
         // Fallback to first chat panel
@@ -666,11 +789,15 @@ export const usePanelStore = create<PanelStoreState>()(
         direction: "horizontal" | "vertical",
         position: "before" | "after",
       ) => {
-        if (sourcePanelId === targetPanelId) return;
+        if (sourcePanelId === targetPanelId) {
+          return;
+        }
 
         const layout = get().getLayout(workspaceId);
         const sourcePanel = layout.panels.get(sourcePanelId);
-        if (!sourcePanel) return;
+        if (!sourcePanel) {
+          return;
+        }
 
         // Step 1: Remove source from tree
         const treeWithoutSource = removeLeafFromTree(layout.root, sourcePanelId);
@@ -700,12 +827,16 @@ export const usePanelStore = create<PanelStoreState>()(
 
       // Swap contents between two panels (for center drops)
       swapPanelContents: (workspaceId: string, panelIdA: string, panelIdB: string) => {
-        if (panelIdA === panelIdB) return;
+        if (panelIdA === panelIdB) {
+          return;
+        }
 
         const layout = get().getLayout(workspaceId);
         const panelA = layout.panels.get(panelIdA);
         const panelB = layout.panels.get(panelIdB);
-        if (!panelA || !panelB) return;
+        if (!panelA || !panelB) {
+          return;
+        }
 
         // Swap full panel state (type, tabs, data, etc.) — only id stays (tied to tree position)
         const newPanels = new Map(layout.panels);
@@ -726,7 +857,9 @@ export const usePanelStore = create<PanelStoreState>()(
       ) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+          return;
+        }
 
         const newPanelId = generatePanelId();
 
@@ -734,10 +867,14 @@ export const usePanelStore = create<PanelStoreState>()(
         const isTabbed = TABBED_PANEL_TYPES.includes(panel.type);
         const newTabId = isTabbed ? generateTabId() : undefined;
 
+        // Carry agentId from source panel so the empty pane inherits agent context
+        const sourceAgentId = panel.data?.agentId as string | undefined;
+
         const newPanelState: PanelState = {
           id: newPanelId,
           type: panel.type,
           isUserOpened: true,
+          data: sourceAgentId ? { agentId: sourceAgentId } : undefined,
           // For tabbed panels, create with one empty tab
           tabs: isTabbed ? [{ id: newTabId! }] : undefined,
           activeTabId: newTabId,
@@ -783,7 +920,9 @@ export const usePanelStore = create<PanelStoreState>()(
       clearPanelChat: (workspaceId: string, panelId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || panel.type !== "chat") return;
+        if (!panel || panel.type !== "chat") {
+          return;
+        }
 
         // Clear active tab's contentId
         let updatedTabs = panel.tabs;
@@ -806,11 +945,52 @@ export const usePanelStore = create<PanelStoreState>()(
         });
       },
 
+      // Close all panels showing a specific chat (used when archiving/deleting)
+      closePanelsForChat: (chatId: string) => {
+        const { layouts, closePanel } = get();
+
+        // Iterate through all workspaces and their layouts
+        for (const [workspaceId, layout] of layouts) {
+          // Find panels that have this chat open
+          const panelsToClose: string[] = [];
+
+          for (const [panelId, panel] of layout.panels) {
+            if (panel.type !== "chat") {
+              continue;
+            }
+
+            // Check data.chatId (legacy/non-tabbed panels)
+            if (panel.data?.chatId === chatId) {
+              panelsToClose.push(panelId);
+              continue;
+            }
+
+            // Check tab contentIds (tabbed panels)
+            if (panel.tabs) {
+              for (const tab of panel.tabs) {
+                if (tab.contentId === chatId) {
+                  panelsToClose.push(panelId);
+                  break;
+                }
+              }
+            }
+          }
+
+          // Close the panels (in reverse order to avoid index issues if it matters)
+          for (const panelId of panelsToClose.toReversed()) {
+            console.log(`[panel-store] Closing panel ${panelId} for archived chat ${chatId}`);
+            closePanel(workspaceId, panelId);
+          }
+        }
+      },
+
       // Start a terminal in a tab (assigns contentId + cwd to the tab)
       startTerminalTab: (workspaceId: string, panelId: string, tabId: string, cwd?: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs) return;
+        if (!panel || !panel.tabs) {
+          return;
+        }
 
         const terminalId = `term-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         const newTabs = panel.tabs.map((t) =>
@@ -833,7 +1013,9 @@ export const usePanelStore = create<PanelStoreState>()(
       addTab: (workspaceId: string, panelId: string, tab?: Partial<PanelTab>) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+          return;
+        }
 
         // Only allow tabs on tabbed panel types
         if (!TABBED_PANEL_TYPES.includes(panel.type)) {
@@ -866,18 +1048,20 @@ export const usePanelStore = create<PanelStoreState>()(
       closeTab: (workspaceId: string, panelId: string, tabId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs) return;
+        if (!panel || !panel.tabs) {
+          return;
+        }
 
         const tab = panel.tabs.find((t) => t.id === tabId);
         const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
-        if (tabIndex === -1) return;
+        if (tabIndex === -1) {
+          return;
+        }
 
         // Kill terminal PTY for this tab if it's a terminal
         if (panel.type === "terminal" && tab?.contentId) {
           console.log(`[panel-store] Killing terminal tab: ${tab.contentId}`);
-          window.api.terminal.kill(tab.contentId).catch(() => {
-            // Terminal may not exist
-          });
+          killTerminalIfAvailable(tab.contentId);
         }
 
         // If this is the last tab, close the panel instead
@@ -913,10 +1097,14 @@ export const usePanelStore = create<PanelStoreState>()(
       detachTab: (workspaceId: string, panelId: string, tabId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs) return;
+        if (!panel || !panel.tabs) {
+          return;
+        }
 
         const tabIndex = panel.tabs.findIndex((t) => t.id === tabId);
-        if (tabIndex === -1) return;
+        if (tabIndex === -1) {
+          return;
+        }
 
         // If last tab, close the panel
         if (panel.tabs.length === 1) {
@@ -953,19 +1141,29 @@ export const usePanelStore = create<PanelStoreState>()(
         tabId: string,
         targetPanelId: string,
       ) => {
-        if (sourcePanelId === targetPanelId) return;
+        if (sourcePanelId === targetPanelId) {
+          return;
+        }
 
         const layout = get().getLayout(workspaceId);
         const sourcePanel = layout.panels.get(sourcePanelId);
         const targetPanel = layout.panels.get(targetPanelId);
-        if (!sourcePanel?.tabs || !targetPanel) return;
+        if (!sourcePanel?.tabs || !targetPanel) {
+          return;
+        }
 
         // Only merge into same-type tabbed panels
-        if (sourcePanel.type !== targetPanel.type) return;
-        if (!TABBED_PANEL_TYPES.includes(targetPanel.type)) return;
+        if (sourcePanel.type !== targetPanel.type) {
+          return;
+        }
+        if (!TABBED_PANEL_TYPES.includes(targetPanel.type)) {
+          return;
+        }
 
         const tab = sourcePanel.tabs.find((t) => t.id === tabId);
-        if (!tab) return;
+        if (!tab) {
+          return;
+        }
 
         const newPanels = new Map(layout.panels);
 
@@ -994,7 +1192,9 @@ export const usePanelStore = create<PanelStoreState>()(
         if (sourcePanel.tabs.length === 1) {
           // Last tab — remove panel from tree
           const newRoot = removeLeafFromTree(layout.root, sourcePanelId);
-          if (!newRoot) return; // Source was the only panel, shouldn't happen
+          if (!newRoot) {
+            return;
+          } // Source was the only panel, shouldn't happen
           newPanels.delete(sourcePanelId);
           get().setLayout(workspaceId, { root: newRoot, panels: newPanels });
         } else {
@@ -1021,10 +1221,14 @@ export const usePanelStore = create<PanelStoreState>()(
       setActiveTab: (workspaceId: string, panelId: string, tabId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs) return;
+        if (!panel || !panel.tabs) {
+          return;
+        }
 
         // Verify tab exists
-        if (!panel.tabs.some((t) => t.id === tabId)) return;
+        if (!panel.tabs.some((t) => t.id === tabId)) {
+          return;
+        }
 
         const newPanels = new Map(layout.panels);
         newPanels.set(panelId, {
@@ -1042,7 +1246,9 @@ export const usePanelStore = create<PanelStoreState>()(
       nextTab: (workspaceId: string, panelId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs || panel.tabs.length <= 1) return;
+        if (!panel || !panel.tabs || panel.tabs.length <= 1) {
+          return;
+        }
 
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
         const nextIndex = (currentIndex + 1) % panel.tabs.length;
@@ -1053,7 +1259,9 @@ export const usePanelStore = create<PanelStoreState>()(
       prevTab: (workspaceId: string, panelId: string) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs || panel.tabs.length <= 1) return;
+        if (!panel || !panel.tabs || panel.tabs.length <= 1) {
+          return;
+        }
 
         const currentIndex = panel.tabs.findIndex((t) => t.id === panel.activeTabId);
         const prevIndex = (currentIndex - 1 + panel.tabs.length) % panel.tabs.length;
@@ -1063,19 +1271,27 @@ export const usePanelStore = create<PanelStoreState>()(
       // Get the focused panel state
       getFocusedPanel: (workspaceId: string) => {
         const focusedId = get().getFocusedPanelId(workspaceId);
-        if (!focusedId) return null;
+        if (!focusedId) {
+          return null;
+        }
         const layout = get().layouts.get(workspaceId);
-        if (!layout) return null;
+        if (!layout) {
+          return null;
+        }
         return layout.panels.get(focusedId) || null;
       },
 
       // Reorder a tab within a panel (for sortable drag-and-drop)
       moveTab: (workspaceId: string, panelId: string, fromIndex: number, toIndex: number) => {
-        if (fromIndex === toIndex) return;
+        if (fromIndex === toIndex) {
+          return;
+        }
 
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel || !panel.tabs) return;
+        if (!panel || !panel.tabs) {
+          return;
+        }
 
         const newPanels = new Map(layout.panels);
         newPanels.set(panelId, {
@@ -1093,10 +1309,14 @@ export const usePanelStore = create<PanelStoreState>()(
       changePanelType: (workspaceId: string, panelId: string, newType: PanelType) => {
         const layout = get().getLayout(workspaceId);
         const panel = layout.panels.get(panelId);
-        if (!panel) return;
+        if (!panel) {
+          return;
+        }
 
         // Don't change if same type
-        if (panel.type === newType) return;
+        if (panel.type === newType) {
+          return;
+        }
 
         const newTabId = TABBED_PANEL_TYPES.includes(newType) ? generateTabId() : undefined;
 
@@ -1210,13 +1430,109 @@ export const usePanelStore = create<PanelStoreState>()(
           `[panel-store] Opened managed terminal pane: panelId=${newPanelId}, terminalId=${terminalId}`,
         );
       },
+
+      // Open a terminal tab/pane for an existing terminalId (used by catch-up queue).
+      // This does NOT assume the terminal is managed; it simply reattaches if the PTY exists.
+      openTerminalById: (
+        workspaceId: string,
+        terminalId: string,
+        opts?: { cwd?: string; label?: string; target?: "tab" | "pane"; sessionKey?: string },
+      ) => {
+        const layout = get().getLayout(workspaceId);
+
+        // If already open, focus the existing panel/tab.
+        for (const [panelId, panel] of layout.panels) {
+          if (panel.type !== "terminal") {
+            continue;
+          }
+          if (panel.tabs?.some((t) => t.contentId === terminalId)) {
+            get().setFocusedPanelId(workspaceId, panelId);
+            // If tabbed, activate the matching tab.
+            const tab = panel.tabs?.find((t) => t.contentId === terminalId);
+            if (tab) {
+              get().setActiveTab(workspaceId, panelId, tab.id);
+            }
+            return;
+          }
+          if (panel.data?.terminalId === terminalId) {
+            get().setFocusedPanelId(workspaceId, panelId);
+            return;
+          }
+        }
+
+        const tabData = {
+          cwd: opts?.cwd,
+          managed: false,
+          label: opts?.label,
+          sessionKey: opts?.sessionKey,
+        };
+
+        // Prefer adding to an existing terminal panel as a tab (unless target pane).
+        if (opts?.target !== "pane") {
+          for (const [panelId, panel] of layout.panels) {
+            if (panel.type === "terminal") {
+              get().addTab(workspaceId, panelId, { contentId: terminalId, data: tabData });
+              get().setFocusedPanelId(workspaceId, panelId);
+              return;
+            }
+          }
+        }
+
+        // No existing terminal panel: split a new terminal pane.
+        const newPanelId = generatePanelId();
+        const newTabId = generateTabId();
+        const newPanelState: PanelState = {
+          id: newPanelId,
+          type: "terminal",
+          isUserOpened: false,
+          data: { managed: false, cwd: opts?.cwd },
+          tabs: [{ id: newTabId, contentId: terminalId, data: tabData }],
+          activeTabId: newTabId,
+        };
+
+        const focusedId = get().getFocusedPanelId(workspaceId);
+        const targetPanelId = focusedId || findFirstLeaf(layout.root);
+        if (!targetPanelId) {
+          return;
+        }
+
+        const newLeaf: PanelLeaf = { type: "leaf", panelId: newPanelId };
+        const splitNode = (node: PanelNode): PanelNode => {
+          if (node.type === "leaf" && node.panelId === targetPanelId) {
+            const branch: PanelBranch = {
+              type: "branch",
+              direction: "horizontal",
+              sizes: [60, 40],
+              children: [node, newLeaf],
+            };
+            return branch;
+          }
+          if (node.type === "branch") {
+            return {
+              ...node,
+              children: [splitNode(node.children[0]), splitNode(node.children[1])] as [
+                PanelNode,
+                PanelNode,
+              ],
+            };
+          }
+          return node;
+        };
+
+        const newPanels = new Map(layout.panels);
+        newPanels.set(newPanelId, newPanelState);
+        get().setLayout(workspaceId, { root: splitNode(layout.root), panels: newPanels });
+        get().setFocusedPanelId(workspaceId, newPanelId);
+      },
     }),
     {
       name: "kos-panels-v2",
       storage: {
         getItem: (name) => {
           const str = localStorage.getItem(name);
-          if (!str) return null;
+          if (!str) {
+            return null;
+          }
           const { state } = JSON.parse(str);
 
           // Deserialize layouts with nested Maps and clean up orphaned panels
@@ -1232,10 +1548,11 @@ export const usePanelStore = create<PanelStoreState>()(
                   panels.delete(panelId);
                 }
               }
-              layouts.set(wsId, {
+              const deserializedLayout: PanelLayout = {
                 ...layout,
                 panels,
-              });
+              };
+              layouts.set(wsId, sanitizeLayoutForRuntime(deserializedLayout));
             }
           }
 

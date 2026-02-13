@@ -50,6 +50,11 @@ export const SessionsResolveParamsSchema = Type.Object(
 export const SessionsPatchParamsSchema = Type.Object(
   {
     key: NonEmptyString,
+    /**
+     * Archive/unarchive a session.
+     * Stored as `archivedAt` timestamp in the session store.
+     */
+    archived: Type.Optional(Type.Union([Type.Boolean(), Type.Null()])),
     label: Type.Optional(Type.Union([SessionLabelString, Type.Null()])),
     thinkingLevel: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),
     verboseLevel: Type.Optional(Type.Union([NonEmptyString, Type.Null()])),

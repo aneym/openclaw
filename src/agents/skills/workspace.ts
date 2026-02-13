@@ -510,6 +510,7 @@ export function buildWorkspaceSkillCommandSpecs(
       name: unique,
       skillName: rawName,
       description,
+      nativeCommand: entry.invocation?.nativeCommand ?? false,
       ...(dispatch ? { dispatch } : {}),
     });
   }

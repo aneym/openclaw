@@ -7,6 +7,7 @@ import { useAutoResizeTextarea } from "../../hooks/use-auto-resize-textarea";
 import { useImageAttachments } from "../../hooks/use-image-attachments";
 import { klog } from "../../lib/klog";
 import { cn } from "../../lib/utils";
+import { useDraftStore } from "../../stores/draft-store";
 import { MessageQueue } from "./MessageQueue";
 
 interface ComposeBarProps {
@@ -34,12 +35,48 @@ export function ComposeBar({
   onAbort,
   onRemoveFromQueue,
 }: ComposeBarProps) {
-  const [text, setText] = useState("");
+  const getDraft = useDraftStore((s) => s.getDraft);
+  const setDraft = useDraftStore((s) => s.setDraft);
+  const clearDraft = useDraftStore((s) => s.clearDraft);
+
+  const [text, setText] = useState(() => getDraft(sessionKey));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevSessionKeyRef = useRef(sessionKey);
+
+  // Save/restore drafts when sessionKey changes
+  useEffect(() => {
+    if (prevSessionKeyRef.current !== sessionKey) {
+      // Save current draft for previous session
+      if (text.trim()) {
+        setDraft(prevSessionKeyRef.current, text);
+      } else {
+        clearDraft(prevSessionKeyRef.current);
+      }
+      // Restore draft for new session
+      setText(getDraft(sessionKey));
+      prevSessionKeyRef.current = sessionKey;
+    }
+  }, [sessionKey, text, getDraft, setDraft, clearDraft]);
+
+  // Persist draft on text change (debounced via effect)
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => {
+    clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      if (text.trim()) {
+        setDraft(sessionKey, text);
+      } else {
+        clearDraft(sessionKey);
+      }
+    }, 300);
+    return () => clearTimeout(draftTimerRef.current);
+  }, [text, sessionKey, setDraft, clearDraft]);
 
   // Auto-focus on mount when requested
   useEffect(() => {
-    if (!autoFocus) return;
+    if (!autoFocus) {
+      return;
+    }
     // Small delay to ensure panel animation completes
     const timer = setTimeout(() => {
       textareaRef.current?.focus();
@@ -92,7 +129,9 @@ export function ComposeBar({
     dragCounterRef.current = 0;
 
     const files = e.dataTransfer?.files;
-    if (!files || files.length === 0) return;
+    if (!files || files.length === 0) {
+      return;
+    }
 
     // Process all dropped image files
     for (let i = 0; i < files.length; i++) {
@@ -104,9 +143,11 @@ export function ComposeBar({
   };
 
   // Handle clipboard paste for images
-  const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
+  const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement | HTMLDivElement>) => {
     const items = e.clipboardData?.items;
-    if (!items) return;
+    if (!items) {
+      return;
+    }
 
     const imageItems: DataTransferItem[] = [];
     for (let i = 0; i < items.length; i++) {
@@ -115,7 +156,9 @@ export function ComposeBar({
       }
     }
 
-    if (imageItems.length === 0) return;
+    if (imageItems.length === 0) {
+      return;
+    }
 
     e.preventDefault();
 
@@ -131,12 +174,15 @@ export function ComposeBar({
   const canSend = connected && (text.trim().length > 0 || images.length > 0);
 
   const handleSend = async (immediate = false) => {
-    if (!canSend) return;
+    if (!canSend) {
+      return;
+    }
 
     const messageText = text.trim();
     const currentImages = [...images];
     setText("");
     clearImages();
+    clearDraft(sessionKey);
 
     klog.compose("handleSend called", {
       sessionKey,
@@ -161,7 +207,9 @@ export function ComposeBar({
 
   const handleSendQueuedNow = async () => {
     // Abort current run and send the first queued message
-    if (queue.length === 0) return;
+    if (queue.length === 0) {
+      return;
+    }
 
     const firstMessage = queue[0];
     onRemoveFromQueue(firstMessage.id);
@@ -173,7 +221,9 @@ export function ComposeBar({
   };
 
   const handleAbort = async () => {
-    if (!isStreaming && !awaitingResponse) return;
+    if (!isStreaming && !awaitingResponse) {
+      return;
+    }
 
     klog.compose("handleAbort called", { sessionKey, connected });
     await onAbort();
@@ -218,8 +268,12 @@ export function ComposeBar({
       } else if (start > 0) {
         // Walk backward: skip trailing spaces, then skip word chars
         let i = start;
-        while (i > 0 && /\s/.test(text[i - 1])) i--;
-        while (i > 0 && /\S/.test(text[i - 1])) i--;
+        while (i > 0 && /\s/.test(text[i - 1])) {
+          i--;
+        }
+        while (i > 0 && /\S/.test(text[i - 1])) {
+          i--;
+        }
         flushSync(() => setText(text.slice(0, i) + text.slice(start)));
         ta.setSelectionRange(i, i);
       }
@@ -236,8 +290,12 @@ export function ComposeBar({
         ta.setSelectionRange(start, start);
       } else if (end < text.length) {
         let i = end;
-        while (i < text.length && /\S/.test(text[i])) i++;
-        while (i < text.length && /\s/.test(text[i])) i++;
+        while (i < text.length && /\S/.test(text[i])) {
+          i++;
+        }
+        while (i < text.length && /\s/.test(text[i])) {
+          i++;
+        }
         flushSync(() => setText(text.slice(0, end) + text.slice(i)));
         ta.setSelectionRange(end, end);
       }
@@ -261,6 +319,7 @@ export function ComposeBar({
       <MessageQueue queue={queue} onSendNow={handleSendQueuedNow} onRemove={onRemoveFromQueue} />
       <div
         className="relative border-t border-border bg-background px-4 py-3"
+        onPaste={handlePaste}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}

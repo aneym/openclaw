@@ -1,5 +1,6 @@
 import { FolderOpen, Loader2 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { getRendererApi, getRuntimeCapabilities } from "../../lib/runtime";
 import { useProjectStore } from "../../stores/project-store";
 import { useSettingsStore } from "../../stores/settings-store";
 import { Button } from "../ui/button";
@@ -23,6 +24,7 @@ interface ProjectCreateDialogProps {
 
 export function ProjectCreateDialog({ open, onOpenChange }: ProjectCreateDialogProps) {
   const createProject = useProjectStore((s) => s.createProject);
+  const runtimeCaps = getRuntimeCapabilities();
   const isInitialized = useSettingsStore((s) => s.isInitialized);
   const initialize = useSettingsStore((s) => s.initialize);
 
@@ -53,8 +55,15 @@ export function ProjectCreateDialog({ open, onOpenChange }: ProjectCreateDialogP
   }, [open]);
 
   const handleSelectFolder = useCallback(async () => {
-    const result = await window.api.openDirectoryDialog();
-    if (result.canceled || !result.filePaths[0]) return;
+    const api = getRendererApi();
+    if (!api?.openDirectoryDialog || !api.git) {
+      return;
+    }
+
+    const result = await api.openDirectoryDialog();
+    if (result.canceled || !result.filePaths[0]) {
+      return;
+    }
 
     const path = result.filePaths[0];
     setWorkspacePath(path);
@@ -62,7 +71,7 @@ export function ProjectCreateDialog({ open, onOpenChange }: ProjectCreateDialogP
     setDiscoveredRepoCount(null);
 
     try {
-      const repos = await window.api.git.scanForRepos(path);
+      const repos = await api.git.scanForRepos(path);
       setDiscoveredRepoCount(repos.length);
 
       // Auto-fill project name from folder name if empty
@@ -76,7 +85,9 @@ export function ProjectCreateDialog({ open, onOpenChange }: ProjectCreateDialogP
   }, [name]);
 
   const handleCreate = useCallback(async () => {
-    if (!name.trim() || !workspacePath) return;
+    if (!name.trim() || !workspacePath) {
+      return;
+    }
 
     setIsCreating(true);
     try {
@@ -110,7 +121,7 @@ export function ProjectCreateDialog({ open, onOpenChange }: ProjectCreateDialogP
               <Button
                 variant="outline"
                 onClick={handleSelectFolder}
-                disabled={isScanning}
+                disabled={isScanning || !runtimeCaps.hasNativeDialogs}
                 className="flex-1 justify-start font-normal"
               >
                 {isScanning ? (

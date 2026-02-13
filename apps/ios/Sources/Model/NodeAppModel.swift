@@ -77,7 +77,7 @@ final class NodeAppModel {
         let resolvedId = agentId.isEmpty ? defaultId : agentId
         if resolvedId.isEmpty { return "Main" }
         if let match = self.gatewayAgents.first(where: { $0.id == resolvedId }) {
-            let name = (match.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            let name = (match.identityName ?? match.name ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             return name.isEmpty ? match.id : name
         }
         return resolvedId

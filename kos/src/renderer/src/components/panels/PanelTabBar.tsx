@@ -17,6 +17,9 @@ import {
   FileCode,
   Square,
   HelpCircle,
+  FileText,
+  GitBranch,
+  ListChecks,
   type LucideIcon,
 } from "lucide-react";
 import { memo, useMemo, useCallback } from "react";
@@ -61,7 +64,9 @@ export const PanelTabBar = memo(function PanelTabBar({
 
   // Resolve chat for session actions
   const chatId = useMemo(() => {
-    if (panelType !== "chat") return undefined;
+    if (panelType !== "chat") {
+      return undefined;
+    }
 
     // If tabbed with tabs, use active tab's contentId
     if (isTabbed && tabs && tabs.length > 0) {
@@ -135,8 +140,12 @@ export const PanelTabBar = memo(function PanelTabBar({
       if (panelType === "terminal") {
         // Prefer agent-provided label, fall back to terminal ID
         const label = tab.data?.label as string | undefined;
-        if (label) return label;
-        if (tab.contentId) return tab.contentId;
+        if (label) {
+          return label;
+        }
+        if (tab.contentId) {
+          return tab.contentId;
+        }
       }
       return panelType === "chat" ? `New Chat` : `Tab ${index + 1}`;
     },
@@ -316,7 +325,9 @@ const TabButton = memo(function TabButton({
 }: TabButtonProps) {
   const chatsMap = useChatStore((s) => s.chats);
   const hasUnread = useMemo(() => {
-    if (!tab.contentId) return false;
+    if (!tab.contentId) {
+      return false;
+    }
     const tabChat = chatsMap.get(tab.contentId) as Chat | undefined;
     return tabChat?.hasUnread === true;
   }, [chatsMap, tab.contentId]);
@@ -395,6 +406,9 @@ const PANEL_ICONS: Record<PanelType, LucideIcon> = {
   preview: Eye,
   tasks: ClipboardList,
   code: FileCode,
+  artifact: FileText,
+  git: GitBranch,
+  "gateway-tasks": ListChecks,
   empty: Square,
 };
 
@@ -405,7 +419,9 @@ export function PanelTypeIcon({ type, className }: { type: PanelType; className?
 }
 
 function getPanelTitle(type: PanelType, chatTitle?: string): string {
-  if (type === "chat" && chatTitle) return chatTitle;
+  if (type === "chat" && chatTitle) {
+    return chatTitle;
+  }
   switch (type) {
     case "chat":
       return "Chat";
@@ -421,6 +437,12 @@ function getPanelTitle(type: PanelType, chatTitle?: string): string {
       return "Tasks";
     case "code":
       return "Code";
+    case "artifact":
+      return "Artifact";
+    case "git":
+      return "Git";
+    case "gateway-tasks":
+      return "Gateway Tasks";
     case "empty":
       return "Empty Panel";
     default:

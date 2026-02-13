@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { LinearTeam, LinearIssue } from "../types";
+import { getRendererApi } from "../lib/runtime";
 
 interface LinearState {
   teams: LinearTeam[];
@@ -34,7 +35,13 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
   fetchTeams: async () => {
     set({ isLoading: true, error: null });
     try {
-      const teams = await window.api.linear.listTeams();
+      const api = getRendererApi();
+      if (!api?.linear) {
+        set({ teams: [], error: "Linear is only available in the desktop app" });
+        return;
+      }
+
+      const teams = await api.linear.listTeams();
       set({ teams });
     } catch (err) {
       const error = err as Error;
@@ -55,7 +62,13 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
 
     set({ isLoading: true, error: null });
     try {
-      const issues = await window.api.linear.getTeamIssues(teamId);
+      const api = getRendererApi();
+      if (!api?.linear) {
+        set({ error: "Linear is only available in the desktop app" });
+        return;
+      }
+
+      const issues = await api.linear.getTeamIssues(teamId);
 
       // Update the issues map
       const newIssuesMap = new Map(get().issuesByTeam);
@@ -87,10 +100,14 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
 
     for (const teamId of issuesByTeam.keys()) {
       const issues = issuesByTeam.get(teamId);
-      if (!issues) continue;
+      if (!issues) {
+        continue;
+      }
 
       const issueIndex = issues.findIndex((i) => i.id === issueId);
-      if (issueIndex === -1) continue;
+      if (issueIndex === -1) {
+        continue;
+      }
 
       foundTeamId = teamId;
       previousIssues = issues;
@@ -98,7 +115,9 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
       // Find the new state from the team
       const team = teams.find((t) => t.id === teamId);
       const newState = team?.states.find((s) => s.id === stateId);
-      if (!newState) continue;
+      if (!newState) {
+        continue;
+      }
 
       // Optimistic update: apply immediately
       const updatedIssues = [...issues];
@@ -116,7 +135,11 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
     }
 
     try {
-      await window.api.linear.updateIssueState(issueId, stateId);
+      const api = getRendererApi();
+      if (!api?.linear) {
+        throw new Error("Linear is only available in the desktop app");
+      }
+      await api.linear.updateIssueState(issueId, stateId);
     } catch (err) {
       // Rollback on error
       if (foundTeamId && previousIssues) {
@@ -139,7 +162,9 @@ export const useLinearStore = create<LinearState>()((set, get) => ({
   getIssue: (issueId: string) => {
     for (const issues of get().issuesByTeam.values()) {
       const issue = issues.find((i) => i.id === issueId);
-      if (issue) return issue;
+      if (issue) {
+        return issue;
+      }
     }
     return undefined;
   },

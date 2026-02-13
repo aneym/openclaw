@@ -57,11 +57,7 @@ struct RootCanvas: View {
             case .settings:
                 SettingsTab()
             case .chat:
-                ChatSheet(
-                    gateway: self.appModel.operatorSession,
-                    sessionKey: self.appModel.mainSessionKey,
-                    agentName: self.appModel.activeAgentName,
-                    userAccent: self.appModel.seamColor)
+                ChatInboxSheet(gateway: self.appModel.operatorSession)
             }
         }
         .onAppear { self.updateIdleTimer() }

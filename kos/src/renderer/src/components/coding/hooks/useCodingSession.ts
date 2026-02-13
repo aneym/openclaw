@@ -187,7 +187,13 @@ export function useCodingSession(sessionKey: string) {
 
     request<SessionHistoryResponse>("chat.history", { sessionKey, limit: 100 })
       .then((history) => {
-        const messages = history.messages.map((m) => normalizeMessage(m, sessionKey));
+        // chat.history can include pending webchat shims appended out-of-order.
+        // Sort chronologically (stable for ties) so the phase timeline is consistent.
+        const messages = history.messages
+          .map((m) => normalizeMessage(m, sessionKey))
+          .map((m, idx) => ({ m, idx }))
+          .toSorted((a, b) => a.m.createdAt - b.m.createdAt || a.idx - b.idx)
+          .map(({ m }) => m);
 
         let currentPhase: CodingPhase = "exploring";
         const allEvents: CodingEvent[] = [];
