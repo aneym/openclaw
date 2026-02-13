@@ -213,6 +213,19 @@ function ensureOpenSessions(
 }
 
 /** Return the set of session keys that currently have an active agent run. */
+/** Build unread counts map from thread state for the sidebar badges. */
+function computeUnreadCounts(state: AppViewState): Map<string, number> {
+  const counts = new Map<string, number>();
+  if (state.threads) {
+    for (const thread of state.threads.values()) {
+      if (thread.unreadCount > 0) {
+        counts.set(thread.descriptor.sessionKey, thread.unreadCount);
+      }
+    }
+  }
+  return counts;
+}
+
 function computeRunningSessions(state: AppViewState): Set<string> {
   return state.runningSessions;
 }
@@ -394,7 +407,7 @@ export function renderApp(state: AppViewState) {
                           computeOpenPaneKeys(state),
                         ),
                         activeSessionKey: state.sessionKey,
-                        unreadCounts: new Map(),
+                        unreadCounts: computeUnreadCounts(state),
                         runningSessions: computeRunningSessions(state),
                         subagentCounts: computeSubagentCounts(state),
                         openPaneKeys: computeOpenPaneKeys(state),
